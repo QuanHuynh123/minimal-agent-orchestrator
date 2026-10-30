@@ -1,92 +1,123 @@
-# Minimal Agent Orchestration Standard (v2.0 Blueprint)
-## Bộ Khung Đội Ngũ Đa Agent Tự Vận Hành Cho Mọi Dự Án
+# 🤖 Minimal Agent Orchestration Standard (v2.0 Blueprint)
 
-Bộ khung này hiện thực hóa toàn bộ tiêu chuẩn **v2.0 Blueprint** đã được **Tech Lead Claude Opus** duyệt và tối ưu hóa cho môi trường Windows/Linux, sẵn sàng copy vào bất kỳ dự án mới nào để chạy xuyên suốt và qua đêm mà không tốn chi phí vô lý.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node: >=18](https://img.shields.io/badge/Node->=18.0.0-green.svg)](https://nodejs.org/)
+[![Architecture: Multi--Agent](https://img.shields.io/badge/Architecture-Hybrid%20Squad-orange.svg)](#)
+[![Zero--Token: Applier%20&%20Validator](https://img.shields.io/badge/Tools-0--Token%20Deterministic-brightgreen.svg)](#)
+[![Tech Lead Review: APPROVED](https://img.shields.io/badge/Claude%20Opus-APPROVED-purple.svg)](#)
+
+> **Bộ khung điều phối đội ngũ Đa Agent (Multi-Agent Squad) cắm-là-chạy (Plug-and-Play) dành cho mọi dự án phần mềm.**  
+> Chạy xuyên suốt qua đêm, tự động sửa lỗi, kiểm tra an toàn mã nguồn, rollback khi test fail và báo cáo tổng kết buổi sáng — **tối ưu chi phí và không lãng phí token**.
 
 ---
 
-### 1. Cấu Trúc Thư Mục `agent-team/`
+## 📖 Mục Lục
+- [1. Vấn Đề & Giải Pháp](#1-vấn-đề--giải-pháp)
+- [2. Kiến Trúc Luồng Hoạt Động](#2-kiến-trúc-luồng-hoạt-động)
+- [3. Cấu Trúc Thư Mục](#3-cấu-trúc-thư-mục)
+- [4. Đội Hình Squad & Phân Vai](#4-đội-hình-squad--phân-vai)
+- [5. Hướng Dẫn Sử Dụng Nhanh (Quickstart)](#5-hướng-dẫn-sử-dụng-nhanh-quickstart)
+- [6. Cấu Hình Dự Án](#6-cấu-hình-dự-án)
+- [7. Bản Đặc Tả Kỹ Thuật Chi Tiết](#7-bản-đặc-tả-kỹ-thuật-chi-tiết)
+- [8. Giấy Phép (License)](#8-giấy-phép-license)
+
+---
+
+## 1. Vấn Đề & Giải Pháp
+
+| Vấn đề khi dùng AI code truyền thống | Giải pháp của Minimal Agent Framework |
+| :--- | :--- |
+| **Đốt token hai lần:** Dùng LLM chỉ để đọc code của LLM khác rồi viết lại ra file. | **Zero LLM Pass-Through:** Writer chỉ sinh khối diff `SEARCH/REPLACE`, công cụ Node.js 0-token ghi thẳng xuống đĩa. |
+| **Code lười biếng (`// ... existing code ...`):** AI viết tắt làm bay màu logic cũ. | **Anti-Lazy Regex Guard:** Phát hiện chuỗi tắt và reject lập tức trước khi ghi đĩa. |
+| **Kẹt vòng lặp sửa lỗi qua đêm:** AI sửa cùng 1 lỗi liên tục gây cháy tiền API. | **SHA-1 Error Hashing:** Băm hash lỗi; nếu lỗi trùng lặp $\ge 2$ lần, lập tức ngắt task và chuyển sang task kế tiếp. |
+| **Làm vỡ môi trường:** Code sai gây crash không hoàn tác được. | **Git Guard Rollback:** Tự động `git checkout -- .` ngay khi test fail, giữ repo luôn sạch sẽ. |
+
+---
+
+## 2. Kiến Trúc Luồng Hoạt Động
+
+```mermaid
+flowchart TD
+    Task["Active Task (.yaml)"] --> Router["Router (Claude Sonnet / Gemini)\nLập Kế Hoạch & Khoanh Vùng Scope"]
+    Router --> Writer["Writer (DeepSeek V4 Cá Voi)\nSinh khối SEARCH / REPLACE"]
+    Writer --> Applier["Applier (0-Token Node.js)\nKiểm tra Scope & Ghi Đĩa Atomic"]
+    Applier --> FastCheck["Fast Validator (0-Token Shell)\nChạy Linter & Indentation Check (<1s)"]
+    FastCheck -- "FAIL" --> Rollback["Git Guard Rollback\nHoàn nguyên code sạch & Thử lại"]
+    Rollback --> Writer
+    FastCheck -- "PASS" --> SuiteCheck["Suite Validator (0-Token Shell)\nChạy Full Unit Tests (<30s)"]
+    SuiteCheck -- "FAIL" --> Rollback
+    SuiteCheck -- "PASS" --> Commit["Git Guard Commit\n[AI-Task] T-xxx: Auto Commit"]
+    Commit --> Archive["Lưu trữ Task vào tasks/archive/"]
+    Archive --> Report["Cập nhật state/morning-report.md"]
+```
+
+---
+
+## 3. Cấu Trúc Thư Mục
 
 ```text
 agent-team/
-├── .gitattributes             # Chuẩn hóa EOL (LF) tránh diff ảo trên Windows
-├── package.json               # Quản lý script khởi chạy và phụ thuộc (yaml)
+├── .gitattributes             # Chuẩn hóa EOL (LF) chống diff ảo trên Windows
+├── .gitignore                 # Bỏ qua node_modules và file lock
+├── package.json               # Script chạy và phụ thuộc Node.js (yaml)
+├── README.md                  # Tài liệu hướng dẫn này
+├── BLUEPRINT.md               # Bản đặc tả kỹ thuật chi tiết v2.0
 ├── config/
-│   ├── team.yaml              # Định nghĩa Router, Writer (Cá Voi), Tech Lead (Opus), Designer (Sonnet)
-│   ├── project.yaml           # Lệnh test/lint 0-token của dự án cụ thể
-│   └── policy.yaml            # Trần token/chi phí, số lần retry, scope guard
+│   ├── team.yaml              # Khai báo Provider (9Router), Role và Model
+│   ├── project.yaml           # Cấu hình lệnh test shell và thư mục an toàn của dự án
+│   └── policy.yaml            # Trần token/chi phí per task, trần retry, scope guard
 ├── roles/
-│   ├── router.md              # Phân tích đề bài, chia nhỏ task, lập scope
-│   ├── writer.md              # Chuẩn block SEARCH/REPLACE, cấm code lười biếng
-│   └── reviewer.md            # Tiêu chí review diff của Tech Lead
+│   ├── router.md              # System prompt cho Router
+│   ├── writer.md              # System prompt ép chuẩn SEARCH/REPLACE cho Writer
+│   └── reviewer.md            # System prompt tiêu chí review cho Reviewer
 ├── state/
-│   ├── task-state.schema.json # Schema JSON cho state
-│   ├── task-state.json        # State machine ghi atomic (.tmp + rename)
+│   ├── task-state.schema.json # JSON Schema chuẩn hóa state
+│   ├── task-state.json        # File trạng thái ghi atomic (.tmp + rename)
 │   └── morning-report.md      # Báo cáo tổng kết buổi sáng cho Sếp
 ├── tasks/
-│   ├── task-template.yaml     # Mẫu tạo task mới
-│   ├── active/                # Chứa các task đang chờ chạy
-│   └── archive/               # Chứa các task đã hoàn thành
+│   ├── task-template.yaml     # Mẫu file task mới
+│   ├── active/                # Thư mục chứa các task đang xếp hàng chạy
+│   └── archive/               # Thư mục lưu các task đã hoàn thành
 └── scripts/
-    ├── applier.mjs            # 0-token tool: parser block SEARCH/REPLACE, ghi atomic
-    ├── git-guard.mjs          # 0-token tool: snapshot, rollback an toàn, commit tự động
-    ├── validator.mjs          # 0-token tool: hash lỗi sha1 chống lặp vô tận, test shell
-    └── orchestrator.mjs       # Tiến trình điều phối chính, lock file chống xung đột
+    ├── applier.mjs            # 0-token parser SEARCH/REPLACE, ghi atomic
+    ├── git-guard.mjs          # 0-token snapshot, rollback an toàn, auto commit
+    ├── validator.mjs          # 0-token chạy test shell, hash sha1 chống lặp vô tận
+    └── orchestrator.mjs       # Bộ điều phối trung tâm độc lập, có lock file
 ```
 
 ---
 
-### 2. Nguyên Tắc Cốt Lõi (Đã được Tech Lead Opus Approved)
+## 4. Đội Hình Squad & Phân Vai
 
-1. **Zero LLM Pass-Through (0-token disk write):**
-   - Writer (DeepSeek Cá Voi) chỉ trả về block thay đổi theo format chuẩn:
-     ```text
-     FILE: path/to/file.ext
-     <<<<<<< SEARCH
-     dòng code cũ chính xác
-     =======
-     dòng code mới thay thế
-     >>>>>>> REPLACE
-     ```
-   - Script `applier.mjs` trực tiếp tìm chuỗi và ghi đè xuống đĩa, tuyệt đối không dùng LLM để copy lại file code.
-
-2. **Khớp duy nhất 1 lần (Single Match Invariant):**
-   - Khối `SEARCH` phải khớp **đúng 1 lần** trong file. Nếu không tìm thấy hoặc trùng nhiều vị trí, applier từ chối ngay lập tức và yêu cầu Writer cấp thêm ngữ cảnh xung quanh.
-
-3. **Chống Code Lười Biếng (Anti-Lazy Guard):**
-   - Tự động chặn và báo lỗi nếu Writer viết tắt các câu như `// ... existing code ...` hoặc `<!-- ... -->`.
-
-4. **Công Cụ 0-Token Cho Kiểm Thử & Git (0-Token Deterministic Tools):**
-   - Chạy test, lint, TAB check qua lệnh shell thuần túy (`python -m unittest`, `pytest`, `npm test`) mất <50ms và tốn **0 token**.
-   - Rollback tức thời bằng git khi test fail mà không xóa nhầm file chưa track của người dùng.
-
-5. **Trần Chi Phí & Chống Lặp Vô Tận (Cost Cap & Loop Breaker):**
-   - Mỗi task bị chặn bởi `token_budget_per_task`.
-   - Nếu xảy ra lỗi giống hệt nhau (`sha1(stderr)` trùng) 2 lần liên tiếp, hệ thống lập tức ngắt, đánh dấu task `blocked` và chuyển tiếp task khác, không bao giờ bị kẹt vòng lặp qua đêm.
-
-6. **Độ Bền Vững Độc Lập (Overnight Autonomous):**
-   - Chạy bằng tiến trình Node.js độc lập (`node scripts/orchestrator.mjs`), có lock file `.orchestrator.lock` tránh xung đột, tự ghi log và xuất báo cáo `morning-report.md` khi Sếp thức dậy.
+1. **Strategic Tech Lead & Architect — Claude Opus (`ag/claude-opus-5-5-high`)**
+   - Phê duyệt kiến trúc, thẩm định các thay đổi phức tạp và rà soát chất lượng.
+2. **Senior UI/UX Designer & Planner — Claude Sonnet (`kr/claude-sonnet-4.5-thinking`)**
+   - Định hình giao diện, thiết kế trải nghiệm người dùng, phân tích spec thành các task con rõ ràng.
+3. **Core Backend Engineer — DeepSeek Cá Voi (`deepseek-ai/deepseek-v4.1-flash-1017`)**
+   - Cỗ máy sinh code thần tốc, chi phí siêu rẻ, trả về chuẩn block `SEARCH/REPLACE` chính xác từng dòng.
+4. **Squad Coordinator & Automated Gatekeeper — Gemini Coordinator**
+   - Giữ nhịp điều phối, kiểm soát thụt lề TAB 100%, bảo đảm 100% test cases pass trước khi chuyển giao.
 
 ---
 
-### 3. Hướng Dẫn Sử Dụng Cho Dự Án Mới
+## 5. Hướng Dẫn Sử Dụng Nhanh (Quickstart)
 
-#### Bước 1: Copy thư mục `agent-team/` vào root của dự án mới
-
+### Bước 1: Copy thư mục `agent-team/` vào dự án của bạn
+Đặt thư mục `agent-team/` ngay tại root của bất kỳ repository nào:
 ```bash
-cp -r agent-team /path/to/new-project/
-cd /path/to/new-project/agent-team
+cp -r agent-team /path/to/your-project/
+cd /path/to/your-project/agent-team
 npm install
 ```
 
-#### Bước 2: Cập nhật `config/project.yaml`
-Khai báo lệnh kiểm tra nhanh và test suite của dự án mới:
+### Bước 2: Cập nhật `config/project.yaml`
+Khai báo lệnh kiểm tra của dự án bạn (chạy bằng shell thuần túy, 0 token):
 ```yaml
 project:
-  name: "du-an-moi"
+  id: "my-project"
   allowed_dirs:
-    - "src"
-    - "tests"
+    - "src/"
+    - "tests/"
   validation:
     fast_checks:
       - name: "Lint Check"
@@ -96,25 +127,55 @@ project:
         run: "pytest tests/"
 ```
 
-#### Bước 3: Tạo Task trong `tasks/active/`
+### Bước 3: Tạo Task trong `tasks/active/`
 Tạo file `tasks/active/T-001.yaml`:
 ```yaml
 task:
   id: "T-001"
-  title: "Tạo hàm xử lý authentication"
-  goal: "Thêm API xác thực token JWT trong src/auth.py"
+  title: "Bổ sung API kiểm tra sức khỏe hệ thống"
+  goal: "Thêm endpoint /healthz trả về JSON { status: 'ok' } trong src/server.py"
   scope:
-    - "src/auth.py"
-    - "tests/test_auth.py"
+    - "src/server.py"
+    - "tests/test_health.py"
 ```
 
-#### Bước 4: Khởi động đội ngũ tự chạy qua đêm
+### Bước 4: Khởi động cỗ máy tự chạy
 ```bash
 npm start
 ```
-Hoặc chạy nền bằng tiến trình daemon/pm2:
+*Để chạy qua đêm trên server hoặc máy cá nhân:*
 ```bash
-npx pm2 start scripts/orchestrator.mjs --name "agent-team"
+npx pm2 start scripts/orchestrator.mjs --name "agent-orchestrator"
+```
+Sáng hôm sau, mở file `state/morning-report.md` để xem danh sách toàn bộ task đã xong kèm commit hash tương ứng!
+
+---
+
+## 6. Cấu Hình Dự Án
+
+### `config/policy.yaml` (Bảo Vệ Ngân Sách)
+```yaml
+policy:
+  scope_control:
+    max_files_per_task: 5
+    strict_scope_enforcement: true
+  retry_and_escalation:
+    max_retries_per_task: 3
+    abort_on_identical_error_count: 2 # Chặn lặp vô tận
+    token_budget_per_task: 150000     # Trần chi phí bảo vệ
+  git_hygiene:
+    rollback_on_validation_fail: true # Tự rollback khi fail test
+    auto_commit_on_done: true
 ```
 
-Sáng hôm sau, mở file `state/morning-report.md` để xem báo cáo tổng kết chi tiết!
+---
+
+## 7. Bản Đặc Tả Kỹ Thuật Chi Tiết
+
+Xem toàn bộ nội dung bản đặc tả kiến trúc tại [BLUEPRINT.md](BLUEPRINT.md).
+
+---
+
+## 8. Giấy Phép (License)
+
+Dự án phát hành theo giấy phép [MIT License](LICENSE). Tự do sử dụng, chỉnh sửa và tích hợp vào mọi dự án thương mại hoặc cá nhân.
