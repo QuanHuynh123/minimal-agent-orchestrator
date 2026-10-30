@@ -24,47 +24,92 @@ function checkLazyGuard(text) {
   return null;
 }
 
-export function isInsideDir(childPath, parentDir) {
-  const rel = path.relative(parentDir, childPath);
-  if (process.platform === 'win32') {
-    return !rel.startsWith('..') && !path.isAbsolute(rel) && !rel.toLowerCase().startsWith('..');
+/**
+ * Normalizes relative path and guards against path traversal, null bytes, absolute paths.
+ * Returns normalized relative path with forward slashes.
+ */
+export function normalizeOrThrow(repoRoot, filePath) {
+  if (!filePath || typeof filePath !== 'string') {
+    throw new Error('File path cannot be empty');
   }
-  return !rel.startsWith('..') && !path.isAbsolute(rel);
+  if (filePath.includes('\0')) {
+    throw new Error(`Null byte in path: ${filePath}`);
+  }
+
+  const cleaned = filePath.replace(/\\/g, '/').trim();
+  if (path.isAbsolute(cleaned) || /^[a-zA-Z]:/.test(cleaned)) {
+    throw new Error(`Absolute paths forbidden: ${filePath}`);
+  }
+
+  const abs = path.resolve(repoRoot, cleaned);
+  const rel = path.relative(repoRoot, abs);
+
+  if (rel === '..' || rel.startsWith('..' + path.sep) || rel.startsWith('../') || path.isAbsolute(rel)) {
+    throw new Error(`Path escapes repository root: ${filePath}`);
+  }
+
+  return rel.split(path.sep).join('/');
 }
 
-export function validateScope(filePath, allowedScope = [], allowedDirs = []) {
-  const absPath = path.resolve(REPO_ROOT, filePath);
-  
-  // Must be inside repo root
-  if (!isInsideDir(absPath, REPO_ROOT)) {
-    return { valid: false, error: `Path "${filePath}" is outside repo boundary: ${REPO_ROOT}` };
-  }
+/**
+ * Case-insensitive glob and wildcard matcher.
+ */
+export function matchesPattern(filePath, pattern) {
+  const normPath = filePath.replace(/\\/g, '/').toLowerCase();
+  const normPat = pattern.replace(/\\/g, '/').toLowerCase();
 
-  // Allowed dirs check
-  if (allowedDirs.length > 0) {
-    const inAllowed = allowedDirs.some(dir => {
-      const absDir = path.resolve(REPO_ROOT, dir);
-      return isInsideDir(absPath, absDir);
-    });
-    if (!inAllowed) {
-      return { valid: false, error: `Path "${filePath}" is not inside allowed_dirs: ${allowedDirs.join(', ')}` };
+  if (normPat.startsWith('**/')) {
+    const sub = normPat.slice(3);
+    if (sub.endsWith('*')) {
+      const prefix = sub.slice(0, -1);
+      return normPath.split('/').some(part => part.startsWith(prefix));
+    }
+    return normPath === sub || normPath.endsWith('/' + sub) || normPath.includes('/' + sub);
+  }
+  if (normPat.endsWith('/**')) {
+    const dir = normPat.slice(0, -3);
+    return normPath === dir || normPath.startsWith(dir + '/');
+  }
+  if (normPat.endsWith('*')) {
+    const prefix = normPat.slice(0, -1);
+    return normPath.startsWith(prefix) || (normPath.split('/').pop() || '').startsWith(prefix);
+  }
+  return normPath === normPat || normPath.endsWith('/' + normPat);
+}
+
+export function checkForbidden(relPath, protectedFiles = [], taskForbidden = []) {
+  const allForbidden = [...(protectedFiles || []), ...(taskForbidden || [])];
+  for (const pat of allForbidden) {
+    if (matchesPattern(relPath, pat)) {
+      return { forbidden: true, pattern: pat };
     }
   }
+  return { forbidden: false };
+}
 
-  // Task scope check
-  if (allowedScope && allowedScope.length > 0) {
-    const inScope = allowedScope.some(scopeItem => {
-      const absScope = path.resolve(REPO_ROOT, scopeItem);
-      // Can be exact file match or within a scoped directory
-      if (absScope.toLowerCase() === absPath.toLowerCase()) return true;
-      return isInsideDir(absPath, absScope);
-    });
-    if (!inScope) {
-      return { valid: false, error: `Path "${filePath}" is outside task.scope: ${allowedScope.join(', ')}` };
+export function checkAllowedDirs(relPath, allowedDirs = []) {
+  if (!allowedDirs || allowedDirs.length === 0) return true;
+  const normPath = relPath.replace(/\\/g, '/').toLowerCase();
+  return allowedDirs.some(dir => {
+    const d = dir.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    return normPath === d || normPath.startsWith(d + '/');
+  });
+}
+
+export function isFileInScope(relPath, taskScope = []) {
+  if (!taskScope || taskScope.length === 0) return false;
+  const normPath = relPath.replace(/\\/g, '/').toLowerCase();
+  return taskScope.some(scopeItem => {
+    const s = scopeItem.replace(/\\/g, '/').toLowerCase();
+    if (s.endsWith('/**')) {
+      const dir = s.slice(0, -3);
+      return normPath === dir || normPath.startsWith(dir + '/');
     }
-  }
-
-  return { valid: true, absPath };
+    if (s.endsWith('/')) {
+      return normPath.startsWith(s);
+    }
+    return normPath === s || normPath.endsWith('/' + s);
+  });
 }
 
 export function parseSearchReplaceBlocks(content) {
@@ -78,7 +123,6 @@ export function parseSearchReplaceBlocks(content) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // File target indicator: e.g. "FILE: path/to/file.ext" or "### File: path/to/file.ext"
     const fileMatch = line.match(/^(?:###\s*)?(?:FILE|File):\s*`?([^\s`]+)`?/i);
     if (fileMatch && state === 'IDLE') {
       currentFile = fileMatch[1].trim();
@@ -117,106 +161,207 @@ export function parseSearchReplaceBlocks(content) {
   return blocks;
 }
 
-export function applyBlocksToFile(filePath, blocks) {
-  const absPath = path.resolve(REPO_ROOT, filePath);
-  let originalRaw = '';
-  let fileExists = fs.existsSync(absPath);
-  let eol = '\n';
+/**
+ * 8-Step Pipeline for Applying Edits:
+ * 1. Parse Search/Replace blocks
+ * 2. Normalize and validate paths
+ * 3. Chặn Symlink / Submodule
+ * 4. Chặn Forbidden files (effective_forbidden) -> no retry
+ * 5. Chặn ngoài project.allowed_dirs
+ * 6. Kiểm tra Scope & Scope expansion giới hạn cộng dồn
+ * 7. Kiểm tra All-or-Nothing (mô phỏng 100% blocks pass trước khi chạm disk)
+ * 8. Atomic Write State
+ */
+export function applyEdits(rawOutput, task = {}, options = {}) {
+  const {
+    allowedDirs = [],
+    protectedFiles = [],
+    maxScopeIncrease = 1,
+    repoRoot = REPO_ROOT
+  } = options;
 
-  if (fileExists) {
-    originalRaw = fs.readFileSync(absPath, 'utf8');
-    if (originalRaw.includes('\r\n')) {
-      eol = '\r\n';
-    }
-  }
+  const taskScope = task.scope || [];
+  const taskForbidden = task.forbidden_files || [];
+  const allowExpansion = Boolean(task.allow_scope_expansion || task.cross_role_edit);
+  const existingExpansions = task.scope_expansions || [];
 
-  // Work with normalized LF for consistent searching
-  let currentContent = originalRaw.replace(/\r\n/g, '\n');
-
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
-    const normSearch = block.search.replace(/\r\n/g, '\n');
-    const normReplace = block.replace.replace(/\r\n/g, '\n');
-
-    const lazyError = checkLazyGuard(normReplace);
-    if (lazyError) {
-      return { ok: false, error: `Block ${i + 1} for ${filePath}: ${lazyError}` };
-    }
-
-    if (!normSearch && !fileExists) {
-      // New file creation block
-      currentContent = normReplace;
-      continue;
-    }
-
-    // Match count check (Opus requirement: exactly 1 match)
-    const firstIdx = currentContent.indexOf(normSearch);
-    if (firstIdx === -1) {
-      return {
-        ok: false,
-        error: `SEARCH block ${i + 1} not found in ${filePath}. Check exact indentation and whitespace.`
-      };
-    }
-
-    const secondIdx = currentContent.indexOf(normSearch, firstIdx + 1);
-    if (secondIdx !== -1) {
-      return {
-        ok: false,
-        error: `SEARCH block ${i + 1} matches multiple times in ${filePath}. Add more surrounding context lines.`
-      };
-    }
-
-    // Perform slice replacement
-    currentContent = currentContent.slice(0, firstIdx) + normReplace + currentContent.slice(firstIdx + normSearch.length);
-  }
-
-  // Restore original EOL
-  if (eol === '\r\n') {
-    currentContent = currentContent.replace(/\n/g, '\r\n');
-  }
-
-  // Atomic write via temp file
-  const tmpPath = `${absPath}.tmp.${Date.now()}`;
-  fs.mkdirSync(path.dirname(absPath), { recursive: true });
-  fs.writeFileSync(tmpPath, currentContent, 'utf8');
-  fs.renameSync(tmpPath, absPath);
-
-  return { ok: true, path: filePath, bytes: Buffer.byteLength(currentContent, 'utf8') };
-}
-
-export function applyEdits(rawOutput, taskScope = [], allowedDirs = [], strictScope = true) {
+  // BƯỚC 1: Parse blocks
   const blocks = parseSearchReplaceBlocks(rawOutput);
   if (blocks.length === 0) {
-    return { ok: false, error: 'No <<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE blocks detected in output.' };
+    return {
+      ok: false,
+      error: 'No <<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE blocks detected in output.'
+    };
   }
 
-  // Group blocks by file
+  // Group blocks by normalized relative path
   const byFile = {};
-  for (const block of blocks) {
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
     if (!block.file) {
-      return { ok: false, error: 'Block encountered without target file specified (e.g. "FILE: path/to/file")' };
+      return {
+        ok: false,
+        error: `Block ${i + 1} encountered without target file header (e.g. "FILE: path/to/file")`
+      };
     }
-    const targetFile = block.file.replace(/\\/g, '/');
-    if (strictScope) {
-      const scopeCheck = validateScope(targetFile, taskScope, allowedDirs);
-      if (!scopeCheck.valid) {
-        return { ok: false, error: scopeCheck.error };
+
+    // BƯỚC 2: Normalize path
+    let relPath;
+    try {
+      relPath = normalizeOrThrow(repoRoot, block.file);
+    } catch (err) {
+      return {
+        ok: false,
+        security: true,
+        noRetry: true,
+        error: `SECURITY: ${err.message}`
+      };
+    }
+
+    // BƯỚC 4: Check Forbidden Files
+    const forbiddenCheck = checkForbidden(relPath, protectedFiles, taskForbidden);
+    if (forbiddenCheck.forbidden) {
+      return {
+        ok: false,
+        security: true,
+        noRetry: true,
+        error: `SECURITY: Forbidden file edit attempted on "${relPath}" (matched pattern: "${forbiddenCheck.pattern}")`
+      };
+    }
+
+    // BƯỚC 5: Check Allowed Dirs
+    if (!checkAllowedDirs(relPath, allowedDirs)) {
+      return {
+        ok: false,
+        error: `Path "${relPath}" is outside project.allowed_dirs: ${allowedDirs.join(', ')}`
+      };
+    }
+
+    if (!byFile[relPath]) byFile[relPath] = [];
+    byFile[relPath].push(block);
+  }
+
+  const modifiedFiles = Object.keys(byFile);
+
+  // BƯỚC 6: Scope & Scope Expansion Check
+  const outOfScopeFiles = modifiedFiles.filter(f => !isFileInScope(f, taskScope));
+  let updatedExpansions = [...existingExpansions];
+
+  if (outOfScopeFiles.length > 0) {
+    if (!allowExpansion) {
+      return {
+        ok: false,
+        error: `Out-of-scope edit attempted on ${outOfScopeFiles.join(', ')}`
+      };
+    }
+
+    // Accumulate unique expansions
+    const combined = Array.from(new Set([...existingExpansions, ...outOfScopeFiles]));
+    if (combined.length > maxScopeIncrease) {
+      return {
+        ok: false,
+        error: `Scope expansion limit exceeded: attempted ${combined.length} files (max allowed: ${maxScopeIncrease}): ${combined.join(', ')}`
+      };
+    }
+    updatedExpansions = combined;
+  }
+
+  // BƯỚC 7: All-or-Nothing In-Memory Simulation
+  const simulatedOutputs = {};
+
+  for (const [relPath, fileBlocks] of Object.entries(byFile)) {
+    const absPath = path.resolve(repoRoot, relPath);
+    let originalRaw = '';
+    const fileExists = fs.existsSync(absPath);
+    let eol = '\n';
+
+    if (fileExists) {
+      // BƯỚC 3: Check symlink
+      try {
+        const stat = fs.lstatSync(absPath);
+        if (stat.isSymbolicLink()) {
+          return {
+            ok: false,
+            security: true,
+            noRetry: true,
+            error: `SECURITY: Symlink target disallowed on "${relPath}"`
+          };
+        }
+      } catch {}
+
+      originalRaw = fs.readFileSync(absPath, 'utf8');
+      if (originalRaw.includes('\r\n')) {
+        eol = '\r\n';
       }
     }
-    if (!byFile[targetFile]) byFile[targetFile] = [];
-    byFile[targetFile].push(block);
-  }
 
-  const results = [];
-  for (const [file, fileBlocks] of Object.entries(byFile)) {
-    const res = applyBlocksToFile(file, fileBlocks);
-    if (!res.ok) {
-      return { ok: false, error: res.error, failedFile: file };
+    let currentContent = originalRaw.replace(/\r\n/g, '\n');
+
+    for (let i = 0; i < fileBlocks.length; i++) {
+      const b = fileBlocks[i];
+      const normSearch = b.search.replace(/\r\n/g, '\n');
+      const normReplace = b.replace.replace(/\r\n/g, '\n');
+
+      const lazyError = checkLazyGuard(normReplace);
+      if (lazyError) {
+        return {
+          ok: false,
+          error: `Block ${i + 1} for "${relPath}": ${lazyError}`
+        };
+      }
+
+      if (!normSearch) {
+        if (fileExists) {
+          return {
+            ok: false,
+            error: `Block ${i + 1} for "${relPath}": Empty SEARCH block is only permitted when creating a new file.`
+          };
+        }
+        currentContent = normReplace;
+        continue;
+      }
+
+      const firstIdx = currentContent.indexOf(normSearch);
+      if (firstIdx === -1) {
+        return {
+          ok: false,
+          error: `SEARCH block ${i + 1} not found in "${relPath}". Check exact indentation and whitespace.`
+        };
+      }
+
+      const secondIdx = currentContent.indexOf(normSearch, firstIdx + 1);
+      if (secondIdx !== -1) {
+        return {
+          ok: false,
+          error: `SEARCH block ${i + 1} matches multiple times in "${relPath}". Add more surrounding context lines.`
+        };
+      }
+
+      currentContent = currentContent.slice(0, firstIdx) + normReplace + currentContent.slice(firstIdx + normSearch.length);
     }
-    results.push(res);
+
+    if (eol === '\r\n') {
+      currentContent = currentContent.replace(/\n/g, '\r\n');
+    }
+
+    simulatedOutputs[relPath] = { absPath, content: currentContent };
   }
 
-  return { ok: true, modified: results };
+  // BƯỚC 8: Atomic Write to Disk (Passes only if 100% simulated successfully)
+  const appliedList = [];
+  for (const [relPath, item] of Object.entries(simulatedOutputs)) {
+    const tmpPath = `${item.absPath}.tmp.${Date.now()}`;
+    fs.mkdirSync(path.dirname(item.absPath), { recursive: true });
+    fs.writeFileSync(tmpPath, item.content, 'utf8');
+    fs.renameSync(tmpPath, item.absPath);
+    appliedList.push(relPath);
+  }
+
+  return {
+    ok: true,
+    modified: appliedList,
+    scope_expansions: updatedExpansions
+  };
 }
 
 // CLI direct execution

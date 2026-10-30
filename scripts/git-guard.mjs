@@ -23,6 +23,19 @@ export function isCleanWorktree() {
   }
 }
 
+export function getModifiedFiles() {
+  try {
+    const raw = execSync('git diff --name-only', execOpts).trim();
+    const untracked = execSync('git ls-files --others --exclude-standard', execOpts).trim();
+    const all = [...raw.split('\n'), ...untracked.split('\n')]
+      .map(s => s.trim().replace(/\\/g, '/'))
+      .filter(Boolean);
+    return Array.from(new Set(all));
+  } catch {
+    return [];
+  }
+}
+
 export function snapshot() {
   try {
     const head = execSync('git rev-parse HEAD', execOpts).trim();
