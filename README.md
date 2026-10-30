@@ -1,4 +1,4 @@
-# 🤖 Minimal Agent Orchestration Standard (v2.0 Blueprint)
+# 🤖 Minimal Agent Orchestration Standard (v2.1 Architecture)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node: >=18](https://img.shields.io/badge/Node->=18.0.0-green.svg)](https://nodejs.org/)
@@ -12,14 +12,15 @@
 ---
 
 ## 📖 Mục Lục
-- [1. Vấn Đề & Giải Pháp](#1-vấn-đề--giải-pháp)
-- [2. Kiến Trúc Luồng Hoạt Động](#2-kiến-trúc-luồng-hoạt-động)
-- [3. Cấu Trúc Thư Mục](#3-cấu-trúc-thư-mục)
-- [4. Đội Hình Squad & Phân Vai](#4-đội-hình-squad--phân-vai)
-- [5. Hướng Dẫn Sử Dụng Nhanh (Quickstart)](#5-hướng-dẫn-sử-dụng-nhanh-quickstart)
-- [6. Cấu Hình Dự Án](#6-cấu-hình-dự-án)
-- [7. Bản Đặc Tả Kỹ Thuật Chi Tiết](#7-bản-đặc-tả-kỹ-thuật-chi-tiết)
-- [8. Giấy Phép (License)](#8-giấy-phép-license)
+- [1. Triết Lý Thiết Kế & Nguyên Tắc Vận Hành](PHILOSOPHY.md)
+- [2. Vấn Đề & Giải Pháp](#1-vấn-đề--giải-pháp)
+- [3. Kiến Trúc Luồng Hoạt Động](#2-kiến-trúc-luồng-hoạt-động)
+- [4. Cấu Trúc Thư Mục](#3-cấu-trúc-thư-mục)
+- [5. Đội Hình Squad & Phân Vai](#4-đội-hình-squad--phân-vai)
+- [6. Hướng Dẫn Sử Dụng Nhanh (Quickstart)](#5-hướng-dẫn-sử-dụng-nhanh-quickstart)
+- [7. Cấu Hình Dự Án](#6-cấu-hình-dự-án)
+- [8. Đặc Tả Kỹ Thuật (v2.1 Addendum)](OPERATIONAL_SPEC_V2.1.md)
+- [9. Giấy Phép (License)](#8-giấy-phép-license)
 
 ---
 
