@@ -1,0 +1,49 @@
+team:
+  name: "hybrid-agent-squad"
+  version: "2.0"
+  single_writer_lock: true
+
+# Định nghĩa các cổng kết nối (Providers)
+providers:
+  local_9router:
+    base_url: "http://127.0.0.1:20128/v1"
+    api_key_env: "NINE_ROUTER_API_KEY"
+    default_key: "sk-default"
+  ide_bridge:
+    type: "mcp_loopback"
+    timeout_sec: 120
+
+# Cấu hình chi tiết từng Role và Model phụ trách
+roles:
+  router:
+    enabled: true
+    provider: "local_9router"
+    model: "kr/claude-sonnet-4.5-thinking"
+    fallback_model: "claude-sonnet-4.5"
+    temperature: 0.2
+    allowed_actions: ["analyze", "plan", "triage"]
+    forbidden_actions: ["direct_write", "modify_config"]
+
+  writer:
+    enabled: true
+    provider: "local_9router"
+    model: "Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017"
+    fallback_model: "deepseek-ai/deepseek-v4.1"
+    temperature: 0.1
+    output_format: "search_replace_blocks"
+    allowed_actions: ["read_scoped_files", "propose_patch"]
+    forbidden_actions: ["out_of_scope_edit", "unapproved_dependency"]
+
+  reviewer:
+    enabled: true
+    provider: "local_9router"
+    model: "ag/claude-opus-5-5-high"
+    fallback_model: "claude-opus-5-5-high"
+    temperature: 0.1
+    allowed_actions: ["review_diff", "approve", "reject"]
+    forbidden_actions: ["direct_write"]
+
+  validator:
+    enabled: true
+    type: "deterministic_script" # Chạy bằng code thuần, tốn 0 token
+    script: "scripts/validator.mjs"

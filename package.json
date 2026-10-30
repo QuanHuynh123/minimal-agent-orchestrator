@@ -1,0 +1,14 @@
+{
+  "name": "agent-team-orchestrator",
+  "version": "2.0.0",
+  "description": "Minimal Agent Orchestration Standard (v2.0 Blueprint) Engine",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/orchestrator.mjs",
+    "validate": "node scripts/validator.mjs",
+    "git-guard": "node scripts/git-guard.mjs"
+  },
+  "dependencies": {
+    "yaml": "^2.6.1"
+  }
+}

@@ -1,0 +1,24 @@
+policy:
+  scope_control:
+    max_files_per_task: 5
+    max_scope_increase: 1
+    allow_new_files: true
+    strict_scope_enforcement: true # Applier sẽ từ chối nếu Writer sửa file ngoài task.scope
+
+  approval_gates:
+    plan_approval_mode: "auto_if_small" # Tự duyệt nếu số file trong scope <= 3
+    small_task_threshold_files: 3
+    require_code_review: true
+
+  retry_and_escalation:
+    max_retries_per_task: 3
+    abort_on_identical_error_count: 2 # Ngắt ngay nếu kẹt đúng 1 lỗi 2 lần liên tiếp
+    on_exhausted: "mark_blocked_and_continue" # Không làm treo các task phía sau
+    token_budget_per_task: 150000 # Trần token bảo vệ chi phí per task (Opus feedback)
+    night_token_budget_total: 3000000
+
+  git_hygiene:
+    require_clean_worktree_before_start: true
+    rollback_on_validation_fail: true # Tự động checkout hoàn trả bản sạch khi fail
+    auto_commit_on_done: true
+    commit_message_prefix: "[AI-Task]"

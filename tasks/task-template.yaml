@@ -1,0 +1,19 @@
+task_id: "T-2026-10-30-001"
+project_id: "tool-download-stable"
+title: "Mô tả ngắn gọn tiêu đề task"
+status: "draft"
+owner: "router"
+goal: "Mục tiêu cụ thể cần đạt được của task"
+scope:
+  - "tests/test_sample.py"
+constraints:
+  - "100% TAB indentation"
+  - "Không phá vỡ các unit tests hiện có"
+acceptance_criteria:
+  - "Tất cả test case mới và cũ đều PASS 100%"
+retries: 0
+error_history: []
+validation_result: null
+review_result: null
+created_at: "2026-10-30T20:00:00Z"
+updated_at: "2026-10-30T20:00:00Z"

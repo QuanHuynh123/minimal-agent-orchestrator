@@ -1,0 +1,11 @@
+task:
+  id: "T-2026-10-30-001"
+  title: "Verify agent team orchestration standard"
+  goal: "Execute a full dry-run check of the Minimal Agent Orchestration pipeline"
+  priority: 10
+  scope:
+    - "agent-team/README.md"
+  constraints:
+    - "Do not touch files outside agent-team"
+    - "Preserve all existing comments"
+  created_at: "2026-10-30T20:25:00Z"
