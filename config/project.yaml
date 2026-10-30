@@ -15,8 +15,13 @@ project:
   
   # Các file nhạy cảm tuyệt đối cấm AI tự sửa
   protected_files:
-    - ".env"
+    - "**/.env*"
+    - "package.json"
+    - "package-lock.json"
     - "requirements.txt"
+    - "agent-team/scripts/**"
+    - "agent-team/config/**"
+    - ".github/workflows/**"
 
   # Chuỗi lệnh kiểm tra bắt buộc (Chạy tuần tự, 0 Token)
   validation:
