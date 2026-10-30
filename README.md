@@ -4,7 +4,7 @@
 [![Node: >=18](https://img.shields.io/badge/Node->=18.0.0-green.svg)](https://nodejs.org/)
 [![Architecture: Multi--Agent](https://img.shields.io/badge/Architecture-Hybrid%20Squad-orange.svg)](#)
 [![Zero--Token: Applier%20&%20Validator](https://img.shields.io/badge/Tools-0--Token%20Deterministic-brightgreen.svg)](#)
-[![Tech Lead Review: APPROVED](https://img.shields.io/badge/Claude%20Opus-APPROVED-purple.svg)](#)
+[![Peer Review: APPROVED](https://img.shields.io/badge/Architecture-Peer%20Reviewed-purple.svg)](#)
 
 > **Bộ khung điều phối đội ngũ Đa Agent (Multi-Agent Squad) cắm-là-chạy (Plug-and-Play) dành cho mọi dự án phần mềm.**  
 > Chạy xuyên suốt qua đêm, tự động sửa lỗi, kiểm tra an toàn mã nguồn, rollback khi test fail và báo cáo tổng kết buổi sáng — **tối ưu chi phí và không lãng phí token**.
@@ -87,16 +87,22 @@ agent-team/
 
 ---
 
-## 4. Đội Hình Squad & Phân Vai
+## 4. Phân Vai Đội Ngũ (Model Agnostic Architecture)
 
-1. **Strategic Tech Lead & Architect — Claude Opus (`ag/claude-opus-5-5-high`)**
-   - Phê duyệt kiến trúc, thẩm định các thay đổi phức tạp và rà soát chất lượng.
-2. **Senior UI/UX Designer & Planner — Claude Sonnet (`kr/claude-sonnet-4.5-thinking`)**
-   - Định hình giao diện, thiết kế trải nghiệm người dùng, phân tích spec thành các task con rõ ràng.
-3. **Core Backend Engineer — DeepSeek Cá Voi (`deepseek-ai/deepseek-v4.1-flash-1017`)**
-   - Cỗ máy sinh code thần tốc, chi phí siêu rẻ, trả về chuẩn block `SEARCH/REPLACE` chính xác từng dòng.
-4. **Squad Coordinator & Automated Gatekeeper — Gemini Coordinator**
-   - Giữ nhịp điều phối, kiểm soát thụt lề TAB 100%, bảo đảm 100% test cases pass trước khi chuyển giao.
+Bộ khung được thiết kế theo kiến trúc **Model-Agnostic** (linh hoạt hoán đổi bất kỳ LLM nào thông qua cổng OpenAI-compatible như 9Router, Ollama, OpenRouter, vLLM):
+
+1. **Strategic Tech Lead & Architect (Tier-1 Reasoning Engine)**
+   - *Model khuyến nghị:* Claude Opus / Claude 3.7 / GPT-4o
+   - *Nhiệm vụ:* Thẩm định kiến trúc, phê duyệt kế hoạch (Plan Approval), phân tích các ca edge-case phức tạp và review diff.
+2. **Senior UI/UX Designer & Planner (Context & Creative Engine)**
+   - *Model khuyến nghị:* Claude Sonnet / Gemini 1.5 Pro
+   - *Nhiệm vụ:* Bóc tách yêu cầu người dùng thành các task nhỏ, định hình thẩm mỹ giao diện và khoanh vùng `task.scope`.
+3. **Core Backend Engineer (High-Throughput Coding Engine)**
+   - *Model khuyến nghị:* DeepSeek V3 / DeepSeek V4 / Qwen 2.5 Coder
+   - *Nhiệm vụ:* Cỗ máy sinh code tốc độ cao, chi phí cực thấp, chỉ tập trung xuất khối `SEARCH/REPLACE` chuẩn xác từng dòng.
+4. **Squad Coordinator & Automated Gatekeeper (Deterministic Runner)**
+   - *Thành phần:* Antigravity Agent / Local Node.js Engine
+   - *Nhiệm vụ:* Giữ nhịp điều phối, kiểm soát chuẩn thụt lề (TAB/Space), ép chạy kiểm thử tự động 100% trước khi commit.
 
 ---
 
