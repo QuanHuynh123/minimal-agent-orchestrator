@@ -11,7 +11,20 @@
 
 ---
 
+## 👋 Mới tải về? Bắt đầu trong 10 giây (Không cần tự gõ YAML!)
+
+Bạn **không cần** tự mở file cấu hình hay tự viết file task `.yaml` bằng tay. Sau khi clone thư mục `agent-team` vào dự án của bạn (`git clone https://github.com/QuanHuynh123/minimal-agent-orchestrator.git agent-team && cd agent-team && npm install`), hãy mở khung chat của **AI Agent bạn đang dùng (Cline, Antigravity, Cursor, Claude Code, Windsurf...)** và gửi đúng 1 câu này:
+
+```text
+Hãy đọc file agent-team/ONBOARDING.md, khảo sát dự án hiện tại của tôi và tự động cấu hình agent-team phù hợp với máy của tôi.
+```
+
+Con AI trên IDE của bạn sẽ đọc **[`ONBOARDING.md`](ONBOARDING.md)**, tự nhận diện ngôn ngữ/thư mục của dự án, tự điền `config/project.yaml`, tự chạy kiểm định và từ đó tự động điền file task mỗi khi bạn giao việc bằng ngôn ngữ tự nhiên!
+
+---
+
 ## 📖 Mục Lục
+- [0. Hướng Dẫn Khởi Tạo Tự Động Cho AI Agent (`ONBOARDING.md`)](ONBOARDING.md)
 - [1. Triết Lý Thiết Kế & Nguyên Tắc Vận Hành](PHILOSOPHY.md)
 - [2. Vấn Đề & Giải Pháp](#1-vấn-đề--giải-pháp)
 - [3. Kiến Trúc Phân Làn (Mode-Based Architecture)](#2-kiến-trúc-phân-làn-mode-based-architecture)
@@ -70,6 +83,7 @@ flowchart TD
 
 ```text
 agent-team/
+├── ONBOARDING.md              # Playbook khởi tạo & vận hành tự động dành cho AI Agent đọc
 ├── .gitattributes             # Chuẩn hóa EOL (LF) chống diff ảo đa nền tảng
 ├── .gitignore                 # Bỏ qua node_modules và file lock
 ├── package.json               # Script vận hành và phụ thuộc tối giản (yaml)
@@ -124,16 +138,21 @@ Bộ khung tương thích với mọi cổng LLM chuẩn OpenAI-compatible (`9Ro
 
 ## 5. Hướng Dẫn Sử Dụng Nhanh (Quickstart)
 
-### Bước 1: Tích hợp vào dự án
-Đặt thư mục `agent-team/` (hoặc clone repo này) vào dự án của bạn:
-```bash
-git clone https://github.com/QuanHuynh123/minimal-agent-orchestrator.git agent-team
-cd agent-team
-npm install
-npm test
-```
+### Cách 1 (Khuyến nghị): Giao toàn bộ việc cấu hình cho AI Agent trên IDE
+1. Clone `agent-team` vào thư mục gốc dự án của bạn và cài đặt:
+   ```bash
+   git clone https://github.com/QuanHuynh123/minimal-agent-orchestrator.git agent-team
+   cd agent-team && npm install
+   ```
+2. Mở khung chat của **Cline / Antigravity / Cursor / Claude Code** và nhắn:
+   > *"Hãy đọc file `agent-team/ONBOARDING.md`, khảo sát dự án hiện tại của tôi và tự động cấu hình `agent-team` phù hợp với máy của tôi."*
+3. Từ lúc đó, bạn chỉ cần giao việc trong khung chat (AI sẽ tự điền `config/project.yaml`, tự tạo file task trong `tasks/active/` hoặc tự chạy `validator.mjs` kiểm toán).
 
-### Bước 2: Cấu hình `config/project.yaml`
+---
+
+### Cách 2: Cấu hình Thủ công (Dành cho CI/CD hoặc Kỹ sư muốn tự tùy chỉnh)
+
+#### Bước 1: Cấu hình `config/project.yaml`
 Khai báo đường dẫn gốc dự án (`repo_root`), danh sách thư mục cho phép và lệnh kiểm thử 0-token:
 ```yaml
 project:
