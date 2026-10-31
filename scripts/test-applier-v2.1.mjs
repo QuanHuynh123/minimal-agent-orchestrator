@@ -8,20 +8,28 @@ import {
   computeDeterministicRisk,
   isFileInScope,
   matchesPattern,
-  normalizeOrThrow
+  normalizeOrThrow,
+  resolveRepoRoot
 } from './applier.mjs';
 import {
   acquireLock,
   buildScopedFilesContext,
+  extractTaskKeywords,
   normalizeTask,
   releaseLock,
-  resolveTaskMode
+  resolveTaskMode,
+  sliceContentByKeywords
 } from './orchestrator.mjs';
-import { hashString, normalizeErrorForHash } from './validator.mjs';
+import {
+  auditGitScope,
+  checkCommandGuardrails,
+  hashString,
+  normalizeErrorForHash
+} from './validator.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
+const REPO_ROOT = resolveRepoRoot();
 
 console.log('Testing Applier & Orchestrator v2.1 Mode-Based Pipeline...');
 
@@ -71,7 +79,7 @@ assert.match(outOfScopeRes.error, /Out-of-scope edit attempted/);
 console.log('✓ Strict scope rejection & exact path matching passed');
 
 // Test 5: Scope Expansion with limit & High-Risk Escalation Block
-const expansionOkRes = applyEdits('### FILE: core/unknown.py\n<<<<<<< SEARCH\nfoo\n=======\nbar\n>>>>>>> REPLACE', {
+const expansionOkRes = applyEdits('### FILE: core/downloader.py\n<<<<<<< SEARCH\nnonexistent_line_xyz\n=======\nbar\n>>>>>>> REPLACE', {
   scope: ['core/downloader.py'],
   allow_scope_expansion: true,
   scope_expansions: []
@@ -81,6 +89,28 @@ const expansionOkRes = applyEdits('### FILE: core/unknown.py\n<<<<<<< SEARCH\nfo
 });
 // Fails because SEARCH block not found on disk, but passed scope check!
 assert.match(expansionOkRes.error, /SEARCH block 1 not found/);
+
+const newFileOutScopeRes = applyEdits('### FILE: core/brand_new_unscoped.py\n<<<<<<< SEARCH\n\n=======\nprint(1)\n>>>>>>> REPLACE', {
+  scope: ['core/downloader.py'],
+  allow_scope_expansion: true,
+  scope_expansions: []
+}, {
+  allowedDirs: ['core/'],
+  maxScopeIncrease: 1,
+  newFilesOnlyInScope: true
+});
+assert.strictEqual(newFileOutScopeRes.ok, false);
+assert.match(newFileOutScopeRes.error, /new_files_only_in_scope/);
+
+const disallowNewFileRes = applyEdits('### FILE: core/brand_new_scoped.py\n<<<<<<< SEARCH\n\n=======\nprint(1)\n>>>>>>> REPLACE', {
+  scope: ['core/brand_new_scoped.py'],
+  allow_scope_expansion: false
+}, {
+  allowedDirs: ['core/'],
+  allowNewFiles: false
+});
+assert.strictEqual(disallowNewFileRes.ok, false);
+assert.match(disallowNewFileRes.error, /allow_new_files: false/);
 
 const highRiskExpansionRes = applyEdits('### FILE: core/auth_secret.py\n<<<<<<< SEARCH\nfoo\n=======\nbar\n>>>>>>> REPLACE', {
   scope: ['core/downloader.py'],
@@ -94,7 +124,7 @@ assert.strictEqual(highRiskExpansionRes.ok, false);
 assert.strictEqual(highRiskExpansionRes.security, true);
 assert.strictEqual(highRiskExpansionRes.noRetry, true);
 assert.match(highRiskExpansionRes.error, /high-risk sensitive path is forbidden/);
-console.log('✓ Scope expansion limit & high-risk escalation block passed');
+console.log('✓ Scope expansion limit, new_files_only_in_scope & high-risk escalation block passed');
 
 // Test 6: Task Schema Normalization (task_id vs task.id) & Mode Resolution
 const legacyTask = normalizeTask({ task: { id: 'T-001', scope: ['core/a.py'] } });
@@ -121,6 +151,53 @@ const ctx = buildScopedFilesContext(['agent-team/package.json', 'agent-team/none
 assert.match(ctx, /EXISTING CONTENT/);
 assert.match(ctx, /NEW FILE - DOES NOT EXIST ON DISK YET/);
 console.log('✓ Stale lock recovery & Writer file context injection passed');
+
+// Test 9: Smart Context-Aware File Loading (Keyword Extraction & Window Slicing)
+const kw = extractTaskKeywords({
+  title: 'Update start_video_analysis in JsApi',
+  goal: 'Ensure start_video_analysis emits analysis_completed on EventBus',
+  acceptance_criteria: ['validate_publish_draft returns ok']
+});
+assert.ok(kw.includes('start_video_analysis'));
+assert.ok(kw.includes('analysis_completed'));
+assert.ok(kw.includes('validate_publish_draft'));
+
+const bigLines = Array.from({ length: 600 }, (_, idx) => `line_${idx + 1}: noop();`);
+bigLines[350] = 'def start_video_analysis(self, payload): return True';
+const slicedText = sliceContentByKeywords(bigLines.join('\n'), ['start_video_analysis'], 50000, 20);
+assert.match(slicedText, /def start_video_analysis/);
+assert.match(slicedText, /OMITTED LINES/);
+console.log('✓ Context-aware keyword extraction & smart window slicing passed');
+
+// Test 10: Command Guardrails (HR-1 Unbounded & HR-2 Bare curl alias) & IDE Scope Audit Gate
+const unboundedCheck = checkCommandGuardrails('python test.py', 0, { ban_unbounded_commands: true });
+assert.strictEqual(unboundedCheck.ok, false);
+assert.match(unboundedCheck.error, /Unbounded command/);
+
+if (process.platform === 'win32') {
+  const bareCurlCheck = checkCommandGuardrails('curl http://127.0.0.1:20128/v1/models', 5000, { block_powershell_curl_alias: true });
+  assert.strictEqual(bareCurlCheck.ok, false);
+  assert.match(bareCurlCheck.error, /Bare PowerShell 'curl' alias is forbidden/);
+
+  const curlExeCheck = checkCommandGuardrails('curl.exe --max-time 5 http://127.0.0.1:20128/v1/models', 5000, { block_powershell_curl_alias: true });
+  assert.strictEqual(curlExeCheck.ok, true);
+}
+
+const auditPass = auditGitScope(['core/downloader.py'], {
+  modifiedFiles: ['core/downloader.py'],
+  allowedDirs: ['core/'],
+  protectedFiles: ['**/.env*']
+});
+assert.strictEqual(auditPass.ok, true);
+
+const auditFail = auditGitScope(['core/downloader.py'], {
+  modifiedFiles: ['core/downloader.py', 'ui/main_window.py'],
+  allowedDirs: ['core/', 'ui/'],
+  protectedFiles: ['**/.env*']
+});
+assert.strictEqual(auditFail.ok, false);
+assert.match(auditFail.violations[0], /Out-of-scope file modified/);
+console.log('✓ Execution guardrails (HR-1/HR-2) & IDE Git Scope Audit Gate passed');
 
 console.log('\n=============================================');
 console.log('ALL V2.1 APPLIER & ORCHESTRATOR TESTS PASSED! 🎯');

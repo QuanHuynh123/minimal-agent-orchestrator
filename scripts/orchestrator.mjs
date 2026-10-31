@@ -9,7 +9,8 @@ import {
   checkAllowedDirs,
   checkForbidden,
   computeDeterministicRisk,
-  normalizeOrThrow
+  normalizeOrThrow,
+  resolveRepoRoot
 } from './applier.mjs';
 import {
   commitDone,
@@ -24,15 +25,12 @@ import { hashString, validateFast, validateSuite } from './validator.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEAM_DIR = path.resolve(__dirname, '..');
-const REPO_ROOT = path.resolve(TEAM_DIR, '..');
 
 const LOCK_FILE = path.resolve(TEAM_DIR, '.orchestrator.lock');
 const STATE_FILE = path.resolve(TEAM_DIR, 'state', 'task-state.json');
 const REPORT_FILE = path.resolve(TEAM_DIR, 'state', 'morning-report.md');
 const ACTIVE_TASKS_DIR = path.resolve(TEAM_DIR, 'tasks', 'active');
 const ARCHIVE_TASKS_DIR = path.resolve(TEAM_DIR, 'tasks', 'archive');
-
-const MAX_CONTEXT_BYTES_PER_FILE = 64 * 1024;
 
 // 1. Lock File Management (with Stale PID Recovery)
 export function isProcessAlive(pid) {
@@ -135,6 +133,7 @@ function loadYaml(filePath) {
 const teamConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'team.yaml')) || {};
 const projectConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'project.yaml')) || {};
 const policyConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'policy.yaml')) || {};
+const REPO_ROOT = resolveRepoRoot(projectConfig);
 
 // Helpers for v2.1 Policy, Mode Selection & Security
 export function computeScopeHash(scope = []) {
@@ -163,11 +162,154 @@ function sanitizeGoal(str = '') {
 }
 
 /**
- * Reads existing files in task.scope so the stateless Writer model has exact lines for SEARCH blocks.
+ * Extracts technical identifiers/symbols from task goal, acceptance_criteria, and last_error
+ * to drive smart context window slicing on large files.
  */
-export function buildScopedFilesContext(scope = [], repoRoot = REPO_ROOT) {
-  const sections = [];
+export function extractTaskKeywords(task = {}) {
+  const corpus = [
+    task.title || '',
+    task.goal || '',
+    ...(task.acceptance_criteria || []),
+    task.last_error || ''
+  ].join(' ');
+
+  const stopWords = new Set([
+    'the', 'and', 'for', 'with', 'that', 'this', 'from', 'into', 'when', 'true', 'false', 'null', 'none',
+    'file', 'files', 'code', 'test', 'tests', 'task', 'pass', 'must', 'should', 'return', 'returns',
+    'trong', 'cua', 'cho', 'voi', 'cac', 'khi', 'neu', 'phai', 'duoc', 'khong', 'thanh', 'cong', 'kiem', 'tra'
+  ]);
+
+  const matches = corpus.match(/[A-Za-z_][A-Za-z0-9_.-]{2,}/g) || [];
+  const unique = [];
+  const seen = new Set();
+
+  for (const m of matches) {
+    const clean = m.replace(/^[.-]+|[.-]+$/g, '');
+    const lower = clean.toLowerCase();
+    if (clean.length < 3 || stopWords.has(lower)) continue;
+    // Prioritize snake_case, camelCase, dot.paths, or identifiers >= 4 chars
+    if (clean.includes('_') || clean.includes('-') || clean.includes('.') || /[a-z][A-Z]/.test(clean) || clean.length >= 4) {
+      if (!seen.has(lower)) {
+        seen.add(lower);
+        unique.push(clean);
+      }
+    }
+  }
+  return unique.slice(0, 25);
+}
+
+/**
+ * Slices a large file around lines matching task keywords (+/- windowLines),
+ * merging overlapping windows and preserving exact lines for SEARCH/REPLACE blocks.
+ */
+export function sliceContentByKeywords(rawContent, keywords = [], maxBytes = 120000, windowLines = 80) {
+  const lines = rawContent.split(/\r?\n/);
+  const totalLines = lines.length;
+  if (totalLines <= windowLines * 2 + 60) {
+    return rawContent;
+  }
+
+  const ranges = [];
+  // Always keep top header/imports (first 50 lines)
+  ranges.push([0, Math.min(50, totalLines - 1)]);
+
+  const lowerKeywords = keywords.map(k => k.toLowerCase());
+  if (lowerKeywords.length > 0) {
+    for (let i = 0; i < totalLines; i++) {
+      const lineLower = lines[i].toLowerCase();
+      if (lowerKeywords.some(k => lineLower.includes(k))) {
+        const start = Math.max(0, i - windowLines);
+        const end = Math.min(totalLines - 1, i + windowLines);
+        ranges.push([start, end]);
+      }
+    }
+  }
+
+  // Always include tail of file (last 35 lines) for appending new functions/exports
+  ranges.push([Math.max(0, totalLines - 35), totalLines - 1]);
+
+  // Sort and merge overlapping ranges
+  ranges.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const r of ranges) {
+    if (merged.length === 0 || r[0] > merged[merged.length - 1][1] + 1) {
+      merged.push([...r]);
+    } else {
+      merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], r[1]);
+    }
+  }
+
+  const chunks = [];
+  let usedBytes = 0;
+  for (let idx = 0; idx < merged.length; idx++) {
+    const [start, end] = merged[idx];
+    if (idx > 0) {
+      const prevEnd = merged[idx - 1][1];
+      chunks.push(`\n/* ... [OMITTED LINES ${prevEnd + 2}..${start} — DO NOT INCLUDE THIS COMMENT IN SEARCH BLOCKS] ... */\n`);
+    }
+    const segment = lines.slice(start, end + 1).join('\n');
+    const segBytes = Buffer.byteLength(segment, 'utf8');
+    if (usedBytes + segBytes > maxBytes && idx > 0) {
+      const remaining = Math.max(4096, maxBytes - usedBytes);
+      chunks.push(segment.slice(0, remaining));
+      chunks.push(`\n/* ... [CONTEXT BUDGET REACHED AT ${maxBytes} BYTES] ... */`);
+      break;
+    }
+    chunks.push(segment);
+    usedBytes += segBytes;
+  }
+
+  return chunks.join('\n');
+}
+
+function expandScopeItem(repoRoot, rawFile, maxFiles = 5) {
+  const relPath = normalizeOrThrow(repoRoot, rawFile);
+  const absPath = path.resolve(repoRoot, relPath);
+  if (fs.existsSync(absPath) && fs.statSync(absPath).isDirectory()) {
+    const entries = fs.readdirSync(absPath, { withFileTypes: true })
+      .filter(e => e.isFile() && !e.name.startsWith('.'))
+      .slice(0, maxFiles)
+      .map(e => `${relPath.replace(/\/+$/, '')}/${e.name}`);
+    return entries.length > 0 ? entries : [relPath];
+  }
+  return [relPath];
+}
+
+/**
+ * Context-Aware File Loader:
+ * - Scales byte budget from token_budget_per_task instead of a rigid 64KB cap.
+ * - Sends files 100% intact when within budget.
+ * - Uses symbol/keyword window slicing (+/- 80 lines) when a file exceeds budget.
+ */
+export function buildScopedFilesContext(scope = [], repoRoot = REPO_ROOT, task = {}, options = {}) {
+  const tokenBudget = options.tokenBudgetPerTask
+    || policyConfig.policy?.retry_and_escalation?.token_budget_per_task
+    || 150000;
+  const maxFiles = options.maxFilesPerTask
+    || policyConfig.policy?.scope_control?.max_files_per_task
+    || 5;
+
+  // Allocate ~45% of token budget to file context (~3.2 chars/token), clamped between 120KB and 320KB
+  const totalContextBudgetBytes = Math.min(Math.max(Math.floor(tokenBudget * 3.2 * 0.45), 120 * 1024), 320 * 1024);
+  const expandedFiles = [];
   for (const rawFile of scope) {
+    try {
+      for (const f of expandScopeItem(repoRoot, rawFile, maxFiles)) {
+        if (!expandedFiles.includes(f)) expandedFiles.push(f);
+      }
+    } catch {
+      expandedFiles.push(rawFile);
+    }
+  }
+
+  const perFileBudgetBytes = Math.max(
+    96 * 1024,
+    Math.floor(totalContextBudgetBytes / Math.max(1, expandedFiles.length))
+  );
+  const keywords = extractTaskKeywords(task);
+  const sections = [];
+
+  for (const rawFile of expandedFiles) {
     try {
       const relPath = normalizeOrThrow(repoRoot, rawFile);
       const absPath = path.resolve(repoRoot, relPath);
@@ -181,9 +323,10 @@ export function buildScopedFilesContext(scope = [], repoRoot = REPO_ROOT) {
         continue;
       }
       const rawContent = fs.readFileSync(absPath, 'utf8');
-      if (Buffer.byteLength(rawContent, 'utf8') > MAX_CONTEXT_BYTES_PER_FILE) {
-        const sliced = rawContent.slice(0, MAX_CONTEXT_BYTES_PER_FILE);
-        sections.push(`=== FILE: ${relPath} (TRUNCATED TO 64KB) ===\n${sliced}\n... [FILE TRUNCATED AT 64KB]`);
+      const byteLen = Buffer.byteLength(rawContent, 'utf8');
+      if (byteLen > perFileBudgetBytes) {
+        const sliced = sliceContentByKeywords(rawContent, keywords, perFileBudgetBytes, 80);
+        sections.push(`=== FILE: ${relPath} (SMART CONTEXT WINDOW — RELEVANT SECTIONS FOR KEYWORDS: ${keywords.slice(0, 8).join(', ') || 'head/tail'}) ===\n${sliced}`);
       } else {
         sections.push(`=== FILE: ${relPath} (EXISTING CONTENT) ===\n${rawContent}`);
       }
@@ -194,8 +337,35 @@ export function buildScopedFilesContext(scope = [], repoRoot = REPO_ROOT) {
   return sections.join('\n\n');
 }
 
-// 4. Local 9Router API Helper (Bounded with AbortSignal.timeout & Fallback Model)
-async function call9Router(model, systemPrompt, userMessage, maxTokens = 4096, fallbackModel = null) {
+// 4. Pre-flight Healthcheck (HR-6) & Local 9Router API Helper
+export async function check9RouterHealth(teamCfg = teamConfig, policyCfg = policyConfig) {
+  const baseUrl = teamCfg.providers?.local_9router?.base_url || 'http://127.0.0.1:20128/v1';
+  const apiKey = process.env.NINE_ROUTER_API_KEY || teamCfg.providers?.local_9router?.default_key || 'sk-default';
+  const guardrails = policyCfg.policy?.execution_guardrails || {};
+  const timeoutSec = Math.min(
+    guardrails.healthcheck_timeout_sec || 15,
+    guardrails.network_max_time_sec || 15
+  );
+
+  try {
+    const res = await fetch(`${baseUrl}/models`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(timeoutSec * 1000)
+    });
+    if (res.ok || res.status === 401 || res.status === 404) {
+      return { ok: true, status: res.status };
+    }
+    return { ok: false, error: `9Router healthcheck returned HTTP ${res.status}` };
+  } catch (err) {
+    return {
+      ok: false,
+      error: `9Router unreachable at ${baseUrl} (timeout ${timeoutSec}s): ${err.message}`
+    };
+  }
+}
+
+async function call9Router(model, systemPrompt, userMessage, maxTokens = 4096, fallbackModel = null, temperature = 0.1) {
   const baseUrl = teamConfig.providers?.local_9router?.base_url || 'http://127.0.0.1:20128/v1';
   const apiKey = process.env.NINE_ROUTER_API_KEY || teamConfig.providers?.local_9router?.default_key || 'sk-default';
   const timeoutSec = policyConfig.policy?.execution_guardrails?.default_cli_timeout_sec
@@ -221,7 +391,7 @@ async function call9Router(model, systemPrompt, userMessage, maxTokens = 4096, f
             { role: 'user', content: userMessage }
           ],
           max_tokens: maxTokens,
-          temperature: 0.1
+          temperature
         }),
         signal: AbortSignal.timeout(timeoutMs)
       });
@@ -244,6 +414,50 @@ async function call9Router(model, systemPrompt, userMessage, maxTokens = 4096, f
   return { ok: false, error: lastError };
 }
 
+// 4b. Router Planner (Populates scope & acceptance_criteria when task is in 'draft' status)
+async function runRouterPlanner(task) {
+  const routerRole = teamConfig.roles?.router || {};
+  if (routerRole.enabled === false) {
+    return { ok: false, error: 'Router role is disabled in team.yaml' };
+  }
+
+  const routerModel = routerRole.model || 'kr/claude-sonnet-4.5-thinking';
+  const routerFallback = routerRole.fallback_model || null;
+  const routerTemp = routerRole.temperature ?? 0.2;
+  const routerSystemPrompt = fs.existsSync(path.resolve(TEAM_DIR, 'roles', 'router.md'))
+    ? fs.readFileSync(path.resolve(TEAM_DIR, 'roles', 'router.md'), 'utf8')
+    : 'Analyze the goal and return JSON { "plan": [], "scope": [], "acceptance_criteria": [] }.';
+
+  const allowedDirs = projectConfig.project?.allowed_dirs || [];
+  const prompt = [
+    `TASK ID: ${task.task_id}`,
+    `TITLE: ${task.title || ''}`,
+    `GOAL: ${task.goal || task.title || ''}`,
+    `ALLOWED DIRECTORIES: ${allowedDirs.join(', ')}`,
+    `Return strict JSON with keys: plan, scope, acceptance_criteria.`
+  ].join('\n\n');
+
+  const res = await call9Router(routerModel, routerSystemPrompt, prompt, 2048, routerFallback, routerTemp);
+  if (!res.ok) {
+    return { ok: false, error: `Router API error: ${res.error}`, usage: { prompt_tokens: 0, completion_tokens: 0 } };
+  }
+
+  try {
+    const jsonMatch = res.content.match(/\{[\s\S]*\}/);
+    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(res.content);
+    return {
+      ok: Array.isArray(parsed.scope) && parsed.scope.length > 0,
+      plan: parsed.plan || [],
+      scope: parsed.scope || [],
+      acceptance_criteria: parsed.acceptance_criteria || task.acceptance_criteria || [],
+      usage: res.usage,
+      error: (Array.isArray(parsed.scope) && parsed.scope.length > 0) ? null : 'Router returned empty scope'
+    };
+  } catch (err) {
+    return { ok: false, error: `Router output was not valid JSON: ${err.message}`, usage: res.usage };
+  }
+}
+
 // 5. Reviewer Gate (Executed only in 'standard' mode when require_code_review is true)
 async function runReviewerGate(task, scopedFiles) {
   const reviewerRole = teamConfig.roles?.reviewer || {};
@@ -257,6 +471,7 @@ async function runReviewerGate(task, scopedFiles) {
 
   const reviewerModel = reviewerRole.model || 'ag/claude-opus-5-5-high';
   const reviewerFallback = reviewerRole.fallback_model || null;
+  const reviewerTemp = reviewerRole.temperature ?? 0.1;
   const reviewerSystemPrompt = fs.existsSync(path.resolve(TEAM_DIR, 'roles', 'reviewer.md'))
     ? fs.readFileSync(path.resolve(TEAM_DIR, 'roles', 'reviewer.md'), 'utf8')
     : 'Review the git diff against acceptance criteria and return JSON { "passed": boolean, "rubric_scores": {...}, "issues": [] }.';
@@ -268,7 +483,7 @@ async function runReviewerGate(task, scopedFiles) {
     `GIT DIFF:\n${diffText}`
   ].join('\n\n');
 
-  const res = await call9Router(reviewerModel, reviewerSystemPrompt, reviewMsg, 2048, reviewerFallback);
+  const res = await call9Router(reviewerModel, reviewerSystemPrompt, reviewMsg, 2048, reviewerFallback, reviewerTemp);
   if (!res.ok) {
     return { ok: false, error: `Reviewer API error: ${res.error}`, usage: { prompt_tokens: 0, completion_tokens: 0 } };
   }
@@ -347,8 +562,13 @@ async function runOrchestrator() {
   const abortOnIdentical = policyConfig.policy?.retry_and_escalation?.abort_on_identical_error_count || 2;
   const tokenBudgetPerTask = policyConfig.policy?.retry_and_escalation?.token_budget_per_task || 150000;
   const nightTokenBudgetTotal = policyConfig.policy?.retry_and_escalation?.night_token_budget_total || 3000000;
+  const maxFilesPerTask = policyConfig.policy?.scope_control?.max_files_per_task || 5;
   const maxScopeIncrease = policyConfig.policy?.scope_control?.max_scope_increase ?? 1;
+  const allowNewFiles = policyConfig.policy?.scope_control?.allow_new_files ?? true;
+  const newFilesOnlyInScope = policyConfig.policy?.scope_control?.new_files_only_in_scope ?? true;
+  const requireCrossRoleApproval = policyConfig.policy?.approval_gates?.require_human_approval_for_cross_role_edit ?? true;
   const requireCleanBeforeStart = policyConfig.policy?.git_hygiene?.require_clean_worktree_before_start ?? true;
+  const rollbackOnValidationFail = policyConfig.policy?.git_hygiene?.rollback_on_validation_fail ?? true;
   const autoCommitOnDone = policyConfig.policy?.git_hygiene?.auto_commit_on_done ?? true;
   const commitPrefix = policyConfig.policy?.git_hygiene?.commit_message_prefix || '[AI-Task]';
   const allowedDirs = projectConfig.project?.allowed_dirs || [];
@@ -360,6 +580,17 @@ async function runOrchestrator() {
   const taskFiles = fs.readdirSync(ACTIVE_TASKS_DIR).filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
 
   console.log(`[Orchestrator] Found ${taskFiles.length} task(s) in tasks/active/`);
+
+  // Pre-flight 9Router Healthcheck (HR-6): Abort session cleanly without mutating active tasks if 9Router is down
+  if (taskFiles.length > 0) {
+    const health = await check9RouterHealth(teamConfig, policyConfig);
+    if (!health.ok) {
+      console.error(`[Orchestrator] Pre-flight healthcheck FAILED: ${health.error}`);
+      console.error('[Orchestrator] Aborting session safely without mutating active tasks.');
+      releaseLock();
+      process.exit(1);
+    }
+  }
 
   for (const tFile of taskFiles) {
     const totalSessionTokens = (state.metrics.total_input_tokens || 0) + (state.metrics.total_output_tokens || 0);
@@ -385,6 +616,7 @@ async function runOrchestrator() {
     let blockReason = null;
     let validationPassed = null;
     let actualModifiedFiles = [];
+    const taskStartMs = Date.now();
 
     const getRollbackTargets = () => Array.from(new Set([
       ...(task.scope || []),
@@ -394,10 +626,42 @@ async function runOrchestrator() {
 
     try {
       // ==========================================
+      // OPTIONAL ROUTER PLANNER (For 'draft' tasks without scope)
+      // ==========================================
+      if (task.status === 'draft' && (!task.scope || task.scope.length === 0)) {
+        const planRes = await runRouterPlanner(task);
+        if (planRes.usage) {
+          const rIn = planRes.usage.prompt_tokens || 0;
+          const rOut = planRes.usage.completion_tokens || 0;
+          taskTokensUsed += rIn + rOut;
+          state.metrics.total_input_tokens = (state.metrics.total_input_tokens || 0) + rIn;
+          state.metrics.total_output_tokens = (state.metrics.total_output_tokens || 0) + rOut;
+        }
+        if (planRes.ok) {
+          task.plan = planRes.plan;
+          task.scope = planRes.scope;
+          if (!task.acceptance_criteria || task.acceptance_criteria.length === 0) {
+            task.acceptance_criteria = planRes.acceptance_criteria;
+          }
+          task.status = 'planned';
+        } else {
+          blockReason = planRes.error || 'Router failed to produce a valid plan and scope.';
+          task.status = 'blocked';
+          throw new Error(blockReason);
+        }
+      }
+
+      // ==========================================
       // ROUTER PRE-CHECK (0-Token Fail-Fast Gate)
       // ==========================================
       if (!task.scope || !Array.isArray(task.scope) || task.scope.length === 0) {
         blockReason = 'Task scope is empty. Explicit scope is required.';
+        task.status = 'blocked';
+        throw new Error(blockReason);
+      }
+
+      if (task.scope.length > maxFilesPerTask) {
+        blockReason = `Task scope exceeds max_files_per_task (${task.scope.length} > ${maxFilesPerTask}). Split into smaller tasks.`;
         task.status = 'blocked';
         throw new Error(blockReason);
       }
@@ -439,15 +703,16 @@ async function runOrchestrator() {
       task.risk_level = effectiveRisk;
       task.mode = resolveTaskMode(task, policyConfig.policy);
 
-      // Approval Check for High Risk
-      if (effectiveRisk === 'high') {
+      // Approval Check for High Risk or Cross-Role Edit
+      const needsHumanApproval = effectiveRisk === 'high' || (Boolean(task.cross_role_edit) && requireCrossRoleApproval);
+      if (needsHumanApproval) {
         const expectedHash = computeScopeHash(task.scope);
         const hasValidApproval = task.approval &&
           typeof task.approval.by === 'string' &&
           task.approval.scope_hash === expectedHash;
 
         if (!hasValidApproval) {
-          blockReason = `Waiting for human approval (risk_level: high, expected scope_hash: "${expectedHash}")`;
+          blockReason = `Waiting for human approval (risk_level: ${effectiveRisk}, cross_role_edit: ${Boolean(task.cross_role_edit)}, expected scope_hash: "${expectedHash}")`;
           task.status = 'blocked';
           throw new Error(blockReason);
         }
@@ -493,7 +758,9 @@ async function runOrchestrator() {
           consecutiveIdenticalErrors = 1;
         }
 
-        rollback(getRollbackTargets());
+        if (rollbackOnValidationFail) {
+          rollback(getRollbackTargets());
+        }
 
         if (consecutiveIdenticalErrors >= abortOnIdentical) {
           blockReason = `Infinite fix loop detected in ${stageName} (${consecutiveIdenticalErrors}x identical error: ${errHash})`;
@@ -507,6 +774,9 @@ async function runOrchestrator() {
         return { shouldBreak: false };
       };
 
+      const modeConfig = policyConfig.policy?.task_modes?.[task.mode] || {};
+      const maxRuntimeSec = modeConfig.max_runtime_sec || (task.mode === 'quick' ? 60 : 300);
+
       // ==========================================
       // TASK EXECUTION LOOP
       // ==========================================
@@ -518,17 +788,29 @@ async function runOrchestrator() {
           break;
         }
 
+        const elapsedSec = (Date.now() - taskStartMs) / 1000;
+        if (elapsedSec > maxRuntimeSec) {
+          blockReason = `Exceeded task mode "${task.mode}" max_runtime_sec (${elapsedSec.toFixed(1)}s > ${maxRuntimeSec}s)`;
+          task.status = 'blocked';
+          console.error(`[Orchestrator] ${blockReason}`);
+          break;
+        }
+
         task.status = 'writing';
 
-        // Step A: Prepare Writer Prompt WITH Scoped File Contents
+        // Step A: Prepare Writer Prompt WITH Context-Aware Scoped File Contents
         const writerRole = teamConfig.roles?.writer || {};
         const writerModel = writerRole.model || 'deepseek-ai/deepseek-v4.1-flash-1017';
         const writerFallback = writerRole.fallback_model || null;
+        const writerTemp = writerRole.temperature ?? 0.1;
         const writerSystemRole = fs.existsSync(path.resolve(TEAM_DIR, 'roles', 'writer.md'))
           ? fs.readFileSync(path.resolve(TEAM_DIR, 'roles', 'writer.md'), 'utf8')
           : 'You are the backend code writer. Return changes in <<<<<<< SEARCH / ======= / >>>>>>> REPLACE blocks.';
 
-        const scopedFilesContext = buildScopedFilesContext(task.scope, REPO_ROOT);
+        const scopedFilesContext = buildScopedFilesContext(task.scope, REPO_ROOT, task, {
+          tokenBudgetPerTask,
+          maxFilesPerTask
+        });
 
         const userMessage = [
           `TASK ID: ${task.task_id}`,
@@ -543,7 +825,7 @@ async function runOrchestrator() {
             : 'Please generate the exact code modifications to fulfill the goal.'
         ].join('\n\n');
 
-        const writerRes = await call9Router(writerModel, writerSystemRole, userMessage, 4096, writerFallback);
+        const writerRes = await call9Router(writerModel, writerSystemRole, userMessage, 4096, writerFallback, writerTemp);
 
         if (!writerRes.ok) {
           console.error(`[Writer] API error: ${writerRes.error}`);
@@ -563,6 +845,8 @@ async function runOrchestrator() {
           allowedDirs,
           protectedFiles,
           maxScopeIncrease,
+          allowNewFiles,
+          newFilesOnlyInScope,
           repoRoot: REPO_ROOT
         });
 

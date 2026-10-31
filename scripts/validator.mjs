@@ -5,10 +5,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
+import {
+  checkAllowedDirs,
+  checkForbidden,
+  isFileInScope,
+  normalizeOrThrow,
+  resolveRepoRoot
+} from './applier.mjs';
+import { getModifiedFiles } from './git-guard.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
+const REPO_ROOT = resolveRepoRoot();
 
 /**
  * Strips volatile timing, memory addresses, and ISO timestamps before hashing
@@ -37,13 +45,93 @@ export function loadProjectConfig() {
   return YAML.parse(fs.readFileSync(cfgPath, 'utf8'));
 }
 
-function killProcessTree(pid) {
+export function loadPolicyConfig() {
+  const cfgPath = path.resolve(__dirname, '..', 'config', 'policy.yaml');
+  if (!fs.existsSync(cfgPath)) {
+    return null;
+  }
+  return YAML.parse(fs.readFileSync(cfgPath, 'utf8'));
+}
+
+export function checkCommandGuardrails(cmd = '', timeoutMs = 60000, guardrails = {}) {
+  const banUnbounded = guardrails.ban_unbounded_commands ?? true;
+  const blockCurlAlias = guardrails.block_powershell_curl_alias ?? true;
+
+  if (banUnbounded && (!timeoutMs || timeoutMs <= 0 || !Number.isFinite(timeoutMs))) {
+    return {
+      ok: false,
+      error: `GUARDRAIL (HR-1): Unbounded command without explicit timeout is forbidden: "${cmd}"`
+    };
+  }
+
+  if (blockCurlAlias && process.platform === 'win32') {
+    const hasBareCurl = /(?:^|[;&|]\s*)curl(?!\.exe)\b/i.test(cmd);
+    if (hasBareCurl) {
+      return {
+        ok: false,
+        error: `GUARDRAIL (HR-2): Bare PowerShell 'curl' alias is forbidden on Windows. Use 'curl.exe --connect-timeout 2 --max-time 5': "${cmd}"`
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Runtime Permission & Scope Audit Gate for IDE Direct / Quick Mode.
+ * Inspects git modified files and verifies none violate protected_files, allowed_dirs, or declared scope.
+ */
+export function auditGitScope(declaredScope = [], options = {}) {
+  const projCfg = options.projectConfig || loadProjectConfig() || {};
+  const repoRoot = resolveRepoRoot(projCfg);
+  const allowedDirs = options.allowedDirs || projCfg.project?.allowed_dirs || [];
+  const protectedFiles = options.protectedFiles || projCfg.project?.protected_files || [];
+  const targetFilter = options.checkAllWorktree ? [] : declaredScope;
+
+  const modified = options.modifiedFiles || getModifiedFiles(targetFilter);
+  const violations = [];
+
+  for (const rawFile of modified) {
+    let relPath;
+    try {
+      relPath = normalizeOrThrow(repoRoot, rawFile);
+    } catch (err) {
+      violations.push(`Illegal path "${rawFile}": ${err.message}`);
+      continue;
+    }
+
+    const fCheck = checkForbidden(relPath, protectedFiles, options.forbiddenFiles || []);
+    if (fCheck.forbidden) {
+      violations.push(`SECURITY: Protected file modified "${relPath}" (matched "${fCheck.pattern}")`);
+      continue;
+    }
+
+    if (!checkAllowedDirs(relPath, allowedDirs)) {
+      violations.push(`Outside allowed_dirs: "${relPath}"`);
+      continue;
+    }
+
+    if (declaredScope.length > 0 && !isFileInScope(relPath, declaredScope)) {
+      violations.push(`Out-of-scope file modified: "${relPath}" (declared scope: ${declaredScope.join(', ')})`);
+    }
+  }
+
+  return {
+    ok: violations.length === 0,
+    modified_files: modified,
+    violations
+  };
+}
+
+function killProcessTree(pid, killTree = true) {
   if (!pid) return;
   try {
-    if (process.platform === 'win32') {
+    if (process.platform === 'win32' && killTree) {
       execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore' });
-    } else {
+    } else if (process.platform !== 'win32' && killTree) {
       process.kill(-pid, 'SIGKILL');
+    } else {
+      process.kill(pid, 'SIGKILL');
     }
   } catch {
     try {
@@ -52,7 +140,22 @@ function killProcessTree(pid) {
   }
 }
 
-export function runCommandAsync(cmd, cwd = REPO_ROOT, timeoutMs = 60000) {
+export function runCommandAsync(cmd, cwd = REPO_ROOT, timeoutMs = 60000, guardrails = null) {
+  const effectiveGuardrails = guardrails || loadPolicyConfig()?.policy?.execution_guardrails || {};
+  const effectiveTimeout = timeoutMs || (effectiveGuardrails.default_cli_timeout_sec || 60) * 1000;
+  const killTree = effectiveGuardrails.kill_process_tree_on_timeout ?? true;
+
+  const guardCheck = checkCommandGuardrails(cmd, effectiveTimeout, effectiveGuardrails);
+  if (!guardCheck.ok) {
+    return Promise.resolve({
+      ok: false,
+      exitCode: 126,
+      timedOut: false,
+      stdout: '',
+      stderr: guardCheck.error
+    });
+  }
+
   return new Promise(resolve => {
     const child = spawn(cmd, {
       cwd,
@@ -68,8 +171,8 @@ export function runCommandAsync(cmd, cwd = REPO_ROOT, timeoutMs = 60000) {
 
     const timer = setTimeout(() => {
       timedOut = true;
-      killProcessTree(child.pid);
-    }, timeoutMs);
+      killProcessTree(child.pid, killTree);
+    }, effectiveTimeout);
 
     child.stdout?.on('data', chunk => {
       stdout += chunk.toString('utf8');
@@ -127,12 +230,13 @@ export function runCommandAsync(cmd, cwd = REPO_ROOT, timeoutMs = 60000) {
 
 export async function validateFast(projectConfig) {
   const cfg = projectConfig || loadProjectConfig();
+  const repoRoot = resolveRepoRoot(cfg);
   if (!cfg?.project?.validation?.fast_checks) {
     return { ok: true, message: 'No fast_checks defined.' };
   }
 
   for (const item of cfg.project.validation.fast_checks) {
-    const res = await runCommandAsync(item.run, REPO_ROOT, item.timeout_sec ? item.timeout_sec * 1000 : 30000);
+    const res = await runCommandAsync(item.run, repoRoot, item.timeout_sec ? item.timeout_sec * 1000 : 30000);
     if (!res.ok) {
       const errCombined = `${res.stdout}\n${res.stderr}`.trim();
       const errHash = hashString(errCombined);
@@ -142,8 +246,8 @@ export async function validateFast(projectConfig) {
         checkName: item.name,
         command: item.run,
         exitCode: res.exitCode,
-        errorCombined,
-        errorHash
+        errorCombined: errCombined,
+        errorHash: errHash
       };
     }
   }
@@ -153,12 +257,13 @@ export async function validateFast(projectConfig) {
 
 export async function validateSuite(projectConfig) {
   const cfg = projectConfig || loadProjectConfig();
+  const repoRoot = resolveRepoRoot(cfg);
   if (!cfg?.project?.validation?.suite_checks) {
     return { ok: true, message: 'No suite_checks defined.' };
   }
 
   for (const item of cfg.project.validation.suite_checks) {
-    const res = await runCommandAsync(item.run, REPO_ROOT, item.timeout_sec ? item.timeout_sec * 1000 : 120000);
+    const res = await runCommandAsync(item.run, repoRoot, item.timeout_sec ? item.timeout_sec * 1000 : 120000);
     if (!res.ok) {
       const errCombined = `${res.stdout}\n${res.stderr}`.trim();
       const errHash = hashString(errCombined);
@@ -168,8 +273,8 @@ export async function validateSuite(projectConfig) {
         checkName: item.name,
         command: item.run,
         exitCode: res.exitCode,
-        errorCombined,
-        errorHash
+        errorCombined: errCombined,
+        errorHash: errHash
       };
     }
   }
@@ -177,13 +282,30 @@ export async function validateSuite(projectConfig) {
   return { ok: true };
 }
 
-// CLI direct execution
+// CLI direct execution (supports: node validator.mjs [fast|suite|scope] [--scope file1,file2])
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
-  const mode = process.argv[2] || 'fast';
-  console.log(`Running validator in "${mode}" mode...`);
-  const checkPromise = mode === 'suite' ? validateSuite() : validateFast();
-  checkPromise.then(res => {
+  const args = process.argv.slice(2);
+  const mode = (args[0] && !args[0].startsWith('--')) ? args[0] : 'fast';
+  const scopeIdx = args.indexOf('--scope');
+  const scopeFiles = scopeIdx !== -1 && args[scopeIdx + 1]
+    ? args[scopeIdx + 1].split(',').map(s => s.trim()).filter(Boolean)
+    : [];
+
+  (async () => {
+    console.log(`Running validator in "${mode}" mode${scopeFiles.length ? ` (scope: ${scopeFiles.join(', ')})` : ''}...`);
+    if (scopeFiles.length > 0 || mode === 'scope') {
+      const scopeAudit = auditGitScope(scopeFiles);
+      if (!scopeAudit.ok) {
+        console.log(JSON.stringify({ ok: false, stage: 'scope_audit', ...scopeAudit }, null, 2));
+        process.exit(1);
+      }
+      if (mode === 'scope') {
+        console.log(JSON.stringify({ ok: true, stage: 'scope_audit', ...scopeAudit }, null, 2));
+        process.exit(0);
+      }
+    }
+    const res = mode === 'suite' ? await validateSuite() : await validateFast();
     console.log(JSON.stringify(res, null, 2));
     process.exit(res.ok ? 0 : 1);
-  });
+  })();
 }

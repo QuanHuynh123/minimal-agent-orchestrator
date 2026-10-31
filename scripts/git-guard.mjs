@@ -2,17 +2,21 @@
 import { execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveRepoRoot } from './applier.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
+const REPO_ROOT = resolveRepoRoot();
 
-const execOpts = {
-  cwd: REPO_ROOT,
-  encoding: 'utf8',
-  stdio: ['pipe', 'pipe', 'pipe'],
-  shell: process.platform === 'win32' ? true : undefined
-};
+function getExecOpts(cwd = REPO_ROOT) {
+  return {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+    shell: process.platform === 'win32' ? true : undefined
+  };
+}
+
+const execOpts = getExecOpts(REPO_ROOT);
 
 export function isCleanWorktree(targetFiles = []) {
   try {

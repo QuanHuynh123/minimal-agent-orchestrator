@@ -2,10 +2,27 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import YAML from 'yaml';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
+export const TEAM_DIR = path.resolve(__dirname, '..');
+
+export function resolveRepoRoot(projectConfig = null) {
+  let cfg = projectConfig;
+  if (!cfg) {
+    const cfgPath = path.resolve(TEAM_DIR, 'config', 'project.yaml');
+    if (fs.existsSync(cfgPath)) {
+      try {
+        cfg = YAML.parse(fs.readFileSync(cfgPath, 'utf8'));
+      } catch {}
+    }
+  }
+  const configuredRoot = cfg?.project?.repo_root || '..';
+  return path.resolve(TEAM_DIR, configuredRoot);
+}
+
+const REPO_ROOT = resolveRepoRoot();
 
 const LAZY_PATTERNS = [
   /\/\/\s*\.{3,}\s*(existing|remains|rest|code|logic|unchanged)/i,
@@ -220,6 +237,8 @@ export function applyEdits(rawOutput, task = {}, options = {}) {
     allowedDirs = [],
     protectedFiles = [],
     maxScopeIncrease = 1,
+    allowNewFiles = true,
+    newFilesOnlyInScope = true,
     repoRoot = REPO_ROOT
   } = options;
 
@@ -352,6 +371,19 @@ export function applyEdits(rawOutput, task = {}, options = {}) {
       originalRaw = fs.readFileSync(absPath, 'utf8');
       if (originalRaw.includes('\r\n')) {
         eol = '\r\n';
+      }
+    } else {
+      if (!allowNewFiles) {
+        return {
+          ok: false,
+          error: `Creating new file "${relPath}" is disallowed by policy (allow_new_files: false).`
+        };
+      }
+      if (newFilesOnlyInScope && !isFileInScope(relPath, taskScope)) {
+        return {
+          ok: false,
+          error: `New file "${relPath}" must be explicitly declared in task.scope (policy: new_files_only_in_scope).`
+        };
       }
     }
 
