@@ -11,15 +11,22 @@
 
 ---
 
-## 👋 Mới tải về? Bắt đầu trong 10 giây (Không cần tự gõ YAML!)
+## 👋 Mới tải về? Quy trình Onboarding Chuẩn (`Chat = Read/Plan`, `CLI Runner = Write`)
 
-Bạn **không cần** tự mở file cấu hình hay tự viết file task `.yaml` bằng tay. Sau khi clone thư mục `agent-team` vào dự án của bạn (`git clone https://github.com/QuanHuynh123/minimal-agent-orchestrator.git agent-team && cd agent-team && npm install`), hãy mở khung chat của **AI Agent bạn đang dùng (Cline, Antigravity, Cursor, Claude Code, Windsurf...)** và gửi đúng 1 câu này:
+> **Nguyên tắc kiến trúc cốt lõi:**
+> - **IDE Chat là Read-Only mặc định** đối với mã nguồn dự án (chỉ đọc hiểu repo, đề xuất cấu hình và soạn thảo Task Contract `.yaml`).
+> - **Mọi thao tác ghi mã nguồn vào dự án phải đi qua CLI Runner (`orchestrator.mjs` $\rightarrow$ `applier.mjs`)** để được kiểm soát `scope` và `protected_files`.
 
-```text
-Hãy đọc file agent-team/ONBOARDING.md, khảo sát dự án hiện tại của tôi và tự động cấu hình agent-team phù hợp với máy của tôi.
-```
-
-Con AI trên IDE của bạn sẽ đọc **[`ONBOARDING.md`](ONBOARDING.md)**, tự nhận diện ngôn ngữ/thư mục của dự án, tự điền `config/project.yaml`, tự chạy kiểm định và từ đó tự động điền file task mỗi khi bạn giao việc bằng ngôn ngữ tự nhiên!
+1. **Tại CLI Terminal:** Clone `agent-team` vào dự án của bạn và chạy tự kiểm:
+   ```bash
+   git clone https://github.com/QuanHuynh123/minimal-agent-orchestrator.git agent-team
+   cd agent-team && npm install && npm test
+   ```
+2. **Tại IDE Chat (Cline, Antigravity, Cursor, Claude Code...):** Nhờ AI khảo sát và soạn bản nháp cấu hình/task bằng câu lệnh:
+   ```text
+   Hãy đọc file agent-team/ONBOARDING.md. Ở chế độ Read-Only (không trực tiếp sửa code dự án hay ghi đè protected_files), hãy khảo sát cấu trúc dự án hiện tại của tôi và đề xuất cấu hình config/project.yaml cùng Task Contract mẫu để tôi duyệt.
+   ```
+3. **Tại CLI Terminal:** Sau khi duyệt cấu hình và đặt task vào `tasks/active/`, chạy `npm start` từ CLI để hệ thống thực thi, kiểm thử và commit an toàn. Xem chi tiết tại **[`ONBOARDING.md`](ONBOARDING.md)**.
 
 ---
 
@@ -53,9 +60,9 @@ Con AI trên IDE của bạn sẽ đọc **[`ONBOARDING.md`](ONBOARDING.md)**, t
 
 Hệ thống phân tầng thực thi dựa trên độ phức tạp và mức độ rủi ro của tác vụ thay vì áp đặt một quy trình nặng nề duy nhất:
 
-- **Làn `direct` (IDE Interactive / Trivial):** Dành cho tra cứu, chẩn đoán hoặc chỉnh sửa nhỏ trực tiếp trên IDE (Cline, Antigravity, Cursor), khóa đuôi bằng lệnh kiểm toán phạm vi `node scripts/validator.mjs fast --scope <files>`.
-- **Làn `quick` (Small Write — Mặc định khi $\le 3$ files, rủi ro `low`):** Bỏ qua bước lập kế hoạch/review trung gian; chạy thẳng **Context Loader $\rightarrow$ Writer $\rightarrow$ 8-Step Applier $\rightarrow$ 0-Token Validator $\rightarrow$ Scoped Commit**.
-- **Làn `standard` (Complex / Cross-Scope / High-Risk):** Kích hoạt đầy đủ **Router Planner $\rightarrow$ Approval Gate (`scope_hash`) $\rightarrow$ Writer $\rightarrow$ Applier $\rightarrow$ Validator $\rightarrow$ LLM Reviewer Rubric**.
+- **Làn `direct` (Read-Only / Trivial Inspection):** Dành cho tra cứu, chẩn đoán lỗi, đọc hiểu kiến trúc và soạn thảo Task Contract trên IDE Chat mà không tự ý sửa mã nguồn dự án.
+- **Làn `quick` (Small Write — Mặc định khi $\le 3$ files, rủi ro `low`):** Thực thi qua CLI Runner (`orchestrator.mjs`), bỏ qua bước lập kế hoạch/review trung gian; chạy thẳng **Context Loader $\rightarrow$ Writer $\rightarrow$ 8-Step Applier $\rightarrow$ 0-Token Validator $\rightarrow$ Scoped Commit**.
+- **Làn `standard` (Complex / Cross-Scope / High-Risk):** Thực thi qua CLI Runner với đầy đủ **Router Planner $\rightarrow$ Approval Gate (`scope_hash`) $\rightarrow$ Writer $\rightarrow$ Applier $\rightarrow$ Validator $\rightarrow$ LLM Reviewer Rubric**.
 
 ```mermaid
 flowchart TD
@@ -136,23 +143,17 @@ Bộ khung tương thích với mọi cổng LLM chuẩn OpenAI-compatible (`9Ro
 
 ---
 
-## 5. Hướng Dẫn Sử Dụng Nhanh (Quickstart)
+## 5. Hướng Dẫn Sử Dụng Nhanh (Quickstart — CLI-First Workflow)
 
-### Cách 1 (Khuyến nghị): Giao toàn bộ việc cấu hình cho AI Agent trên IDE
-1. Clone `agent-team` vào thư mục gốc dự án của bạn và cài đặt:
+### Bước 1: Cài đặt & Dùng IDE Chat để Soạn thảo Cấu hình (Read-Only)
+1. Clone `agent-team` vào thư mục gốc dự án của bạn và chạy bộ tự kiểm từ **CLI Terminal**:
    ```bash
    git clone https://github.com/QuanHuynh123/minimal-agent-orchestrator.git agent-team
-   cd agent-team && npm install
+   cd agent-team && npm install && npm test
    ```
-2. Mở khung chat của **Cline / Antigravity / Cursor / Claude Code** và nhắn:
-   > *"Hãy đọc file `agent-team/ONBOARDING.md`, khảo sát dự án hiện tại của tôi và tự động cấu hình `agent-team` phù hợp với máy của tôi."*
-3. Từ lúc đó, bạn chỉ cần giao việc trong khung chat (AI sẽ tự điền `config/project.yaml`, tự tạo file task trong `tasks/active/` hoặc tự chạy `validator.mjs` kiểm toán).
+2. Bạn vẫn có thể giao việc bằng ngôn ngữ tự nhiên trên **IDE Chat (Cline / Antigravity / Cursor)**, nhưng **write vào repo phải thông qua `orchestrator` / `applier`**; chế độ Chat chỉ dùng để đọc, phân tích, đề xuất cấu hình và tạo Task Contract (xem **[`ONBOARDING.md`](ONBOARDING.md)**).
 
----
-
-### Cách 2: Cấu hình Thủ công (Dành cho CI/CD hoặc Kỹ sư muốn tự tùy chỉnh)
-
-#### Bước 1: Cấu hình `config/project.yaml`
+### Bước 2: Cập nhật `config/project.yaml`
 Khai báo đường dẫn gốc dự án (`repo_root`), danh sách thư mục cho phép và lệnh kiểm thử 0-token:
 ```yaml
 project:
@@ -199,14 +200,15 @@ acceptance_criteria:
   - "Unit test trong tests/test_health.py chạy PASS 100%"
 ```
 
-### Bước 4: Chạy điều phối tự động hoặc kiểm toán trực tiếp trên IDE
-- **Chạy hàng đợi Task tự động (Batch Orchestrator):**
+### Bước 4: Thực thi & Kiểm định từ CLI Terminal
+- **Chạy kiểm định cấu hình & phạm vi từ CLI:**
+  ```bash
+  node scripts/test-applier-v2.1.mjs
+  node scripts/validator.mjs fast --scope src/health.py,tests/test_health.py
+  ```
+- **Chạy hàng đợi Task qua Orchestrator Runner (Write via Applier):**
   ```bash
   npm start
-  ```
-- **Chạy kiểm toán nhanh khi sửa code trực tiếp trên IDE (Direct/Quick Mode):**
-  ```bash
-  node scripts/validator.mjs fast --scope src/health.py,tests/test_health.py
   ```
 
 ---
