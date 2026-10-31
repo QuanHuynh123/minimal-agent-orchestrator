@@ -126,4 +126,17 @@ protected_files:
 ```
 
 ---
+## 7. Anti-Hang & Execution Guardrails (Opus Postmortem HR-1 -> HR-7)
+
+Sự cố ngày 31/10/2026: Lệnh `curl` trần không có timeout làm treo tiến trình 39 phút. Tech Lead Claude Opus ban hành 7 quy tắc bắt buộc (Hard Rules):
+
+1. **HR-1 (Timeout bắt buộc):** Mọi lệnh network/CLI có khả năng block đều PHẢI có timeout tường minh.
+2. **HR-2 (Cấm curl trần trên Windows):** Luôn dùng `curl.exe --connect-timeout 2 --max-time 5` hoặc `Invoke-RestMethod -TimeoutSec 5`.
+3. **HR-3 (Non-interactive):** Coi mọi lệnh có thể bật prompt tương tác là lỗi.
+4. **HR-4 (Ưu tiên MCP Tool):** Nếu tác vụ đã có MCP Tool (`nine-router`), bắt buộc dùng MCP. Chỉ dùng shell để chẩn đoán khi MCP lỗi.
+5. **HR-5 (Giám sát Background):** Mọi background task phải có deadline và watchdog. Quá hạn tự hủy và ghi log.
+6. **HR-6 (Fail-fast ≤15s):** Health check quá 15s không phản hồi $\rightarrow$ coi là FAIL ngay lập tức. Không im lặng quá 60s khi đang chạy.
+7. **HR-7 (Giới hạn retry):** Tối đa 2 lần retry có backoff, sau đó leo thang.
+
+---
 *Bản đặc tả đã được Tech Lead Opus phê duyệt và Sếp chốt ngày 31/10/2026.*

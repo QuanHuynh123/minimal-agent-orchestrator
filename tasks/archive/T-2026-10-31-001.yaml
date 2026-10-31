@@ -1,0 +1,38 @@
+task_id: "T-2026-10-31-001"
+project_id: "tool-download-stable"
+title: "Tich hop Quan ly Profile Nen tang (Publishing & Accounts Hub) len PyWebView UI"
+status: "done"
+owner: "router"
+goal: "Dua tinh nang Quan ly Profile Kenh (YouTube, TikTok, Facebook, Bilibili) va Chuan bi Xuat ban (Publish Pre-flight) tu backend core/profiles.py va core/publishing.py len giao dien PyWebView Studio (ui_web/index.html & ui_bridge/js_api.py)."
+scope:
+  - "ui_bridge/js_api.py"
+  - "ui_web/index.html"
+  - "tests/test_ui_bridge.py"
+constraints:
+  - "100% TAB indentation cho Python"
+  - "Bao mat Zero-Trust: khong luu token/secret vao file json hoac truyen qua JS; token thuoc keyring"
+  - "Tat ca 244 unit tests deu phai PASS 100%"
+  - "Tuan thu chuan Bento Grid Obsidian cho Web UI"
+acceptance_criteria:
+  - "JsApi bo sung day du get_channel_profiles, save_channel_profile, delete_channel_profile, get_channel_connectors, validate_publish_draft, profile_choose_folder, publish_choose_media_file"
+  - "ui_web/index.html co tab Kenh & Xuat ban (view-profiles) voi danh sach kenh, form them/sua profile, trang thai 4 nen tang (YouTube, Facebook, TikTok, Bilibili), va form kiem tra video xuat ban"
+  - "Them unit test trong tests/test_ui_bridge.py kiem thu tron ven CRUD profiles va connectors qua JsApi"
+  - "Tat ca test suite chay thanh cong khong co loi thut le hay hoi quy"
+retries: 0
+error_history: []
+validation_result:
+  passed: true
+  tab_indentation: true
+  total_tests: 244
+  failures: 0
+review_result:
+  passed: true
+  rubric_scores:
+    correctness: true
+    safety: true
+    scope_adherence: true
+    testability: true
+  issues: []
+created_at: "2026-10-31T08:52:00Z"
+updated_at: "2026-10-31T08:57:00Z"
+completed_at: "2026-10-31T08:57:35Z"

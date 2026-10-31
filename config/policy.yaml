@@ -17,6 +17,16 @@ policy:
     token_budget_per_task: 150000 # Trần token bảo vệ chi phí per task (Opus feedback)
     night_token_budget_total: 3000000
 
+  execution_guardrails: # Quy tắc kỷ luật chống treo (Opus Postmortem Hard Rules)
+    enforce_command_timeouts: true
+    default_cli_timeout_sec: 60 # Giới hạn tối đa cho lệnh CLI thông thường
+    healthcheck_timeout_sec: 15 # Health check quá 15s tự động coi là FAIL, không chờ
+    network_connect_timeout_sec: 2
+    network_max_time_sec: 5 # Mọi HTTP request phải có --max-time 5 hoặc -TimeoutSec 5
+    prefer_mcp_tools: true # Ưu tiên MCP Tool trực tiếp (nine-router), cấm gọi shell trần
+    ban_unbounded_commands: true # Cấm tuyệt đối curl trần, Invoke-WebRequest trần không cờ timeout
+    max_silence_duration_sec: 60 # Không im lặng quá 60s khi đang chạy background task
+
   git_hygiene:
     require_clean_worktree_before_start: true
     rollback_on_validation_fail: true # Tự động checkout hoàn trả bản sạch khi fail
