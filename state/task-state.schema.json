@@ -22,6 +22,10 @@
     },
     "project_id": { "type": "string" },
     "title": { "type": "string", "minLength": 5 },
+    "mode": {
+      "type": "string",
+      "enum": ["direct", "quick", "standard"]
+    },
     "status": {
       "type": "string",
       "enum": [
@@ -46,6 +50,41 @@
       "items": { "type": "string" },
       "minItems": 1,
       "maxItems": 5
+    },
+    "forbidden_files": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "allow_scope_expansion": { "type": "boolean" },
+    "justification": { "type": "string" },
+    "approval": {
+      "type": ["object", "null"],
+      "properties": {
+        "by": { "type": "string" },
+        "at": { "type": "string" },
+        "scope_hash": { "type": "string" }
+      }
+    },
+    "scope_expansions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "last_report": {
+      "type": ["object", "null"],
+      "properties": {
+        "final_status": { "type": "string", "enum": ["done", "blocked", "failed"] },
+        "mode": { "type": "string", "enum": ["direct", "quick", "standard"] },
+        "modified_files": { "type": "array", "items": { "type": "string" } },
+        "validation_passed": { "type": ["boolean", "null"] },
+        "retries_used": { "type": "integer" },
+        "blocker_reason": { "type": ["string", "null"] },
+        "next_action": { "type": "string" },
+        "reported_at": { "type": "string" }
+      }
     },
     "constraints": {
       "type": "array",

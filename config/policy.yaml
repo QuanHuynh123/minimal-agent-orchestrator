@@ -3,32 +3,45 @@ policy:
     max_files_per_task: 5
     max_scope_increase: 1
     allow_new_files: true
-    strict_scope_enforcement: true # Applier sẽ từ chối nếu Writer sửa file ngoài task.scope
+    new_files_only_in_scope: true # File tạo mới bắt buộc phải nằm trong task.scope đã duyệt
+    strict_scope_enforcement: true
+
+  task_modes: # Phục vụ phân làn Quick Mode vs Standard Mode
+    quick:
+      max_files: 1
+      max_runtime_sec: 30
+      skip_router_and_reviewer: true
+    standard:
+      max_runtime_sec: 300
+      skip_router_and_reviewer: false
 
   approval_gates:
-    plan_approval_mode: "auto_if_small" # Tự duyệt nếu số file trong scope <= 3
+    plan_approval_mode: "auto_if_small"
     small_task_threshold_files: 3
     require_code_review: true
+    require_human_approval_for_cross_role_edit: true
 
   retry_and_escalation:
     max_retries_per_task: 3
-    abort_on_identical_error_count: 2 # Ngắt ngay nếu kẹt đúng 1 lỗi 2 lần liên tiếp
-    on_exhausted: "mark_blocked_and_continue" # Không làm treo các task phía sau
-    token_budget_per_task: 150000 # Trần token bảo vệ chi phí per task (Opus feedback)
+    abort_on_identical_error_count: 2
+    on_exhausted: "mark_blocked_and_continue"
+    token_budget_per_task: 150000
     night_token_budget_total: 3000000
 
-  execution_guardrails: # Quy tắc kỷ luật chống treo (Opus Postmortem Hard Rules)
+  execution_guardrails:
     enforce_command_timeouts: true
-    default_cli_timeout_sec: 60 # Giới hạn tối đa cho lệnh CLI thông thường
-    healthcheck_timeout_sec: 15 # Health check quá 15s tự động coi là FAIL, không chờ
+    kill_process_tree_on_timeout: true # Diệt tận gốc tiến trình con trên Windows (taskkill /T /F)
+    default_cli_timeout_sec: 60
+    healthcheck_timeout_sec: 15
     network_connect_timeout_sec: 2
-    network_max_time_sec: 5 # Mọi HTTP request phải có --max-time 5 hoặc -TimeoutSec 5
-    prefer_mcp_tools: true # Ưu tiên MCP Tool trực tiếp (nine-router), cấm gọi shell trần
-    ban_unbounded_commands: true # Cấm tuyệt đối curl trần, Invoke-WebRequest trần không cờ timeout
-    max_silence_duration_sec: 60 # Không im lặng quá 60s khi đang chạy background task
+    network_max_time_sec: 5
+    max_silence_duration_sec: 60
+    prefer_mcp_tools: true
+    ban_unbounded_commands: true
+    block_powershell_curl_alias: true # Bắt buộc dùng curl.exe hoặc native fetch có AbortSignal
 
   git_hygiene:
     require_clean_worktree_before_start: true
-    rollback_on_validation_fail: true # Tự động checkout hoàn trả bản sạch khi fail
+    rollback_on_validation_fail: true
     auto_commit_on_done: true
     commit_message_prefix: "[AI-Task]"

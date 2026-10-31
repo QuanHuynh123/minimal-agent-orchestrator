@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { exec } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,8 +10,23 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
+/**
+ * Strips volatile timing, memory addresses, and ISO timestamps before hashing
+ * so identical test failures produce a deterministic SHA-1 hash across runs.
+ */
+export function normalizeErrorForHash(str = '') {
+  return String(str)
+    .replace(/\r\n/g, '\n')
+    .replace(/Ran \d+ tests? in [\d.]+s/gi, 'Ran N tests in Xs')
+    .replace(/\b\d+\.\d+\s*(?:ms|s|sec|seconds)\b/gi, '<DURATION>')
+    .replace(/0x[0-9a-fA-F]{6,16}/g, '0x<ADDR>')
+    .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?/g, '<ISO_TIME>')
+    .replace(/\.tmp\.\d+/g, '.tmp.<TS>')
+    .trim();
+}
+
 export function hashString(str) {
-  return crypto.createHash('sha1').update(str || '').digest('hex');
+  return crypto.createHash('sha1').update(normalizeErrorForHash(str)).digest('hex');
 }
 
 export function loadProjectConfig() {
@@ -22,28 +37,88 @@ export function loadProjectConfig() {
   return YAML.parse(fs.readFileSync(cfgPath, 'utf8'));
 }
 
+function killProcessTree(pid) {
+  if (!pid) return;
+  try {
+    if (process.platform === 'win32') {
+      execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore' });
+    } else {
+      process.kill(-pid, 'SIGKILL');
+    }
+  } catch {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {}
+  }
+}
+
 export function runCommandAsync(cmd, cwd = REPO_ROOT, timeoutMs = 60000) {
   return new Promise(resolve => {
-    const opts = {
+    const child = spawn(cmd, {
       cwd,
-      timeout: timeoutMs,
-      encoding: 'utf8',
-      shell: process.platform === 'win32' ? true : undefined
-    };
-    exec(cmd, opts, (err, stdout, stderr) => {
-      if (err) {
+      shell: true,
+      detached: process.platform !== 'win32',
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killProcessTree(child.pid);
+    }, timeoutMs);
+
+    child.stdout?.on('data', chunk => {
+      stdout += chunk.toString('utf8');
+    });
+
+    child.stderr?.on('data', chunk => {
+      stderr += chunk.toString('utf8');
+    });
+
+    child.on('error', err => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({
+        ok: false,
+        exitCode: 1,
+        timedOut,
+        stdout,
+        stderr: stderr || err.message || 'Process spawn error'
+      });
+    });
+
+    child.on('close', code => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (timedOut) {
         resolve({
           ok: false,
-          exitCode: err.code || 1,
-          stdout: stdout ? stdout.toString() : '',
-          stderr: stderr ? stderr.toString() : (err.message || '')
+          exitCode: 124,
+          timedOut: true,
+          stdout,
+          stderr: `${stderr}\n[Validator] Command timed out after ${timeoutMs}ms and process tree was terminated.`.trim()
+        });
+      } else if (code !== 0) {
+        resolve({
+          ok: false,
+          exitCode: code ?? 1,
+          timedOut: false,
+          stdout,
+          stderr
         });
       } else {
         resolve({
           ok: true,
           exitCode: 0,
-          stdout: stdout ? stdout.toString() : '',
-          stderr: stderr ? stderr.toString() : ''
+          timedOut: false,
+          stdout,
+          stderr
         });
       }
     });

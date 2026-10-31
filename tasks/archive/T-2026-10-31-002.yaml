@@ -1,0 +1,52 @@
+task_id: "T-2026-10-31-002"
+project_id: "tool-download-stable"
+title: "Tich hop AI Video Analysis Studio (Trich xuat & Phan tich kich ban/hook/review) len PyWebView UI"
+mode: "standard"
+status: "done"
+owner: "router"
+goal: "Ket noi he thong core/analysis.py va core/transcript.py voi giao dien PyWebView Studio theo ban duyet cua Tech Lead Opus: API bat dong bo hoan toan qua EventBus, file_id bao mat, UI render an toan chong XSS (textContent only)."
+scope:
+  - "ui_bridge/js_api.py"
+  - "ui_web/index.html"
+  - "tests/test_ui_bridge.py"
+constraints:
+  - "100% TAB indentation cho Python"
+  - "Tuan thu 3 chot chan B1, B2, B3 cua Tech Lead Opus"
+  - "B1: start_video_analysis tra ve ngay {ok: true, task_id}, ket qua emit qua EventBus"
+  - "B2: analysis_choose_transcript_file tra ve file_id UUID, kiem tra whitelist .srt/.vtt/.txt va kich thuoc"
+  - "B3: UI su dung textContent de render toan bo du lieu LLM, chong XSS tuyet doi"
+  - "Chi cho phep 1 analysis chay dong thoi (BUSY guard)"
+  - "Tat ca test suite cu va moi phai PASS 100%"
+acceptance_criteria:
+  - "JsApi cung cap analysis_choose_transcript_file, start_video_analysis, analysis_cancel"
+  - "EventBus phat du cac event: analysis_progress, analysis_completed, analysis_failed"
+  - "ui_web/index.html co tab Analysis Studio voi 5 Bento cards theo dung thiet ke cua Claude Sonnet"
+  - "Unit test test_ui_bridge.py kiem thu day du cac edge cases (happy path, cancel, busy, invalid file)"
+retries: 0
+error_history: []
+validation_result:
+  passed: true
+  tab_indentation: true
+review_result:
+  passed: true
+  rubric_scores:
+    correctness: true
+    safety: true
+    scope_adherence: true
+    testability: true
+  issues: []
+last_report:
+  final_status: "done"
+  mode: "standard"
+  modified_files:
+    - "ui_bridge/js_api.py"
+    - "ui_web/index.html"
+    - "tests/test_ui_bridge.py"
+  validation_passed: true
+  retries_used: 0
+  blocker_reason: null
+  next_action: "none"
+  reported_at: "2026-10-31T09:45:00Z"
+created_at: "2026-10-31T09:20:00Z"
+updated_at: "2026-10-31T09:45:00Z"
+completed_at: "2026-10-31T09:45:00Z"

@@ -1,11 +1,22 @@
 task_id: "T-2026-10-30-001"
 project_id: "tool-download-stable"
 title: "Mô tả ngắn gọn tiêu đề task"
+mode: "quick" # "direct" | "quick" | "standard"
 status: "draft"
 owner: "router"
 goal: "Mục tiêu cụ thể cần đạt được của task"
 scope:
   - "tests/test_sample.py"
+forbidden_files:
+  - ".env*"
+  - "package.json"
+  - "package-lock.json"
+  - "requirements.txt"
+risk_level: "low" # "low" | "medium" | "high"
+allow_scope_expansion: false
+justification: ""
+approval: null
+scope_expansions: []
 constraints:
   - "100% TAB indentation"
   - "Không phá vỡ các unit tests hiện có"
@@ -15,5 +26,6 @@ retries: 0
 error_history: []
 validation_result: null
 review_result: null
+last_report: null
 created_at: "2026-10-30T20:00:00Z"
 updated_at: "2026-10-30T20:00:00Z"

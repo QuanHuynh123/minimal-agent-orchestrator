@@ -100,7 +100,8 @@ export function isFileInScope(relPath, taskScope = []) {
   if (!taskScope || taskScope.length === 0) return false;
   const normPath = relPath.replace(/\\/g, '/').toLowerCase();
   return taskScope.some(scopeItem => {
-    const s = scopeItem.replace(/\\/g, '/').toLowerCase();
+    const s = scopeItem.replace(/\\/g, '/').trim().toLowerCase();
+    if (!s) return false;
     if (s.endsWith('/**')) {
       const dir = s.slice(0, -3);
       return normPath === dir || normPath.startsWith(dir + '/');
@@ -108,8 +109,50 @@ export function isFileInScope(relPath, taskScope = []) {
     if (s.endsWith('/')) {
       return normPath.startsWith(s);
     }
-    return normPath === s || normPath.endsWith('/' + s);
+    if (s.startsWith('**/')) {
+      const sub = s.slice(3);
+      return normPath === sub || normPath.endsWith('/' + sub);
+    }
+    return normPath === s;
   });
+}
+
+export function computeDeterministicRisk(scope = []) {
+  const sensitivePatterns = [
+    'agent-team/scripts',
+    'agent-team/config',
+    '.github/',
+    'keyring',
+    'auth',
+    'secret',
+    'migration',
+    'infra'
+  ];
+  const isHigh = scope.some(item => {
+    const s = (item || '').toLowerCase().replace(/\\/g, '/');
+    return sensitivePatterns.some(p => s.includes(p));
+  });
+  return isHigh ? 'high' : 'low';
+}
+
+export function checkNoSymlinkEscape(repoRoot, absPath) {
+  const realRoot = fs.realpathSync(repoRoot);
+  let current = absPath;
+  while (current && current !== repoRoot && current !== path.dirname(current)) {
+    if (fs.existsSync(current)) {
+      const stat = fs.lstatSync(current);
+      if (stat.isSymbolicLink()) {
+        return { ok: false, error: `SECURITY: Symlink disallowed in path lineage: "${path.relative(repoRoot, current)}"` };
+      }
+      const realCurrent = fs.realpathSync(current);
+      const relToRoot = path.relative(realRoot, realCurrent);
+      if (relToRoot === '..' || relToRoot.startsWith('..' + path.sep) || path.isAbsolute(relToRoot)) {
+        return { ok: false, error: `SECURITY: Realpath escapes repository root: "${path.relative(repoRoot, current)}"` };
+      }
+    }
+    current = path.dirname(current);
+  }
+  return { ok: true };
 }
 
 export function parseSearchReplaceBlocks(content) {
@@ -255,6 +298,16 @@ export function applyEdits(rawOutput, task = {}, options = {}) {
       };
     }
 
+    // Prevent silent privilege escalation into high-risk files via scope expansion
+    if (computeDeterministicRisk(outOfScopeFiles) === 'high') {
+      return {
+        ok: false,
+        security: true,
+        noRetry: true,
+        error: `SECURITY: Scope expansion into high-risk sensitive path is forbidden: ${outOfScopeFiles.join(', ')}`
+      };
+    }
+
     // Accumulate unique expansions
     const combined = Array.from(new Set([...existingExpansions, ...outOfScopeFiles]));
     if (combined.length > maxScopeIncrease) {
@@ -275,20 +328,27 @@ export function applyEdits(rawOutput, task = {}, options = {}) {
     const fileExists = fs.existsSync(absPath);
     let eol = '\n';
 
-    if (fileExists) {
-      // BƯỚC 3: Check symlink
-      try {
-        const stat = fs.lstatSync(absPath);
-        if (stat.isSymbolicLink()) {
-          return {
-            ok: false,
-            security: true,
-            noRetry: true,
-            error: `SECURITY: Symlink target disallowed on "${relPath}"`
-          };
-        }
-      } catch {}
+    // BƯỚC 3: Check symlink in path lineage (covers leaf & parent dirs)
+    try {
+      const symCheck = checkNoSymlinkEscape(repoRoot, absPath);
+      if (!symCheck.ok) {
+        return {
+          ok: false,
+          security: true,
+          noRetry: true,
+          error: symCheck.error
+        };
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        security: true,
+        noRetry: true,
+        error: `SECURITY: Symlink check failed on "${relPath}": ${err.message}`
+      };
+    }
 
+    if (fileExists) {
       originalRaw = fs.readFileSync(absPath, 'utf8');
       if (originalRaw.includes('\r\n')) {
         eol = '\r\n';

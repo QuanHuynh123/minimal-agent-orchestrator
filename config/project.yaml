@@ -29,6 +29,9 @@ project:
       - name: "tab_indentation_check"
         run: ".\\.venv\\Scripts\\python.exe -m unittest tests/test_indentation.py"
         timeout_sec: 15
+      - name: "agent_team_self_test"
+        run: "node agent-team/scripts/test-applier-v2.1.mjs"
+        timeout_sec: 10
     suite_checks:
       - name: "unit_test_suite"
         run: ".\\.venv\\Scripts\\python.exe -m unittest discover -s tests -v"
