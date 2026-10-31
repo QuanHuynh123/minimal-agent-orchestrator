@@ -1,5 +1,5 @@
-# Minimal Agent Orchestration Standard (v2.0 Blueprint)
-> **Mục đích tài liệu:** Đây là bản đặc tả kỹ thuật chuẩn (Single Source of Truth) dành cho đội ngũ AI Agent và Kỹ sư triển khai bộ khung điều phối đa tác tử (Multi-Agent Orchestration). Tài liệu này đã vá toàn bộ các lỗ hổng vận hành thực tế để đảm bảo tính tự động hóa, an toàn mã nguồn và khả năng tái sử dụng đa dự án.
+# Minimal Agent Orchestration Standard (v2.1 Blueprint)
+> **Mục đích tài liệu:** Đây là bản đặc tả kỹ thuật chuẩn (Single Source of Truth) dành cho đội ngũ Kỹ sư và AI Agent triển khai bộ khung điều phối đa tác tử (Multi-Agent Orchestration). Tài liệu này quy định kiến trúc phân làn theo rủi ro (Mode-Based Policy), cưỡng chế an toàn mã nguồn ở tầng Runtime và khả năng tái sử dụng đa dự án (Plugin-Ready).
 
 ---
 
@@ -72,36 +72,41 @@ Hệ thống gồm **3 Vai trò LLM** và **2 Công cụ Hệ thống (0 Token)*
 
 ---
 
-## 4. Vòng đời Tác vụ (State Machine)
+## 4. Vòng đời Tác vụ & Phân làn Thực thi (Mode-Based State Machine)
 
-Mọi task bắt buộc đi qua luồng trạng thái xác định dưới đây, được quản lý độc quyền bởi `orchestrator.mjs`:
+Hệ thống phân tầng thực thi dựa trên `task.mode` (`direct`, `quick`, `standard`) và `risk_level` (`low`, `medium`, `high`), được quản lý bởi `orchestrator.mjs`:
 
 ```text
-[draft] ──(Router lập kế hoạch)──> [planned]
-                                       │
-         ┌──(Auto-Approve hoặc Reviewer duyệt Plan)──┘
-         ▼
-      [ready] ◀───────────────────────┐
-         │                            │
-  (Writer sinh Patch &                │ (Nếu Fail <= max_retries:
-   Applier ghi xuống đĩa)             │  Git Rollback về bản sạch +
-         ▼                            │  Ghi nhận last_error)
-     [writing]                        │
-         │                            │
-  (Validator chạy Test/Lint)          │
-         ▼                            │
-   [validating] ──(Test/Lint FAIL)────┤
-         │                            │
-   (Test/Lint PASS)                   │
-         ▼                            │
-    [reviewing] ──(Reviewer REJECT)───┘
+[Pre-Flight Healthcheck (HR-6 ≤15s)] ──(Unreachable)──> [Session Abort (Giữ nguyên Active Tasks)]
          │
-  (Reviewer PASS)
+    (Healthy)
          ▼
-      [done] (Git Commit & chuyển vào archive/)
+      [draft] ──(Router lập kế hoạch khi chưa có scope)──> [planned]
+                                                              │
+         ┌──(Fail-Fast Gate: Allowed Dirs, Protected Files & Approval Hash)──┘
+         ▼
+      [ready] ◀───────────────────────────────────────────────┐
+         │                                                    │
+  (Context-Aware File Loader nạp ngữ cảnh &                   │ (Nếu Fail <= max_retries:
+   Writer sinh Patch -> 8-Step Applier ghi Atomic)            │  Scoped Git Rollback +
+         ▼                                                    │  Ghi nhận Normalized SHA-1 Error Hash)
+     [writing]                                                │
+         │                                                    │
+  (Validator chạy Fast & Suite Checks có Bounded Timeout)     │
+         ▼                                                    │
+   [validating] ──(Test/Lint FAIL)────────────────────────────┤
+         │                                                    │
+   (Test/Lint PASS)                                           │
+         ├──(Nếu mode == "quick": Bỏ qua Reviewer)──┐         │
+         ▼                                          │         │
+    [reviewing] ──(Reviewer REJECT ở mode standard)─┼─────────┘
+         │                                          │
+  (Reviewer PASS)                                   │
+         ▼                                          ▼
+      [done] (Scoped Git Commit & chuyển vào tasks/archive/)
 
-* Nhánh rẽ khẩn cấp: Nếu (retries > max_retries) HOẶC (lặp lại cùng 1 lỗi 2 lần liên tiếp):
-  ──> Chuyển sang [blocked] (hoặc gọi Triage Agent gỡ kẹt) ──> Dừng task để bảo vệ ngân sách.
+* Nhánh ngắt mạch: Nếu (retries > max_retries) HOẶC (lặp lại cùng 1 mã SHA-1 lỗi >= 2 lần liên tiếp):
+  ──> Chuyển sang [blocked] ──> Dừng task ngay để bảo vệ ngân sách token.
 ```
 
 ---
@@ -162,23 +167,26 @@ roles:
 
 ```yaml
 project:
-  id: "tool-download-stable"
+  id: "my-application"
   language: "python"
   repo_root: "../"
   
   # Chỉ cho phép Applier ghi vào các thư mục này
   allowed_dirs:
+    - "src/"
     - "core/"
-    - "ui/"
-    - "ui_bridge/"
-    - "ui_web/"
     - "tests/"
     - "scripts/"
   
   # Các file nhạy cảm tuyệt đối cấm AI tự sửa
   protected_files:
-    - ".env"
+    - "**/.env*"
+    - "package.json"
+    - "package-lock.json"
     - "requirements.txt"
+    - "agent-team/scripts/**"
+    - "agent-team/config/**"
+    - ".github/workflows/**"
 
   # Chuỗi lệnh kiểm tra bắt buộc ở bước [validating] (Chạy tuần tự, 0 Token)
   validation:
@@ -186,13 +194,16 @@ project:
       - name: "tab_indentation_check"
         run: "python -m unittest tests/test_indentation.py"
         timeout_sec: 15
+      - name: "agent_team_self_test"
+        run: "node agent-team/scripts/test-applier-v2.1.mjs"
+        timeout_sec: 10
     suite_checks:
       - name: "unit_test_suite"
         run: "python -m unittest discover -s tests -v"
         timeout_sec: 60
 ```
 
-### 5.3. `config/policy.yaml` (Chính sách Vận hành & Chống cháy túi)
+### 5.3. `config/policy.yaml` (Chính sách Phân làn & Bảo vệ Ngân sách)
 
 ```yaml
 policy:
@@ -200,25 +211,42 @@ policy:
     max_files_per_task: 5
     max_scope_increase: 1
     allow_new_files: true
+    new_files_only_in_scope: true
     strict_scope_enforcement: true # Applier sẽ từ chối nếu Writer sửa file ngoài task.scope
 
+  task_modes:
+    quick:
+      max_files: 1
+      max_runtime_sec: 30
+      skip_router_and_reviewer: true
+    standard:
+      max_runtime_sec: 300
+      skip_router_and_reviewer: false
+
   approval_gates:
-    # Quy tắc duyệt từ [planned] -> [ready]:
-    # "auto_if_small": Tự duyệt nếu số file trong scope <= 3, ngược lại gọi Reviewer duyệt
     plan_approval_mode: "auto_if_small"
     small_task_threshold_files: 3
     require_code_review: true
+    require_human_approval_for_cross_role_edit: true
 
   retry_and_escalation:
     max_retries_per_task: 3
     abort_on_identical_error_count: 2 # Ngắt ngay nếu kẹt đúng 1 lỗi 2 lần liên tiếp
-    on_exhausted: "mark_blocked_and_continue" # Không làm treo các task phía sau
-    token_budget_per_task: 150000 # Trần token bảo vệ chi phí per task (Opus feedback)
+    on_exhausted: "mark_blocked_and_continue"
+    token_budget_per_task: 150000
     night_token_budget_total: 3000000
+
+  execution_guardrails:
+    enforce_command_timeouts: true
+    kill_process_tree_on_timeout: true
+    default_cli_timeout_sec: 60
+    healthcheck_timeout_sec: 15
+    ban_unbounded_commands: true
+    block_powershell_curl_alias: true
 
   git_hygiene:
     require_clean_worktree_before_start: true
-    rollback_on_validation_fail: true # Tự động chạy git checkout -- . trước khi cho Writer thử lại
+    rollback_on_validation_fail: true
     auto_commit_on_done: true
     commit_message_prefix: "[AI-Task]"
 ```

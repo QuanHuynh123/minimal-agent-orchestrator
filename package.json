@@ -1,7 +1,7 @@
 {
-  "name": "agent-team-orchestrator",
-  "version": "2.0.0",
-  "description": "Minimal Agent Orchestration Standard (v2.0 Blueprint) Engine",
+  "name": "minimal-agent-orchestrator",
+  "version": "2.1.0",
+  "description": "Minimal Agent Orchestration Standard (v2.1 Mode-Based Runtime Engine)",
   "type": "module",
   "scripts": {
     "start": "node scripts/orchestrator.mjs",
