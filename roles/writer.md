@@ -22,5 +22,6 @@ FILE: <đường_dẫn_tương_đối_từ_root_repo>
 *Lưu ý: Đoạn SEARCH phải là DUY NHẤT trong file (kèm 2-3 dòng ngữ cảnh xung quanh nếu cần).*
 
 ## 4. Yêu cầu phản hồi
-- Hãy trực tiếp xuất các khối SEARCH/REPLACE hoàn chỉnh mà không giải thích lan man dài dòng, để đảm bảo toàn bộ mã nguồn được sinh trọn vẹn trong lượt phản hồi.
+- BẮT BUỘC: Giới hạn suy nghĩ (reasoning/thinking) cực kỳ ngắn gọn (dưới 100 từ). Tuyệt đối KHÔNG viết nháp code hay tự đối thoại dài dòng trong phần suy nghĩ, vì trần output của provider là 16384 token bao gồm cả suy nghĩ. Dành toàn bộ token cho phần output code chính thức!
+- Hãy trực tiếp xuất ngay các khối SEARCH/REPLACE hoàn chỉnh mà không giải thích lan man dài dòng.
 - Luôn tuân thủ tuyệt đối quy chuẩn thụt lề (indentation) của từng file trong dự án đích (ví dụ: giữ nguyên 100% TAB `\t` hoặc spaces theo đúng file gốc và constraints của task).

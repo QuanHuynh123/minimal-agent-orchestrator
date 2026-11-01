@@ -520,21 +520,26 @@ async function call9Router(model, systemPrompt, userMessage, maxTokens = 4096, f
 
   for (const candidateModel of modelsToTry) {
     try {
+      const reqBody = {
+        model: candidateModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage }
+        ],
+        max_tokens: maxTokens,
+        temperature
+      };
+      if (candidateModel.toLowerCase().includes('deepseek') || candidateModel.toLowerCase().includes('thinking')) {
+        reqBody.max_thinking_tokens = 200;
+      }
+
       const res = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`
         },
-        body: JSON.stringify({
-          model: candidateModel,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMessage }
-          ],
-          max_tokens: maxTokens,
-          temperature
-        }),
+        body: JSON.stringify(reqBody),
         signal: AbortSignal.timeout(timeoutMs)
       });
 
@@ -825,7 +830,7 @@ async function runOrchestrator() {
       mode: task.mode || 'quick',
       risk_level: task.risk_level || 'low',
       attempt: 1,
-      max_retries,
+      max_retries: maxRetries,
       scope_files: (task.scope || []).map(f => ({ path: f, status: 'pending' })),
       last_error: null,
       raw_log_path: null
@@ -1051,8 +1056,8 @@ async function runOrchestrator() {
           `ACCEPTANCE CRITERIA: ${task.acceptance_criteria.join('; ')}`,
           `CURRENT SCOPED FILE CONTENTS:\n${scopedFilesContext}`,
           task.last_error
-            ? `PREVIOUS ATTEMPT FAILED WITH ERROR:\n${task.last_error}\nPlease fix the issue and output exact SEARCH/REPLACE blocks.`
-            : 'Please generate the exact code modifications to fulfill the goal.'
+            ? `PREVIOUS ATTEMPT FAILED WITH ERROR:\n${task.last_error}\nPlease fix the issue. Think briefly (<100 words) and output exact SEARCH/REPLACE blocks.`
+            : 'Please generate the exact code modifications to fulfill the goal. Think briefly (<100 words) and immediately output the SEARCH/REPLACE blocks.'
         ].join('\n\n');
 
         const writerRes = await call9Router(writerModel, writerSystemRole, userMessage, 16384, writerFallback, writerTemp);
