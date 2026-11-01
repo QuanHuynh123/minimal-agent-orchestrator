@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node scripts/orchestrator.mjs",
+    "dashboard": "node scripts/dashboard.mjs",
     "test": "node scripts/test-applier-v2.1.mjs",
     "validate": "node scripts/validator.mjs",
     "git-guard": "node scripts/git-guard.mjs"

@@ -19,7 +19,7 @@ roles:
     enabled: true
     provider: "local_9router"
     model: "kr/claude-sonnet-4.5-thinking"
-    fallback_model: "claude-sonnet-4.5"
+    fallback_model: null
     temperature: 0.2
     allowed_actions: ["analyze", "plan", "triage"]
     forbidden_actions: ["direct_write", "modify_config"]
@@ -28,14 +28,14 @@ roles:
     enabled: true
     provider: "local_9router"
     model: "Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017"
-    fallback_model: "kr/deepseek-3.2"
+    fallback_model: null
     temperature: 0.1
     output_format: "search_replace_blocks"
     allowed_actions: ["read_scoped_files", "propose_patch"]
     forbidden_actions: ["out_of_scope_edit", "unapproved_dependency"]
 
   reviewer:
-    enabled: false
+    enabled: true
     provider: "local_9router"
     model: "kr/claude-sonnet-4.5"
     fallback_model: null

@@ -210,6 +210,10 @@ acceptance_criteria:
   ```bash
   npm start
   ```
+- **Mở giao diện quan sát trực tiếp (Bento Dark Live Monitor tại `http://127.0.0.1:4310`):**
+  ```bash
+  npm run dashboard
+  ```
 
 ---
 

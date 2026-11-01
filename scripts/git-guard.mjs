@@ -7,10 +7,11 @@ import { resolveRepoRoot } from './applier.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = resolveRepoRoot();
 
-function getExecOpts(cwd = REPO_ROOT) {
+function getExecOpts(cwd = REPO_ROOT, timeoutMs = 30000) {
   return {
     cwd,
     encoding: 'utf8',
+    timeout: timeoutMs,
     stdio: ['pipe', 'pipe', 'pipe'],
     shell: process.platform === 'win32' ? true : undefined
   };

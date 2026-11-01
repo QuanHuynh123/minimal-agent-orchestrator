@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>9Router Orchestrator Monitor</title>
+  <style>
+    :root {
+      --bg-base: #0a0a0f;
+      --bg-surface: #141419;
+      --bg-elevated: #1f1f28;
+      --bg-card: #111116;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(255, 255, 255, 0.16);
+      --border-focus: rgba(99, 102, 241, 0.5);
+
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+
+      --accent: #6366f1;
+      --accent-glow: rgba(99, 102, 241, 0.25);
+
+      --status-idle: #64748b;
+      --status-working: #3b82f6;
+      --status-success: #10b981;
+      --status-warning: #f59e0b;
+      --status-error: #ef4444;
+      --status-skipped: #475569;
+
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.4;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg-surface);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-hover);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--accent);
+    }
+
+    /* Animations */
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.95); }
+    }
+    @keyframes glow {
+      0%, 100% { box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
+      50% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.8); }
+    }
+
+    /* 1. TOP BAR */
+    header.top-bar {
+      height: 52px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+    .top-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-logo {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #fff;
+    }
+    .brand-badge {
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid var(--accent);
+      color: #a5b4fc;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .top-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--status-idle);
+    }
+    .dot.online { background: var(--status-success); }
+    .dot.offline { background: var(--status-error); }
+    .dot.running {
+      background: var(--status-working);
+      animation: pulse 1.5s infinite;
+    }
+
+    /* 2. PIPELINE STAGE STRIP */
+    nav.pipeline-strip {
+      height: 44px;
+      background: #0d0d12;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 8px;
+      overflow-x: auto;
+      flex-shrink: 0;
+    }
+    .stage-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .stage-item .step-icon {
+      font-size: 10px;
+      line-height: 1;
+    }
+    .stage-connector {
+      color: #334155;
+      font-size: 10px;
+    }
+    .stage-item.active {
+      background: rgba(59, 130, 246, 0.15);
+      border-color: var(--status-working);
+      color: #93c5fd;
+      animation: glow 2s infinite;
+    }
+    .stage-item.done {
+      background: rgba(16, 185, 129, 0.08);
+      border-color: rgba(16, 185, 129, 0.4);
+      color: #6ee7b7;
+    }
+    .stage-item.failed {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: var(--status-error);
+      color: #fca5a5;
+    }
+    .stage-item.skipped {
+      border-style: dashed;
+      color: var(--status-skipped);
+      opacity: 0.6;
+    }
+
+    /* MAIN BENTO LAYOUT */
+    main.bento-container {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 12px;
+      padding: 12px;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    /* LEFT COLUMN (Active Task, Governance & Queue) */
+    .left-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .bento-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding-bottom: 8px;
+    }
+    .card-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-secondary);
+    }
+    .task-id-badge {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .task-meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .tag {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 4px;
+      border: 1px solid transparent;
+      font-family: var(--font-mono);
+    }
+    .tag-quick { background: rgba(59, 130, 246, 0.15); color: #93c5fd; border-color: rgba(59, 130, 246, 0.4); }
+    .tag-standard { background: rgba(168, 85, 247, 0.15); color: #d8b4fe; border-color: rgba(168, 85, 247, 0.4); }
+    .tag-low { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border-color: rgba(16, 185, 129, 0.4); }
+    .tag-medium { background: rgba(245, 158, 11, 0.15); color: #fcd34d; border-color: rgba(245, 158, 11, 0.4); }
+    .tag-high { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border-color: rgba(239, 68, 68, 0.4); }
+    .tag-attempt { background: var(--bg-elevated); color: var(--text-secondary); border-color: var(--border); }
+
+    .task-goal-text {
+      font-size: 12px;
+      color: var(--text-secondary);
+      background: var(--bg-surface);
+      border-radius: 6px;
+      padding: 8px 10px;
+      border-left: 3px solid var(--accent);
+      word-break: break-word;
+    }
+
+    /* Roles list */
+    .role-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      background: var(--bg-surface);
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      font-size: 11px;
+    }
+    .role-name {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+    .role-model {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+    .status-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+    }
+    .badge-working { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
+    .badge-done { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+    .badge-idle { background: var(--bg-elevated); color: var(--text-muted); }
+    .badge-skipped { background: rgba(100, 116, 139, 0.15); color: var(--text-muted); }
+    .badge-error { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+
+    /* Scope files */
+    .file-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 140px;
+      overflow-y: auto;
+    }
+    .file-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 8px;
+      background: var(--bg-surface);
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    .file-path {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 260px;
+      color: #e2e8f0;
+    }
+    .file-tag {
+      font-size: 9px;
+      padding: 1px 4px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .file-pending { background: rgba(100, 116, 139, 0.2); color: var(--text-muted); }
+    .file-modified { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
+    .file-validated { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+
+    /* Queue metrics */
+    .queue-stats-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+    .queue-stat-box {
+      background: var(--bg-surface);
+      border-radius: 6px;
+      padding: 8px;
+      text-align: center;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    .queue-stat-num {
+      font-size: 16px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+    }
+    .queue-stat-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    /* RIGHT COLUMN (Split: Output Inspector Top, Console Bottom) */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    /* Top: Writer Raw Output Inspector */
+    .inspector-card {
+      flex: 1.1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .inspector-header {
+      padding: 10px 14px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .inspector-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+    .inspector-body {
+      flex: 1;
+      overflow: auto;
+      padding: 12px;
+      background: #09090d;
+    }
+    pre.code-view {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      line-height: 1.5;
+      color: #e2e8f0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    /* Bottom: Live Console Logs */
+    .console-card {
+      flex: 0.9;
+      display: flex;
+      flex-direction: column;
+      min-height: 220px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .console-header {
+      padding: 8px 14px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .console-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-ctrl {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: all 0.2s ease;
+    }
+    .btn-ctrl:hover {
+      background: var(--accent);
+      color: #fff;
+    }
+    .filter-input {
+      background: var(--bg-base);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      outline: none;
+      width: 130px;
+    }
+    .console-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 14px;
+      background: #07070a;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .log-line {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1.45;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      word-break: break-all;
+    }
+    .log-ts {
+      color: #475569;
+      flex-shrink: 0;
+      user-select: none;
+    }
+    .log-lvl {
+      flex-shrink: 0;
+      font-size: 9px;
+      padding: 1px 4px;
+      border-radius: 2px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .log-lvl-info { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
+    .log-lvl-warn { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+    .log-lvl-error { background: rgba(239, 68, 68, 0.25); color: #ef4444; }
+    .log-msg {
+      color: #cbd5e1;
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. TOP BAR -->
+  <header class="top-bar">
+    <div class="top-left">
+      <div class="brand-logo">
+        <span>⚡ 9Router Orchestrator</span>
+        <span class="brand-badge">Bento Monitor</span>
+      </div>
+    </div>
+    <div class="top-right">
+      <div class="pill" id="pill-router">
+        <span class="dot" id="dot-router"></span>
+        <span id="txt-router">9Router :20128</span>
+      </div>
+      <div class="pill" id="pill-orchestrator">
+        <span class="dot" id="dot-orchestrator"></span>
+        <span id="txt-orchestrator">IDLE</span>
+      </div>
+      <div class="pill" id="pill-tokens">
+        <span>Tokens In: <strong id="tok-in">0</strong> | Out: <strong id="tok-out">0</strong></span>
+      </div>
+      <div class="pill" id="pill-polling">
+        <span class="dot online"></span>
+        <span id="txt-polling">1s Polling</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 2. PIPELINE STAGE STRIP -->
+  <nav class="pipeline-strip">
+    <div class="stage-item" id="step-preflight">
+      <span class="step-icon">○</span>
+      <span>0. Pre-Flight</span>
+    </div>
+    <span class="stage-connector">➔</span>
+    <div class="stage-item" id="step-router">
+      <span class="step-icon">○</span>
+      <span>1. Router</span>
+    </div>
+    <span class="stage-connector">➔</span>
+    <div class="stage-item" id="step-writer">
+      <span class="step-icon">○</span>
+      <span>2. Writer</span>
+      <span id="writer-timer" style="display: none; color: #93c5fd; font-family: var(--font-mono); font-size: 10px;">⏱ 0s</span>
+    </div>
+    <span class="stage-connector">➔</span>
+    <div class="stage-item" id="step-applier">
+      <span class="step-icon">○</span>
+      <span>3. Applier</span>
+    </div>
+    <span class="stage-connector">➔</span>
+    <div class="stage-item" id="step-validator">
+      <span class="step-icon">○</span>
+      <span>4. Validator</span>
+    </div>
+    <span class="stage-connector">➔</span>
+    <div class="stage-item" id="step-reviewer">
+      <span class="step-icon">○</span>
+      <span>4b. Review</span>
+    </div>
+    <span class="stage-connector">➔</span>
+    <div class="stage-item" id="step-git">
+      <span class="step-icon">○</span>
+      <span>5. Git</span>
+    </div>
+  </nav>
+
+  <!-- MAIN 5-PANEL BENTO CONTAINER -->
+  <main class="bento-container">
+
+    <!-- LEFT COLUMN: Active Task, Governance, Queue -->
+    <section class="left-col">
+
+      <!-- Active Task Card -->
+      <div class="bento-card">
+        <div class="card-header">
+          <span class="card-title">Active Task</span>
+          <span class="tag tag-attempt" id="task-attempt">Attempt 0 / 3</span>
+        </div>
+        <div>
+          <div class="task-id-badge" id="task-id">No active task</div>
+        </div>
+        <div class="task-meta-row">
+          <span class="tag tag-quick" id="task-mode">MODE: IDLE</span>
+          <span class="tag tag-low" id="task-risk">RISK: LOW</span>
+        </div>
+        <div class="task-goal-text" id="task-goal">Waiting for orchestrator task...</div>
+      </div>
+
+      <!-- Squad Roles Card -->
+      <div class="bento-card">
+        <div class="card-header">
+          <span class="card-title">Squad Roles</span>
+        </div>
+        <div class="role-row">
+          <div class="role-name">
+            <span>✍️ Writer:</span>
+            <span class="role-model" id="role-writer-model">deepseek-v4.1</span>
+          </div>
+          <span class="status-badge badge-idle" id="role-writer-status">IDLE</span>
+        </div>
+        <div class="role-row">
+          <div class="role-name">
+            <span>🛡️ Validator:</span>
+            <span class="role-model">Fast + Suite</span>
+          </div>
+          <span class="status-badge badge-idle" id="role-validator-status">IDLE</span>
+        </div>
+        <div class="role-row">
+          <div class="role-name">
+            <span>🔍 Reviewer:</span>
+            <span class="role-model" id="role-reviewer-model">claude-opus</span>
+          </div>
+          <span class="status-badge badge-skipped" id="role-reviewer-status">SKIP: LOW</span>
+        </div>
+      </div>
+
+      <!-- Scoped Files Card -->
+      <div class="bento-card">
+        <div class="card-header">
+          <span class="card-title">Locked Scope Files</span>
+          <span class="tag tag-attempt" id="scope-count">0 files</span>
+        </div>
+        <ul class="file-list" id="scope-files-list">
+          <li class="file-item"><span class="file-path">No scope locked</span></li>
+        </ul>
+      </div>
+
+      <!-- Queue Stats Card -->
+      <div class="bento-card">
+        <div class="card-header">
+          <span class="card-title">Task Queue</span>
+        </div>
+        <div class="queue-stats-row">
+          <div class="queue-stat-box">
+            <div class="queue-stat-num" id="cnt-active" style="color: #60a5fa;">0</div>
+            <div class="queue-stat-label">Active</div>
+          </div>
+          <div class="queue-stat-box">
+            <div class="queue-stat-num" id="cnt-done" style="color: #34d399;">0</div>
+            <div class="queue-stat-label">Done</div>
+          </div>
+          <div class="queue-stat-box">
+            <div class="queue-stat-num" id="cnt-blocked" style="color: #f87171;">0</div>
+            <div class="queue-stat-label">Blocked</div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- RIGHT COLUMN: Output Inspector Top, Console Bottom -->
+    <section class="right-col">
+
+      <!-- Top: Writer Raw Output Inspector -->
+      <div class="inspector-card">
+        <div class="inspector-header">
+          <span class="card-title">Writer Raw Output &amp; Error Inspector</span>
+          <div class="inspector-meta">
+            <span>File: <strong id="out-file">None</strong></span>
+            <span>Reason: <strong id="out-finish">N/A</strong></span>
+            <span>Size: <strong id="out-size">0 KB</strong></span>
+          </div>
+        </div>
+        <div class="inspector-body">
+          <pre class="code-view" id="writer-output">(No writer output recorded yet)</pre>
+        </div>
+      </div>
+
+      <!-- Bottom: Live Console Logs -->
+      <div class="console-card">
+        <div class="console-header">
+          <span class="card-title">Live Console Logs</span>
+          <div class="console-controls">
+            <input type="text" class="filter-input" id="log-filter" placeholder="Filter logs...">
+            <button class="btn-ctrl" id="btn-pause-log">⏸ Pause</button>
+            <button class="btn-ctrl" id="btn-clear-log">Clear</button>
+          </div>
+        </div>
+        <div class="console-body" id="console-logs">
+          <!-- Populated securely via DOM nodes & textContent -->
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <script>
+    // State
+    let isLogPaused = false;
+    let logFilterText = '';
+    let lastRenderedLogsHash = '';
+    let currentStage = 'idle';
+    let stageStartedAt = null;
+
+    // DOM Elements
+    const dotRouter = document.getElementById('dot-router');
+    const txtRouter = document.getElementById('txt-router');
+    const dotOrchestrator = document.getElementById('dot-orchestrator');
+    const txtOrchestrator = document.getElementById('txt-orchestrator');
+    const tokIn = document.getElementById('tok-in');
+    const tokOut = document.getElementById('tok-out');
+    const txtPolling = document.getElementById('txt-polling');
+
+    const writerTimer = document.getElementById('writer-timer');
+
+    const taskId = document.getElementById('task-id');
+    const taskAttempt = document.getElementById('task-attempt');
+    const taskMode = document.getElementById('task-mode');
+    const taskRisk = document.getElementById('task-risk');
+    const taskGoal = document.getElementById('task-goal');
+
+    const roleWriterModel = document.getElementById('role-writer-model');
+    const roleWriterStatus = document.getElementById('role-writer-status');
+    const roleValidatorStatus = document.getElementById('role-validator-status');
+    const roleReviewerModel = document.getElementById('role-reviewer-model');
+    const roleReviewerStatus = document.getElementById('role-reviewer-status');
+
+    const scopeFilesList = document.getElementById('scope-files-list');
+    const scopeCount = document.getElementById('scope-count');
+
+    const cntActive = document.getElementById('cnt-active');
+    const cntDone = document.getElementById('cnt-done');
+    const cntBlocked = document.getElementById('cnt-blocked');
+
+    const outFile = document.getElementById('out-file');
+    const outFinish = document.getElementById('out-finish');
+    const outSize = document.getElementById('out-size');
+    const writerOutput = document.getElementById('writer-output');
+
+    const consoleLogs = document.getElementById('console-logs');
+    const btnPauseLog = document.getElementById('btn-pause-log');
+    const btnClearLog = document.getElementById('btn-clear-log');
+    const logFilter = document.getElementById('log-filter');
+
+    // Pipeline Step Elements Map
+    const pipelineSteps = {
+      preflight: document.getElementById('step-preflight'),
+      router: document.getElementById('step-router'),
+      writer: document.getElementById('step-writer'),
+      applier: document.getElementById('step-applier'),
+      validator: document.getElementById('step-validator'),
+      reviewer: document.getElementById('step-reviewer'),
+      git: document.getElementById('step-git')
+    };
+
+    const stageSequence = ['preflight', 'router', 'writer', 'applier', 'validator', 'reviewer', 'git'];
+
+    // Format Token Numbers
+    function formatTokens(num) {
+      if (!num || isNaN(num)) return '0';
+      if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+      if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
+      return String(num);
+    }
+
+    // Update Pipeline Stages Visual State
+    function updatePipelineDisplay(activeStage, stageStartTime) {
+      currentStage = activeStage;
+      stageStartedAt = stageStartTime ? new Date(stageStartTime).getTime() : null;
+
+      const activeIdx = stageSequence.indexOf(activeStage);
+
+      stageSequence.forEach((stage, idx) => {
+        const el = pipelineSteps[stage];
+        if (!el) return;
+
+        // Reset classes
+        el.className = 'stage-item';
+        const iconSpan = el.querySelector('.step-icon');
+
+        if (activeStage === 'idle') {
+          if (iconSpan) iconSpan.textContent = '○';
+        } else if (activeStage === 'blocked' || activeStage === 'failed') {
+          if (idx <= activeIdx) {
+            el.classList.add('failed');
+            if (iconSpan) iconSpan.textContent = '✕';
+          } else {
+            if (iconSpan) iconSpan.textContent = '○';
+          }
+        } else if (activeStage === 'done') {
+          el.classList.add('done');
+          if (iconSpan) iconSpan.textContent = '✓';
+        } else {
+          if (idx < activeIdx) {
+            el.classList.add('done');
+            if (iconSpan) iconSpan.textContent = '✓';
+          } else if (idx === activeIdx) {
+            el.classList.add('active');
+            if (iconSpan) iconSpan.textContent = '●';
+          } else {
+            if (iconSpan) iconSpan.textContent = '○';
+          }
+        }
+      });
+
+      // Writer live elapsed timer
+      if (activeStage === 'writer' && stageStartedAt) {
+        writerTimer.style.display = 'inline-block';
+      } else {
+        writerTimer.style.display = 'none';
+      }
+    }
+
+    // Local 100ms ticker for active stage timer
+    setInterval(() => {
+      if (currentStage === 'writer' && stageStartedAt) {
+        const sec = Math.max(0, Math.floor((Date.now() - stageStartedAt) / 1000));
+        writerTimer.textContent = '⏱ ' + sec + 's';
+      }
+    }, 250);
+
+    // Render Scoped Files securely
+    function renderScopedFiles(files) {
+      while (scopeFilesList.firstChild) {
+        scopeFilesList.removeChild(scopeFilesList.firstChild);
+      }
+
+      if (!files || files.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'file-item';
+        const sp = document.createElement('span');
+        sp.className = 'file-path';
+        sp.textContent = 'No scope locked';
+        li.appendChild(sp);
+        scopeFilesList.appendChild(li);
+        scopeCount.textContent = '0 files';
+        return;
+      }
+
+      scopeCount.textContent = files.length + (files.length === 1 ? ' file' : ' files');
+
+      files.forEach(f => {
+        const filePath = typeof f === 'object' ? f.path : String(f);
+        const fileStatus = typeof f === 'object' ? (f.status || 'pending') : 'pending';
+
+        const li = document.createElement('li');
+        li.className = 'file-item';
+
+        const pathSpan = document.createElement('span');
+        pathSpan.className = 'file-path';
+        pathSpan.textContent = filePath;
+
+        const tagSpan = document.createElement('span');
+        tagSpan.className = 'file-tag file-' + fileStatus;
+        tagSpan.textContent = fileStatus;
+
+        li.appendChild(pathSpan);
+        li.appendChild(tagSpan);
+        scopeFilesList.appendChild(li);
+      });
+    }
+
+    // Render Logs securely with auto-scroll
+    function renderLogs(logs) {
+      if (isLogPaused || !logs) return;
+
+      const filterLower = logFilterText.toLowerCase().trim();
+      const filtered = filterLower
+        ? logs.filter(l => (l.msg || '').toLowerCase().includes(filterLower))
+        : logs;
+
+      const newHash = JSON.stringify(filtered);
+      if (newHash === lastRenderedLogsHash) return;
+      lastRenderedLogsHash = newHash;
+
+      while (consoleLogs.firstChild) {
+        consoleLogs.removeChild(consoleLogs.firstChild);
+      }
+
+      filtered.forEach(log => {
+        const row = document.createElement('div');
+        row.className = 'log-line';
+
+        const tsSpan = document.createElement('span');
+        tsSpan.className = 'log-ts';
+        tsSpan.textContent = log.ts || '--:--:--';
+
+        const lvlSpan = document.createElement('span');
+        lvlSpan.className = 'log-lvl log-lvl-' + (log.level || 'info');
+        lvlSpan.textContent = log.level || 'info';
+
+        const msgSpan = document.createElement('span');
+        msgSpan.className = 'log-msg';
+        msgSpan.textContent = log.msg || '';
+
+        row.appendChild(tsSpan);
+        row.appendChild(lvlSpan);
+        row.appendChild(msgSpan);
+        consoleLogs.appendChild(row);
+      });
+
+      // Auto-scroll to bottom
+      consoleLogs.scrollTop = consoleLogs.scrollHeight;
+    }
+
+    // Main Snapshot Handler
+    async function fetchSnapshot() {
+      try {
+        const res = await fetch('/api/snapshot');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+
+        txtPolling.textContent = '1s Polling';
+
+        // 1. Router Health
+        if (data.router_health && data.router_health.ok) {
+          dotRouter.className = 'dot online';
+          txtRouter.textContent = '9Router :20128 (' + data.router_health.latency_ms + 'ms)';
+        } else {
+          dotRouter.className = 'dot offline';
+          txtRouter.textContent = '9Router DOWN';
+        }
+
+        // 2. Orchestrator Process
+        if (data.orchestrator && data.orchestrator.running) {
+          dotOrchestrator.className = 'dot running';
+          txtOrchestrator.textContent = 'RUNNING (PID ' + data.orchestrator.pid + ')';
+        } else {
+          dotOrchestrator.className = 'dot';
+          txtOrchestrator.textContent = 'IDLE';
+        }
+
+        // 3. Tokens
+        const live = data.live_status || {};
+        tokIn.textContent = formatTokens(live.tokens?.session_input || 0);
+        tokOut.textContent = formatTokens(live.tokens?.session_output || 0);
+
+        // 4. Pipeline Stages
+        const activeStage = live.current_stage || (data.orchestrator?.running ? 'preflight' : 'idle');
+        updatePipelineDisplay(activeStage, live.stage_started_at);
+
+        // 5. Active Task
+        if (live.current_task_id) {
+          taskId.textContent = live.current_task_id;
+          taskAttempt.textContent = 'Attempt ' + (live.attempt || 1) + ' / ' + (live.max_retries || 3);
+          taskMode.textContent = 'MODE: ' + (live.mode || 'QUICK').toUpperCase();
+          taskMode.className = 'tag tag-' + (live.mode === 'standard' ? 'standard' : 'quick');
+          taskRisk.textContent = 'RISK: ' + (live.risk_level || 'LOW').toUpperCase();
+          taskRisk.className = 'tag tag-' + (live.risk_level || 'low');
+          taskGoal.textContent = live.current_task_title || '(No task goal declared)';
+        } else {
+          taskId.textContent = data.orchestrator?.running ? 'Preparing task...' : 'No active task';
+          taskAttempt.textContent = 'Attempt 0 / 3';
+          taskMode.textContent = 'MODE: IDLE';
+          taskMode.className = 'tag tag-quick';
+          taskRisk.textContent = 'RISK: LOW';
+          taskRisk.className = 'tag tag-low';
+          taskGoal.textContent = 'Waiting for orchestrator task...';
+        }
+
+        // 6. Squad Roles
+        const rolesStatus = live.roles_status || {};
+        const teamRoles = data.roles || {};
+
+        roleWriterModel.textContent = rolesStatus.writer?.model || teamRoles.writer?.model || 'deepseek-v4.1';
+        const wStatus = rolesStatus.writer?.status || 'idle';
+        roleWriterStatus.textContent = wStatus.toUpperCase();
+        roleWriterStatus.className = 'status-badge badge-' + (wStatus === 'working' ? 'working' : (wStatus === 'done' ? 'done' : (wStatus === 'error' ? 'error' : 'idle')));
+
+        const vStatus = rolesStatus.validator?.status || 'idle';
+        roleValidatorStatus.textContent = vStatus.toUpperCase();
+        roleValidatorStatus.className = 'status-badge badge-' + (vStatus === 'working' ? 'working' : (vStatus === 'passed' ? 'done' : (vStatus === 'failed' ? 'error' : 'idle')));
+
+        roleReviewerModel.textContent = rolesStatus.reviewer?.model || teamRoles.reviewer?.model || 'claude-opus';
+        const rStatus = rolesStatus.reviewer?.status || 'idle';
+        roleReviewerStatus.textContent = rStatus.toUpperCase();
+        roleReviewerStatus.className = 'status-badge badge-' + (rStatus === 'working' ? 'working' : (rStatus === 'approved' ? 'done' : (rStatus === 'rejected' ? 'error' : (rStatus === 'skipped' ? 'skipped' : 'idle'))));
+
+        // 7. Scoped Files
+        renderScopedFiles(live.scope_files);
+
+        // 8. Queue Counts
+        const q = data.queue || {};
+        cntActive.textContent = String(q.active_count ?? 0);
+        cntDone.textContent = String(q.completed_count ?? 0);
+        cntBlocked.textContent = String(q.blocked_count ?? 0);
+
+        // 9. Writer Raw Output Inspector
+        const out = data.latest_output || {};
+        outFile.textContent = out.file_path || 'None';
+        outFinish.textContent = out.finish_reason || 'N/A';
+        outSize.textContent = out.file_size_bytes ? Math.round(out.file_size_bytes / 1024) + ' KB' : '0 KB';
+        writerOutput.textContent = out.content || '(No writer output recorded yet)';
+
+        // 10. Console Logs
+        renderLogs(live.recent_logs);
+
+      } catch (err) {
+        txtPolling.textContent = '○ Reconnecting...';
+        dotOrchestrator.className = 'dot';
+      }
+    }
+
+    // UI Event Listeners
+    btnPauseLog.addEventListener('click', () => {
+      isLogPaused = !isLogPaused;
+      btnPauseLog.textContent = isLogPaused ? '▶ Resume' : '⏸ Pause';
+      btnPauseLog.style.background = isLogPaused ? 'var(--status-warning)' : '';
+      btnPauseLog.style.color = isLogPaused ? '#000' : '';
+    });
+
+    btnClearLog.addEventListener('click', () => {
+      while (consoleLogs.firstChild) {
+        consoleLogs.removeChild(consoleLogs.firstChild);
+      }
+      lastRenderedLogsHash = '';
+    });
+
+    logFilter.addEventListener('input', (e) => {
+      logFilterText = e.target.value;
+      lastRenderedLogsHash = '';
+    });
+
+    // Start Polling (every 1000ms)
+    fetchSnapshot();
+    setInterval(fetchSnapshot, 1000);
+  </script>
+</body>
+</html>

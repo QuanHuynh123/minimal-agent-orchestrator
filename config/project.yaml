@@ -19,6 +19,7 @@ project:
     - "package.json"
     - "package-lock.json"
     - "requirements.txt"
+    - "tests/test_indentation.py"
     - "agent-team/scripts/**"
     - "agent-team/config/**"
     - ".github/workflows/**"

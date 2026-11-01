@@ -29,8 +29,81 @@ const TEAM_DIR = path.resolve(__dirname, '..');
 const LOCK_FILE = path.resolve(TEAM_DIR, '.orchestrator.lock');
 const STATE_FILE = path.resolve(TEAM_DIR, 'state', 'task-state.json');
 const REPORT_FILE = path.resolve(TEAM_DIR, 'state', 'morning-report.md');
+const LIVE_STATUS_FILE = path.resolve(TEAM_DIR, 'state', 'live-status.json');
 const ACTIVE_TASKS_DIR = path.resolve(TEAM_DIR, 'tasks', 'active');
 const ARCHIVE_TASKS_DIR = path.resolve(TEAM_DIR, 'tasks', 'archive');
+
+// Telemetry Ring Buffer (Last 100 console messages for Dashboard)
+const MAX_RING_BUFFER = 100;
+export const consoleRingBuffer = [];
+
+function pushToRingBuffer(level, args) {
+  try {
+    const msg = args.map(a => (typeof a === 'object' && a !== null ? JSON.stringify(a) : String(a))).join(' ');
+    const now = new Date();
+    const ts = now.toTimeString().split(' ')[0];
+    consoleRingBuffer.push({ ts, level, msg });
+    if (consoleRingBuffer.length > MAX_RING_BUFFER) {
+      consoleRingBuffer.shift();
+    }
+  } catch {
+    // Non-throwing telemetry
+  }
+}
+
+const origLog = console.log;
+const origWarn = console.warn;
+const origError = console.error;
+
+console.log = function(...args) {
+  pushToRingBuffer('info', args);
+  origLog.apply(console, args);
+};
+console.warn = function(...args) {
+  pushToRingBuffer('warn', args);
+  origWarn.apply(console, args);
+};
+console.error = function(...args) {
+  pushToRingBuffer('error', args);
+  origError.apply(console, args);
+};
+
+export let liveStatus = {
+  active: false,
+  pid: process.pid,
+  current_task_id: null,
+  current_task_title: '',
+  current_stage: 'idle',
+  stage_started_at: null,
+  task_started_at: null,
+  mode: null,
+  risk_level: null,
+  attempt: 0,
+  max_retries: 3,
+  scope_files: [],
+  roles_status: {},
+  queue_stats: { active: 0, completed: 0, blocked: 0 },
+  last_error: null,
+  raw_log_path: null,
+  tokens: { task_input: 0, task_output: 0, session_input: 0, session_output: 0 },
+  updated_at: new Date().toISOString()
+};
+
+export function updateLiveStatus(patch = {}) {
+  try {
+    liveStatus = { ...liveStatus, ...patch, updated_at: new Date().toISOString() };
+    const payload = {
+      ...liveStatus,
+      recent_logs: [...consoleRingBuffer]
+    };
+    const tmpPath = `${LIVE_STATUS_FILE}.tmp.${Date.now()}`;
+    fs.mkdirSync(path.dirname(LIVE_STATUS_FILE), { recursive: true });
+    fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), 'utf8');
+    fs.renameSync(tmpPath, LIVE_STATUS_FILE);
+  } catch {
+    // Non-throwing telemetry: write contention/EPERM must NEVER crash orchestrator
+  }
+}
 
 // 1. Lock File Management (with Stale PID Recovery)
 export function isProcessAlive(pid) {
@@ -395,7 +468,7 @@ export async function check9RouterHealth(teamCfg = teamConfig, policyCfg = polic
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(timeoutSec * 1000)
     });
-    if (res.ok || res.status === 401 || res.status === 404) {
+    if (res.ok) {
       return { ok: true, status: res.status };
     }
     return { ok: false, error: `9Router healthcheck returned HTTP ${res.status}` };
@@ -404,6 +477,33 @@ export async function check9RouterHealth(teamCfg = teamConfig, policyCfg = polic
       ok: false,
       error: `9Router unreachable at ${baseUrl} (timeout ${timeoutSec}s): ${err.message}`
     };
+  }
+}
+
+export function saveWriterRawOutput(taskId, attemptNum, writerRes = {}) {
+  try {
+    const safeId = String(taskId || 'unknown').replace(/[^A-Za-z0-9_.-]/g, '_');
+    const runDir = path.resolve(TEAM_DIR, 'state', 'runs', safeId);
+    fs.mkdirSync(runDir, { recursive: true });
+    const outPath = path.resolve(runDir, `attempt-${attemptNum}.txt`);
+    const header = [
+      `=== WRITER ATTEMPT ${attemptNum} ===`,
+      `Timestamp: ${new Date().toISOString()}`,
+      `Model Used: ${writerRes.modelUsed || 'unknown'}`,
+      `Finish Reason: ${writerRes.finishReason || 'unknown'}`,
+      `Prompt Tokens: ${writerRes.usage?.prompt_tokens || 0}`,
+      `Completion Tokens: ${writerRes.usage?.completion_tokens || 0}`,
+      `====================================\n`
+    ].join('\n');
+    const body = [
+      header,
+      `--- MESSAGE CONTENT ---\n${writerRes.rawContent ?? writerRes.content ?? ''}\n`,
+      writerRes.rawReasoning ? `\n--- REASONING CONTENT ---\n${writerRes.rawReasoning}\n` : ''
+    ].join('\n');
+    fs.writeFileSync(outPath, body, 'utf8');
+    return outPath;
+  } catch {
+    return null;
   }
 }
 
@@ -456,13 +556,23 @@ async function call9Router(model, systemPrompt, userMessage, maxTokens = 4096, f
           throw new Error(`Failed to parse JSON response: ${rawText.slice(0, 200)}`);
         }
       }
-      let content = data.choices?.[0]?.message?.content || '';
+      const rawContent = data.choices?.[0]?.message?.content || '';
       const reasoning = data.choices?.[0]?.message?.reasoning_content || '';
+      const finishReason = data.choices?.[0]?.finish_reason || 'unknown';
+      let content = rawContent;
       if (!content.includes('<<<<<<< SEARCH') && reasoning.includes('<<<<<<< SEARCH')) {
         content = reasoning;
       }
       const usage = data.usage || { prompt_tokens: 0, completion_tokens: 0 };
-      return { ok: true, content, usage, modelUsed: candidateModel };
+      return {
+        ok: true,
+        content,
+        rawContent,
+        rawReasoning: reasoning,
+        finishReason,
+        usage,
+        modelUsed: candidateModel
+      };
     } catch (err) {
       lastError = `${candidateModel}: ${err.name === 'TimeoutError' ? `Request timed out after ${timeoutSec}s` : err.message}`;
     }
@@ -638,12 +748,31 @@ async function runOrchestrator() {
 
   console.log(`[Orchestrator] Found ${taskFiles.length} task(s) in tasks/active/`);
 
+  updateLiveStatus({
+    active: true,
+    pid: process.pid,
+    current_stage: 'preflight',
+    stage_started_at: new Date().toISOString(),
+    queue_stats: {
+      active: taskFiles.length,
+      completed: (state.completed_tasks || []).length,
+      blocked: (state.blocked_tasks || []).length
+    },
+    tokens: {
+      task_input: 0,
+      task_output: 0,
+      session_input: state.metrics?.total_input_tokens || 0,
+      session_output: state.metrics?.total_output_tokens || 0
+    }
+  });
+
   // Pre-flight 9Router Healthcheck (HR-6): Abort session cleanly without mutating active tasks if 9Router is down
   if (taskFiles.length > 0) {
     const health = await check9RouterHealth(teamConfig, policyConfig);
     if (!health.ok) {
       console.error(`[Orchestrator] Pre-flight healthcheck FAILED: ${health.error}`);
       console.error('[Orchestrator] Aborting session safely without mutating active tasks.');
+      updateLiveStatus({ active: false, current_stage: 'blocked', last_error: health.error });
       releaseLock();
       process.exit(1);
     }
@@ -665,6 +794,12 @@ async function runOrchestrator() {
       continue;
     }
 
+    const initialStatus = String(task.status || 'ready').toLowerCase();
+    if (initialStatus === 'blocked' || initialStatus === 'done') {
+      console.log(`[Orchestrator] Skipping ${tFile} (status="${initialStatus}"). Reset status to "ready" to re-run.`);
+      continue;
+    }
+
     let retries = 0;
     let lastErrorHash = null;
     let consecutiveIdenticalErrors = 0;
@@ -680,6 +815,21 @@ async function runOrchestrator() {
       ...(task.scope_expansions || []),
       ...actualModifiedFiles
     ]));
+
+    updateLiveStatus({
+      current_task_id: task.task_id,
+      current_task_title: task.title || task.goal || '',
+      current_stage: 'router',
+      stage_started_at: new Date().toISOString(),
+      task_started_at: new Date().toISOString(),
+      mode: task.mode || 'quick',
+      risk_level: task.risk_level || 'low',
+      attempt: 1,
+      max_retries,
+      scope_files: (task.scope || []).map(f => ({ path: f, status: 'pending' })),
+      last_error: null,
+      raw_log_path: null
+    });
 
     try {
       // ==========================================
@@ -758,6 +908,11 @@ async function runOrchestrator() {
       const effectiveRisk = resolveEffectiveRisk(task);
       task.risk_level = effectiveRisk;
       task.mode = resolveTaskMode(task, policyConfig.policy);
+      updateLiveStatus({
+        mode: task.mode,
+        risk_level: task.risk_level,
+        scope_files: (task.scope || []).map(f => ({ path: f, status: 'pending' }))
+      });
 
       // Approval Check for High/Critical Risk or Cross-Role Edit
       const needsHumanApproval = (RISK_LEVEL_RANK[effectiveRisk] >= RISK_LEVEL_RANK.high) || (Boolean(task.cross_role_edit) && requireCrossRoleApproval);
@@ -785,6 +940,14 @@ async function runOrchestrator() {
       // Scoped Clean Worktree Guard
       if (requireCleanBeforeStart && !isCleanWorktree(task.scope)) {
         blockReason = `Scoped files have uncommitted modifications before task start: ${task.scope.join(', ')}`;
+        task.status = 'blocked';
+        throw new Error(blockReason);
+      }
+
+      // Baseline Fast Check Guard (Ensure repo is not already broken before Writer runs)
+      const baselineCheck = await validateFast(projectConfig);
+      if (!baselineCheck.ok) {
+        blockReason = `Baseline fast check failed before task start (${baselineCheck.checkName}): ${baselineCheck.errorCombined.slice(0, 300)}`;
         task.status = 'blocked';
         throw new Error(blockReason);
       }
@@ -863,6 +1026,17 @@ async function runOrchestrator() {
           ? fs.readFileSync(path.resolve(TEAM_DIR, 'roles', 'writer.md'), 'utf8')
           : 'You are the backend code writer. Return changes in <<<<<<< SEARCH / ======= / >>>>>>> REPLACE blocks.';
 
+        updateLiveStatus({
+          current_stage: 'writer',
+          stage_started_at: new Date().toISOString(),
+          attempt: retries + 1,
+          roles_status: {
+            writer: { model: writerModel, status: 'working' },
+            validator: { status: 'idle' },
+            reviewer: { status: 'idle' }
+          }
+        });
+
         const scopedFilesContext = buildScopedFilesContext(task.scope, REPO_ROOT, task, {
           tokenBudgetPerTask,
           maxFilesPerTask
@@ -881,14 +1055,24 @@ async function runOrchestrator() {
             : 'Please generate the exact code modifications to fulfill the goal.'
         ].join('\n\n');
 
-        const writerRes = await call9Router(writerModel, writerSystemRole, userMessage, 32768, writerFallback, writerTemp);
+        const writerRes = await call9Router(writerModel, writerSystemRole, userMessage, 16384, writerFallback, writerTemp);
 
         if (!writerRes.ok) {
           console.error(`[Writer] API error: ${writerRes.error}`);
           task.last_error = writerRes.error;
+          updateLiveStatus({
+            roles_status: {
+              writer: { model: writerModel, status: 'error' },
+              validator: { status: 'idle' },
+              reviewer: { status: 'idle' }
+            },
+            last_error: writerRes.error
+          });
           retries++;
           continue;
         }
+
+        const rawLogPath = saveWriterRawOutput(task.task_id, retries + 1, writerRes);
 
         const inputTok = writerRes.usage?.prompt_tokens || 0;
         const outputTok = writerRes.usage?.completion_tokens || 0;
@@ -896,7 +1080,27 @@ async function runOrchestrator() {
         state.metrics.total_input_tokens = (state.metrics.total_input_tokens || 0) + inputTok;
         state.metrics.total_output_tokens = (state.metrics.total_output_tokens || 0) + outputTok;
 
+        updateLiveStatus({
+          raw_log_path: rawLogPath,
+          roles_status: {
+            writer: { model: writerModel, status: 'done' },
+            validator: { status: 'idle' },
+            reviewer: { status: 'idle' }
+          },
+          tokens: {
+            task_input: taskTokensUsed,
+            task_output: 0,
+            session_input: state.metrics.total_input_tokens || 0,
+            session_output: state.metrics.total_output_tokens || 0
+          }
+        });
+
         // Step B: 8-Step Applier Pipeline
+        updateLiveStatus({
+          current_stage: 'applier',
+          stage_started_at: new Date().toISOString()
+        });
+
         const applyRes = applyEdits(writerRes.content, task, {
           allowedDirs,
           protectedFiles,
@@ -907,19 +1111,23 @@ async function runOrchestrator() {
         });
 
         if (!applyRes.ok) {
-          console.warn(`[Applier] ${applyRes.error}`);
+          const truncHint = writerRes.finishReason === 'length'
+            ? ' [OUTPUT TRUNCATED AT max_tokens=16384 — Task is too large for 1 pass; split into smaller tasks (<150 lines)]'
+            : '';
+          const fullApplyErr = `${applyRes.error}${truncHint}${rawLogPath ? ` (raw output saved: ${path.relative(REPO_ROOT, rawLogPath)})` : ''}`;
+          console.warn(`[Applier] ${fullApplyErr}`);
           if (writerRes.content) {
             console.warn(`[Applier Output Preview]:\n${writerRes.content.slice(0, 500)}`);
           }
           if (applyRes.security || applyRes.noRetry) {
-            blockReason = applyRes.error;
+            blockReason = fullApplyErr;
             task.status = 'blocked';
             rollback(getRollbackTargets());
             break;
           }
 
           const applyHash = hashString(applyRes.error);
-          const failAction = handleStageFailure('apply', applyRes.error, applyHash);
+          const failAction = handleStageFailure('apply', fullApplyErr, applyHash);
           if (failAction.shouldBreak) break;
           continue;
         }
@@ -928,11 +1136,35 @@ async function runOrchestrator() {
         const allTaskFiles = Array.from(new Set([...task.scope, ...(task.scope_expansions || []), ...(applyRes.modified || [])]));
         actualModifiedFiles = getModifiedFiles(allTaskFiles);
 
+        updateLiveStatus({
+          scope_files: allTaskFiles.map(f => ({
+            path: f,
+            status: actualModifiedFiles.includes(f) ? 'modified' : 'pending'
+          }))
+        });
+
         // Step C: Fast Validation (0-Token)
         task.status = 'validating';
+        updateLiveStatus({
+          current_stage: 'validator',
+          stage_started_at: new Date().toISOString(),
+          roles_status: {
+            writer: { model: writerModel, status: 'done' },
+            validator: { status: 'working' },
+            reviewer: { status: 'idle' }
+          }
+        });
+
         const fastVal = await validateFast(projectConfig);
         if (!fastVal.ok) {
           console.warn(`[Validator] Fast check failed: ${fastVal.checkName}`);
+          updateLiveStatus({
+            roles_status: {
+              writer: { model: writerModel, status: 'done' },
+              validator: { status: 'failed' },
+              reviewer: { status: 'idle' }
+            }
+          });
           const failAction = handleStageFailure('validate', fastVal.errorCombined, fastVal.errorHash);
           if (failAction.shouldBreak) break;
           continue;
@@ -942,6 +1174,13 @@ async function runOrchestrator() {
         const suiteVal = await validateSuite(projectConfig);
         if (!suiteVal.ok) {
           console.warn(`[Validator] Suite check failed: ${suiteVal.checkName}`);
+          updateLiveStatus({
+            roles_status: {
+              writer: { model: writerModel, status: 'done' },
+              validator: { status: 'failed' },
+              reviewer: { status: 'idle' }
+            }
+          });
           const failAction = handleStageFailure('validate', suiteVal.errorCombined, suiteVal.errorHash);
           if (failAction.shouldBreak) break;
           continue;
@@ -950,10 +1189,32 @@ async function runOrchestrator() {
         validationPassed = true;
         task.validation_result = { passed: true };
 
+        updateLiveStatus({
+          roles_status: {
+            writer: { model: writerModel, status: 'done' },
+            validator: { status: 'passed' },
+            reviewer: { status: 'idle' }
+          },
+          scope_files: allTaskFiles.map(f => ({
+            path: f,
+            status: 'validated'
+          }))
+        });
+
         // Step E: Risk-Gated & Mode-Based Reviewer Gate
         // Only invokes AI Reviewer (Opus) when risk_level >= review_min_risk_level ('high'/'critical') or force_ai_review: true
         if (shouldRunReviewerGate(task, policyConfig.policy, teamConfig.roles)) {
           task.status = 'reviewing';
+          updateLiveStatus({
+            current_stage: 'reviewer',
+            stage_started_at: new Date().toISOString(),
+            roles_status: {
+              writer: { model: writerModel, status: 'done' },
+              validator: { status: 'passed' },
+              reviewer: { model: teamConfig.roles?.reviewer?.model || 'claude-opus', status: 'working' }
+            }
+          });
+
           const revRes = await runReviewerGate(task, actualModifiedFiles);
           if (revRes.usage) {
             const rIn = revRes.usage.prompt_tokens || 0;
@@ -967,18 +1228,43 @@ async function runOrchestrator() {
           }
           if (!revRes.ok) {
             console.warn(`[Reviewer] ${revRes.error}`);
+            updateLiveStatus({
+              roles_status: {
+                writer: { model: writerModel, status: 'done' },
+                validator: { status: 'passed' },
+                reviewer: { model: teamConfig.roles?.reviewer?.model || 'claude-opus', status: 'rejected' }
+              }
+            });
             const revHash = hashString(revRes.error);
             const failAction = handleStageFailure('review', revRes.error, revHash);
             if (failAction.shouldBreak) break;
             continue;
           }
+          updateLiveStatus({
+            roles_status: {
+              writer: { model: writerModel, status: 'done' },
+              validator: { status: 'passed' },
+              reviewer: { model: teamConfig.roles?.reviewer?.model || 'claude-opus', status: 'approved' }
+            }
+          });
         } else {
           const minRisk = policyConfig.policy?.approval_gates?.review_min_risk_level || 'high';
           console.log(`[Reviewer] Skipped AI review for risk_level="${task.risk_level}" (below review_min_risk_level="${minRisk}"). Relying on 0-token Validator suite.`);
+          updateLiveStatus({
+            roles_status: {
+              writer: { model: writerModel, status: 'done' },
+              validator: { status: 'passed' },
+              reviewer: { status: 'skipped' }
+            }
+          });
         }
 
         // Step F: Scoped Git Commit
         if (autoCommitOnDone && actualModifiedFiles.length > 0) {
+          updateLiveStatus({
+            current_stage: 'git',
+            stage_started_at: new Date().toISOString()
+          });
           const commitRes = commitDone(
             task.task_id,
             task.title || task.goal || 'complete task',
@@ -988,7 +1274,10 @@ async function runOrchestrator() {
           if (commitRes.ok) {
             task.commit_hash = commitRes.hash;
           } else {
-            console.warn(`[GitGuard] Commit skipped/failed: ${commitRes.error}`);
+            blockReason = `Git commit failed: ${commitRes.error}`;
+            task.status = 'blocked';
+            console.error(`[GitGuard] ${blockReason}`);
+            break;
           }
         }
 
@@ -1020,6 +1309,8 @@ async function runOrchestrator() {
       };
 
       if (isTaskDone) {
+        state.completed_tasks = (state.completed_tasks || []).filter(t => (t.task_id || t.id) !== task.task_id);
+        state.blocked_tasks = (state.blocked_tasks || []).filter(t => (t.task_id || t.id) !== task.task_id);
         state.completed_tasks.push(task);
 
         if (!fs.existsSync(ARCHIVE_TASKS_DIR)) {
@@ -1030,12 +1321,23 @@ async function runOrchestrator() {
         if (fs.existsSync(taskPath)) fs.unlinkSync(taskPath);
       } else {
         task.block_reason = task.last_report.blocker_reason;
+        state.blocked_tasks = (state.blocked_tasks || []).filter(t => (t.task_id || t.id) !== task.task_id);
         state.blocked_tasks.push(task);
         saveTaskAtomic(taskPath, task);
       }
 
       saveStateAtomic(state);
       writeMorningReport(state);
+
+      updateLiveStatus({
+        current_stage: isTaskDone ? 'done' : (task.status === 'blocked' ? 'blocked' : 'failed'),
+        last_error: blockReason || task.last_error || null,
+        queue_stats: {
+          active: fs.readdirSync(ACTIVE_TASKS_DIR).filter(f => f.endsWith('.yaml') || f.endsWith('.yml')).length,
+          completed: (state.completed_tasks || []).length,
+          blocked: (state.blocked_tasks || []).length
+        }
+      });
 
       // Print 1-line post-hook report to console
       const filesSummary = (task.last_report.modified_files || []).join(', ') || 'none';
@@ -1044,6 +1346,11 @@ async function runOrchestrator() {
   }
 
   releaseLock();
+  updateLiveStatus({
+    active: false,
+    current_stage: 'idle',
+    stage_started_at: null
+  });
   console.log(`\n[Orchestrator] Session finished. Report written to: state/morning-report.md`);
 }
 
