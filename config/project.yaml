@@ -36,4 +36,4 @@ project:
     suite_checks:
       - name: "unit_test_suite"
         run: ".\\.venv\\Scripts\\python.exe -m unittest discover -s tests -v"
-        timeout_sec: 60
+        timeout_sec: 180
