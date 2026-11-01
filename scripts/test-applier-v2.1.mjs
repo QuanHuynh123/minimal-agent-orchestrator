@@ -17,7 +17,9 @@ import {
   extractTaskKeywords,
   normalizeTask,
   releaseLock,
+  resolveEffectiveRisk,
   resolveTaskMode,
+  shouldRunReviewerGate,
   sliceContentByKeywords
 } from './orchestrator.mjs';
 import {
@@ -133,7 +135,12 @@ assert.strictEqual(legacyTask.task_id, 'T-001');
 assert.strictEqual(legacyTask.id, 'T-001');
 assert.strictEqual(resolveTaskMode(legacyTask), 'quick');
 assert.strictEqual(resolveTaskMode(flatTask), 'standard');
-console.log('✓ Task schema normalization & Mode-Based resolution passed');
+assert.strictEqual(resolveEffectiveRisk(legacyTask), 'low');
+assert.strictEqual(resolveEffectiveRisk(flatTask), 'medium');
+assert.strictEqual(shouldRunReviewerGate({ ...legacyTask, mode: 'standard' }, { approval_gates: { require_code_review: true, review_min_risk_level: 'high' } }, { reviewer: { enabled: true } }), false);
+assert.strictEqual(shouldRunReviewerGate({ ...flatTask, mode: 'standard' }, { approval_gates: { require_code_review: true, review_min_risk_level: 'high' } }, { reviewer: { enabled: true } }), false);
+assert.strictEqual(shouldRunReviewerGate({ scope: ['core/auth_secret.py'], mode: 'standard', risk_level: 'high' }, { approval_gates: { require_code_review: true, review_min_risk_level: 'high' } }, { reviewer: { enabled: true } }), true);
+console.log('✓ Task schema normalization, 4-tier risk resolution & Risk-Gated Reviewer passed');
 
 // Test 7: Deterministic Error Hashing (strips volatile test durations)
 const errRun1 = 'FAILED (failures=1)\nRan 244 tests in 1.234s\nObject at 0x000001A2B3C4';

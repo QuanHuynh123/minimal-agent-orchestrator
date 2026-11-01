@@ -8,17 +8,18 @@ policy:
 
   task_modes: # Phục vụ phân làn Quick Mode vs Standard Mode
     quick:
-      max_files: 1
-      max_runtime_sec: 30
+      max_files: 3
+      max_runtime_sec: 180
       skip_router_and_reviewer: true
     standard:
-      max_runtime_sec: 300
+      max_runtime_sec: 600
       skip_router_and_reviewer: false
 
   approval_gates:
     plan_approval_mode: "auto_if_small"
     small_task_threshold_files: 3
     require_code_review: true
+    review_min_risk_level: "high" # Chỉ gọi AI Reviewer (Opus) khi risk_level >= high (high/critical); low & medium dùng Validator 0-token
     require_human_approval_for_cross_role_edit: true
 
   retry_and_escalation:
@@ -31,10 +32,10 @@ policy:
   execution_guardrails:
     enforce_command_timeouts: true
     kill_process_tree_on_timeout: true # Diệt tận gốc tiến trình con trên Windows (taskkill /T /F)
-    default_cli_timeout_sec: 60
+    default_cli_timeout_sec: 180
     healthcheck_timeout_sec: 15
-    network_connect_timeout_sec: 2
-    network_max_time_sec: 5
+    network_connect_timeout_sec: 5
+    network_max_time_sec: 180
     max_silence_duration_sec: 60
     prefer_mcp_tools: true
     ban_unbounded_commands: true

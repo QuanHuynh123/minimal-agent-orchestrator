@@ -141,6 +141,48 @@ export function computeScopeHash(scope = []) {
   return hashString(sorted);
 }
 
+export const RISK_LEVEL_RANK = {
+  low: 1,
+  medium: 2,
+  high: 3,
+  critical: 4,
+  ultra: 4
+};
+
+export function resolveEffectiveRisk(task = {}) {
+  const declared = String(task.risk_level || '').toLowerCase().trim();
+  const computed = computeDeterministicRisk(task.scope || []);
+  const scopeLen = Array.isArray(task.scope) ? task.scope.length : 0;
+  const inferred = computed === 'high' ? 'high' : (scopeLen > 3 ? 'medium' : 'low');
+  const declaredRank = RISK_LEVEL_RANK[declared] || 1;
+  const inferredRank = RISK_LEVEL_RANK[inferred] || 1;
+  if (declaredRank >= inferredRank && RISK_LEVEL_RANK[declared]) {
+    return declared === 'ultra' ? 'critical' : declared;
+  }
+  return inferred;
+}
+
+export function shouldRunReviewerGate(task = {}, policy = policyConfig.policy || {}, roles = teamConfig.roles || {}) {
+  if (roles.reviewer && roles.reviewer.enabled === false) {
+    return false;
+  }
+  if (task.force_ai_review === true) {
+    return true;
+  }
+  const mode = (task.mode || '').toLowerCase();
+  const modeConfig = policy.task_modes?.[mode] || {};
+  const skipReviewer = modeConfig.skip_router_and_reviewer ?? (mode === 'quick' || mode === 'direct');
+  const requireReview = policy.approval_gates?.require_code_review ?? true;
+  if (skipReviewer || !requireReview) {
+    return false;
+  }
+  const minRisk = String(policy.approval_gates?.review_min_risk_level || 'high').toLowerCase();
+  const minRank = RISK_LEVEL_RANK[minRisk] || RISK_LEVEL_RANK.high;
+  const taskRisk = resolveEffectiveRisk(task);
+  const taskRank = RISK_LEVEL_RANK[taskRisk] || RISK_LEVEL_RANK.low;
+  return taskRank >= minRank;
+}
+
 export function resolveTaskMode(task, policy = policyConfig.policy || {}) {
   const explicitMode = (task.mode || '').toLowerCase();
   if (explicitMode === 'direct' || explicitMode === 'quick' || explicitMode === 'standard') {
@@ -149,7 +191,7 @@ export function resolveTaskMode(task, policy = policyConfig.policy || {}) {
   const smallThreshold = policy.approval_gates?.small_task_threshold_files ?? 3;
   const scopeLen = Array.isArray(task.scope) ? task.scope.length : 0;
   const allowExpansion = Boolean(task.allow_scope_expansion || task.cross_role_edit);
-  const effectiveRisk = (task.risk_level === 'high' || computeDeterministicRisk(task.scope) === 'high') ? 'high' : (task.risk_level || 'low');
+  const effectiveRisk = resolveEffectiveRisk(task);
 
   if (scopeLen <= smallThreshold && effectiveRisk === 'low' && !allowExpansion) {
     return 'quick';
@@ -402,8 +444,23 @@ async function call9Router(model, systemPrompt, userMessage, maxTokens = 4096, f
         continue;
       }
 
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content || '';
+      const rawText = await res.text();
+      let data;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          data = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error(`Failed to parse JSON response: ${rawText.slice(0, 200)}`);
+        }
+      }
+      let content = data.choices?.[0]?.message?.content || '';
+      const reasoning = data.choices?.[0]?.message?.reasoning_content || '';
+      if (!content.includes('<<<<<<< SEARCH') && reasoning.includes('<<<<<<< SEARCH')) {
+        content = reasoning;
+      }
       const usage = data.usage || { prompt_tokens: 0, completion_tokens: 0 };
       return { ok: true, content, usage, modelUsed: candidateModel };
     } catch (err) {
@@ -698,13 +755,12 @@ async function runOrchestrator() {
       }
 
       // Computed Risk Level & Mode Selection
-      const computedRisk = computeDeterministicRisk(task.scope);
-      const effectiveRisk = (task.risk_level === 'high' || computedRisk === 'high') ? 'high' : (task.risk_level || 'low');
+      const effectiveRisk = resolveEffectiveRisk(task);
       task.risk_level = effectiveRisk;
       task.mode = resolveTaskMode(task, policyConfig.policy);
 
-      // Approval Check for High Risk or Cross-Role Edit
-      const needsHumanApproval = effectiveRisk === 'high' || (Boolean(task.cross_role_edit) && requireCrossRoleApproval);
+      // Approval Check for High/Critical Risk or Cross-Role Edit
+      const needsHumanApproval = (RISK_LEVEL_RANK[effectiveRisk] >= RISK_LEVEL_RANK.high) || (Boolean(task.cross_role_edit) && requireCrossRoleApproval);
       if (needsHumanApproval) {
         const expectedHash = computeScopeHash(task.scope);
         const hasValidApproval = task.approval &&
@@ -825,7 +881,7 @@ async function runOrchestrator() {
             : 'Please generate the exact code modifications to fulfill the goal.'
         ].join('\n\n');
 
-        const writerRes = await call9Router(writerModel, writerSystemRole, userMessage, 4096, writerFallback, writerTemp);
+        const writerRes = await call9Router(writerModel, writerSystemRole, userMessage, 32768, writerFallback, writerTemp);
 
         if (!writerRes.ok) {
           console.error(`[Writer] API error: ${writerRes.error}`);
@@ -852,6 +908,9 @@ async function runOrchestrator() {
 
         if (!applyRes.ok) {
           console.warn(`[Applier] ${applyRes.error}`);
+          if (writerRes.content) {
+            console.warn(`[Applier Output Preview]:\n${writerRes.content.slice(0, 500)}`);
+          }
           if (applyRes.security || applyRes.noRetry) {
             blockReason = applyRes.error;
             task.status = 'blocked';
@@ -891,12 +950,9 @@ async function runOrchestrator() {
         validationPassed = true;
         task.validation_result = { passed: true };
 
-        // Step E: Mode-Based Reviewer Gate (Skipped in 'quick' mode; enforced in 'standard' mode)
-        const modeConfig = policyConfig.policy?.task_modes?.[task.mode] || {};
-        const skipReviewer = modeConfig.skip_router_and_reviewer ?? (task.mode === 'quick');
-        const requireReview = policyConfig.policy?.approval_gates?.require_code_review ?? true;
-
-        if (!skipReviewer && requireReview) {
+        // Step E: Risk-Gated & Mode-Based Reviewer Gate
+        // Only invokes AI Reviewer (Opus) when risk_level >= review_min_risk_level ('high'/'critical') or force_ai_review: true
+        if (shouldRunReviewerGate(task, policyConfig.policy, teamConfig.roles)) {
           task.status = 'reviewing';
           const revRes = await runReviewerGate(task, actualModifiedFiles);
           if (revRes.usage) {
@@ -916,6 +972,9 @@ async function runOrchestrator() {
             if (failAction.shouldBreak) break;
             continue;
           }
+        } else {
+          const minRisk = policyConfig.policy?.approval_gates?.review_min_risk_level || 'high';
+          console.log(`[Reviewer] Skipped AI review for risk_level="${task.risk_level}" (below review_min_risk_level="${minRisk}"). Relying on 0-token Validator suite.`);
         }
 
         // Step F: Scoped Git Commit
