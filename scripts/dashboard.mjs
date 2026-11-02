@@ -21,6 +21,7 @@ const LOCK_FILE = path.resolve(TEAM_DIR, '.orchestrator.lock');
 const LIVE_STATUS_FILE = path.resolve(STATE_DIR, 'live-status.json');
 const TASK_STATE_FILE = path.resolve(STATE_DIR, 'task-state.json');
 const RUNS_DIR = path.resolve(STATE_DIR, 'runs');
+const SESSIONS_DIR = path.resolve(STATE_DIR, 'sessions');
 
 export function isProcessAlive(pid) {
   if (!pid || typeof pid !== 'number') return false;
@@ -229,6 +230,53 @@ function readLatestRunOutput(targetTaskId, targetLogPath) {
   }
 }
 
+function scanSessions(sessionsDir = SESSIONS_DIR) {
+  if (!fs.existsSync(sessionsDir)) return [];
+  try {
+    const files = fs.readdirSync(sessionsDir)
+      .filter(f => f.endsWith('.json'))
+      .map(f => path.resolve(sessionsDir, f));
+
+    return files.map(filePath => {
+      try {
+        const stat = fs.statSync(filePath);
+        const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        const msgs = Array.isArray(raw.messages) ? raw.messages : [];
+        const receipts = Array.isArray(raw.tool_receipts) ? raw.tool_receipts : [];
+        return {
+          session_id: raw.session_id || path.basename(filePath, '.json'),
+          role: raw.role || 'unknown',
+          model: raw.model || 'unknown',
+          message_count: msgs.length,
+          tool_receipts_count: receipts.length,
+          latest_receipt: receipts.length > 0 ? receipts[receipts.length - 1] : null,
+          created_at: raw.timestamps?.created_at || stat.birthtime?.toISOString() || null,
+          updated_at: raw.timestamps?.updated_at || stat.mtime?.toISOString() || null,
+          file_size_bytes: stat.size
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+  } catch {
+    return [];
+  }
+}
+
+function readSessionDetails(sessionId, sessionsDir = SESSIONS_DIR) {
+  if (!sessionId || typeof sessionId !== 'string') return null;
+  const safeId = sessionId.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+  const sessionPath = path.resolve(sessionsDir, `${safeId}.json`);
+  if (!fs.existsSync(sessionPath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 function scanTaskDir(dirPath) {
   const result = new Map();
   if (!fs.existsSync(dirPath)) return result;
@@ -421,11 +469,12 @@ export async function createSnapshot() {
       recent_completed: completedList.slice(-5).reverse(),
       blocked: blockedList
     },
-    latest_output: latestOutput
+    latest_output: latestOutput,
+    sessions: scanSessions(SESSIONS_DIR).slice(0, 15)
   };
 }
 
-const server = http.createServer(async (req, res) => {
+export const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || `${HOST}:${PORT}`}`);
 
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
@@ -461,12 +510,67 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/sessions') {
+    try {
+      const sessions = scanSessions(SESSIONS_DIR);
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end(JSON.stringify({ ok: true, count: sessions.length, sessions }));
+    } catch (err) {
+      res.writeHead(500, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/session') {
+    try {
+      const sessionId = url.searchParams.get('id');
+      const details = readSessionDetails(sessionId, SESSIONS_DIR);
+      if (!details) {
+        res.writeHead(404, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Access-Control-Allow-Origin': '*'
+        });
+        res.end(JSON.stringify({ ok: false, error: 'Session not found' }));
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end(JSON.stringify({ ok: true, session: details }));
+    } catch (err) {
+      res.writeHead(500, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return;
+  }
+
   res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
   res.end('Not Found');
 });
 
+export function startServer(port = PORT, host = HOST) {
+  return new Promise((resolve) => {
+    server.listen(port, host, () => {
+      resolve(server);
+    });
+  });
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
-  server.listen(PORT, HOST, () => {
+  startServer().then(() => {
     console.log(`[Dashboard] Orchestrator Live Monitor active on http://${HOST}:${PORT}`);
   });
 }

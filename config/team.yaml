@@ -13,22 +13,14 @@ providers:
     type: "mcp_loopback"
     timeout_sec: 120
 
-# Cấu hình chi tiết từng Role và Model phụ trách
+# Cấu hình chi tiết từng Model phụ trách theo Standard Workflow
 roles:
-  coordinator:
+  frontend_writer:
     enabled: true
     provider: "ide_bridge"
-    display_name: "Antigravity (IDE Coordinator)"
-    model: "Google Antigravity (Gemini)"
-    allowed_actions: ["pair_programming", "ui_coordination", "task_dispatch", "architecture"]
-
-  designer:
-    enabled: true
-    provider: "local_9router"
-    display_name: "Claude Sonnet 4.5"
-    model: "kr/claude-sonnet-4.5-thinking"
-    allowed_actions: ["ui_ux_design", "bento_styling", "dom_contract"]
-    forbidden_actions: ["backend_write"]
+    display_name: "Gemini 3.8 Flash"
+    model: "Google Antigravity / Gemini 3.8 Flash"
+    allowed_actions: ["frontend_write", "ui_ux_implementation", "pair_programming", "spec_coordination"]
 
   router:
     enabled: true
@@ -38,20 +30,27 @@ roles:
     fallback_model: null
     temperature: 0.2
     max_thinking_tokens: 200
-    allowed_actions: ["analyze", "plan", "triage"]
-    forbidden_actions: ["direct_write", "modify_config"]
+    allowed_actions: ["ui_ux_design", "scope_routing", "task_planning"]
+    forbidden_actions: ["direct_write"]
 
   writer:
     enabled: true
     provider: "local_9router"
     display_name: "DeepSeek V4.1 Flash"
     model: "Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017"
-    fallback_model: null
+    fallback_model: "kr/deepseek-3.2-agentic"
     temperature: 0.1
     max_thinking_tokens: 200
     output_format: "search_replace_blocks"
-    allowed_actions: ["read_scoped_files", "propose_patch"]
+    allowed_actions: ["backend_write", "read_scoped_files", "propose_patch"]
     forbidden_actions: ["out_of_scope_edit", "unapproved_dependency"]
+
+  validator:
+    enabled: true
+    type: "deterministic_script"
+    display_name: "Validator Guard"
+    script: "scripts/validator.mjs"
+    allowed_actions: ["tab_indentation_check", "pytest_suite", "syntax_lint"]
 
   reviewer:
     enabled: true
@@ -62,8 +61,3 @@ roles:
     temperature: 0.1
     allowed_actions: ["review_diff", "approve", "reject"]
     forbidden_actions: ["direct_write"]
-
-  validator:
-    enabled: true
-    type: "deterministic_script" # Chạy bằng code thuần, tốn 0 token
-    script: "scripts/validator.mjs"

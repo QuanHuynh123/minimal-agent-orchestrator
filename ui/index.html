@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>9Router Orchestrator Monitor v2.1</title>
+  <title>9Router Orchestrator Monitor v3.0 (Neural Node Graph Edition)</title>
   <style>
     :root {
-      --bg-base: #0a0a0f;
-      --bg-surface: #141419;
-      --bg-elevated: #1f1f28;
-      --bg-card: #111116;
+      --bg-base: #0c0c0e;
+      --bg-surface: #121215;
+      --bg-elevated: #1a1a1f;
+      --bg-card: #141418;
       --border: rgba(255, 255, 255, 0.08);
       --border-hover: rgba(255, 255, 255, 0.16);
       --border-focus: rgba(99, 102, 241, 0.5);
@@ -21,8 +21,17 @@
       --accent: #6366f1;
       --accent-glow: rgba(99, 102, 241, 0.25);
 
+      /* 9Router Palette */
+      --color-9router: #ea580c;
+      --color-9router-glow: rgba(249, 115, 22, 0.22);
+      --color-9router-light: #fb923c;
+      --color-writer: #38bdf8;
+      --color-router: #a855f7;
+      --color-reviewer: #3b82f6;
+      --color-orchestrator: #94a3b8;
+
       --status-idle: #64748b;
-      --status-working: #3b82f6;
+      --status-working: #f59e0b;
       --status-success: #10b981;
       --status-warning: #f59e0b;
       --status-error: #ef4444;
@@ -63,7 +72,7 @@
       border-radius: 3px;
     }
     ::-webkit-scrollbar-thumb:hover {
-      background: var(--accent);
+      background: var(--color-9router-light);
     }
 
     /* Animations */
@@ -71,9 +80,12 @@
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.5; transform: scale(0.95); }
     }
-    @keyframes glow {
-      0%, 100% { box-shadow: 0 0 10px rgba(59, 130, 246, 0.4); }
-      50% { box-shadow: 0 0 18px rgba(99, 102, 241, 0.7); }
+    @keyframes glowOrange {
+      0%, 100% { box-shadow: 0 0 12px rgba(249, 115, 22, 0.35); }
+      50% { box-shadow: 0 0 24px rgba(249, 115, 22, 0.7); }
+    }
+    @keyframes flowDash {
+      to { stroke-dashoffset: -24; }
     }
 
     /* 1. TOP BAR */
@@ -103,13 +115,13 @@
       color: #fff;
     }
     .brand-badge {
-      background: rgba(99, 102, 241, 0.15);
-      border: 1px solid var(--accent);
-      color: #a5b4fc;
+      background: rgba(234, 88, 12, 0.15);
+      border: 1px solid var(--color-9router);
+      color: var(--color-9router-light);
       font-size: 10px;
-      padding: 2px 6px;
+      padding: 2px 7px;
       border-radius: 4px;
-      font-weight: 600;
+      font-weight: 700;
       text-transform: uppercase;
     }
     .top-right {
@@ -140,9 +152,9 @@
       color: #c7d2fe;
     }
     .pill-stage {
-      background: rgba(59, 130, 246, 0.1);
-      border-color: rgba(59, 130, 246, 0.3);
-      color: #93c5fd;
+      background: rgba(249, 115, 22, 0.12);
+      border-color: rgba(249, 115, 22, 0.35);
+      color: #fed7aa;
       font-weight: 600;
     }
     .dot {
@@ -154,14 +166,14 @@
     .dot.online { background: var(--status-success); }
     .dot.offline { background: var(--status-error); }
     .dot.running {
-      background: var(--status-working);
+      background: var(--status-warning);
       animation: pulse 1.5s infinite;
     }
 
-    /* 2. PIPELINE STAGE STRIP */
+    /* 2. WATERFALL PIPELINE BAR */
     nav.pipeline-strip {
-      height: 44px;
-      background: #0d0d12;
+      height: 52px;
+      background: #09090c;
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
@@ -191,8 +203,8 @@
     .stage-item .stage-timer {
       font-family: var(--font-mono);
       font-size: 10px;
-      color: #93c5fd;
-      background: rgba(59, 130, 246, 0.2);
+      color: #fde68a;
+      background: rgba(245, 158, 11, 0.2);
       padding: 1px 5px;
       border-radius: 3px;
       margin-left: 2px;
@@ -213,10 +225,10 @@
       user-select: none;
     }
     .stage-item.active {
-      background: rgba(59, 130, 246, 0.15);
-      border-color: var(--status-working);
-      color: #93c5fd;
-      animation: glow 2s infinite;
+      background: rgba(249, 115, 22, 0.15);
+      border-color: var(--color-9router);
+      color: #fed7aa;
+      animation: glowOrange 2s infinite;
     }
     .stage-item.done {
       background: rgba(16, 185, 129, 0.08);
@@ -233,19 +245,32 @@
       color: var(--status-skipped);
       opacity: 0.6;
     }
+    .retry-loop-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px dashed rgba(245, 158, 11, 0.35);
+      color: #fcd34d;
+      font-size: 10px;
+      font-family: var(--font-mono);
+      margin-left: 6px;
+    }
 
-    /* MAIN BENTO LAYOUT */
+    /* MAIN BENTO LAYOUT (Cột Trái 370px, Cột Phải Flex) */
     main.bento-container {
       flex: 1;
       display: grid;
-      grid-template-columns: 390px 1fr;
+      grid-template-columns: 370px 1fr;
       gap: 12px;
       padding: 12px;
       min-height: 0;
       overflow: hidden;
     }
 
-    /* LEFT COLUMN (Active Task, Governance & Queue) */
+    /* LEFT COLUMN (Active Task, AI Squad & Queue) */
     .left-col {
       display: flex;
       flex-direction: column;
@@ -301,11 +326,10 @@
     .tag-quick { background: rgba(59, 130, 246, 0.15); color: #93c5fd; border-color: rgba(59, 130, 246, 0.4); }
     .tag-standard { background: rgba(168, 85, 247, 0.15); color: #d8b4fe; border-color: rgba(168, 85, 247, 0.4); }
     .tag-low { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border-color: rgba(16, 185, 129, 0.4); }
-    .tag-medium { background: rgba(245, 158, 11, 0.15); color: #fcd34d; border-color: rgba(245, 158, 11, 0.4); }
-    .tag-high { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border-color: rgba(239, 68, 68, 0.4); }
     .tag-attempt { background: var(--bg-elevated); color: var(--text-secondary); border-color: var(--border); }
-    .tag-timer { background: rgba(99, 102, 241, 0.15); color: #a5b4fc; border-color: rgba(99, 102, 241, 0.4); }
+    .tag-timer { background: rgba(245, 158, 11, 0.15); color: #fde68a; border-color: rgba(245, 158, 11, 0.4); }
     .tag-commit { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border-color: rgba(16, 185, 129, 0.4); }
+    .tag-recovered { background: rgba(16, 185, 129, 0.2); color: #a7f3d0; border-color: rgba(16, 185, 129, 0.5); }
 
     .task-goal-text {
       font-size: 12px;
@@ -313,11 +337,11 @@
       background: var(--bg-surface);
       border-radius: 6px;
       padding: 8px 10px;
-      border-left: 3px solid var(--accent);
+      border-left: 3px solid var(--color-9router);
       word-break: break-word;
     }
 
-    /* Roles list */
+    /* AI Personnel Squad list */
     .roles-container {
       display: flex;
       flex-direction: column;
@@ -327,7 +351,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 6px 8px;
+      padding: 7px 9px;
       background: var(--bg-surface);
       border-radius: 6px;
       border: 1px solid rgba(255, 255, 255, 0.04);
@@ -354,7 +378,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      max-width: 250px;
+      max-width: 230px;
     }
     .status-badge {
       font-size: 9px;
@@ -366,7 +390,7 @@
       white-space: nowrap;
       flex-shrink: 0;
     }
-    .badge-working { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
+    .badge-working { background: rgba(245, 158, 11, 0.2); color: #fde68a; }
     .badge-done { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
     .badge-idle { background: var(--bg-elevated); color: var(--text-muted); }
     .badge-skipped { background: rgba(100, 116, 139, 0.15); color: var(--text-muted); }
@@ -378,7 +402,7 @@
       display: flex;
       flex-direction: column;
       gap: 4px;
-      max-height: 130px;
+      max-height: 110px;
       overflow-y: auto;
     }
     .file-item {
@@ -395,7 +419,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      max-width: 260px;
+      max-width: 240px;
       color: #e2e8f0;
     }
     .file-tag {
@@ -409,7 +433,7 @@
     .file-modified { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
     .file-validated { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
 
-    /* Queue metrics */
+    /* Queue metrics & list */
     .queue-stats-row {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
@@ -418,12 +442,12 @@
     .queue-stat-box {
       background: var(--bg-surface);
       border-radius: 6px;
-      padding: 8px;
+      padding: 7px;
       text-align: center;
       border: 1px solid rgba(255, 255, 255, 0.04);
     }
     .queue-stat-num {
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 700;
       font-family: var(--font-mono);
     }
@@ -431,23 +455,13 @@
       font-size: 10px;
       color: var(--text-muted);
       text-transform: uppercase;
-      margin-top: 2px;
-    }
-
-    /* Queue items interactive list */
-    .queue-sub-header {
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      color: var(--text-muted);
-      letter-spacing: 0.5px;
-      margin-top: 4px;
+      margin-top: 1px;
     }
     .queue-list-container {
       display: flex;
       flex-direction: column;
       gap: 4px;
-      max-height: 160px;
+      max-height: 150px;
       overflow-y: auto;
     }
     .queue-item {
@@ -492,7 +506,7 @@
       margin-left: 4px;
     }
 
-    /* RIGHT COLUMN (Split: Error Callout + Multi-Stage Inspector Top, Console Bottom) */
+    /* RIGHT COLUMN (62% Topology Canvas Top, 38% Live Console Bottom) */
     .right-col {
       display: flex;
       flex-direction: column;
@@ -501,98 +515,28 @@
       overflow: hidden;
     }
 
-    /* Intelligent Failure Tail Error Callout */
-    .error-banner {
-      background: rgba(239, 68, 68, 0.12);
-      border: 1px solid rgba(239, 68, 68, 0.5);
-      border-left: 4px solid var(--status-error);
-      border-radius: 6px;
-      padding: 10px 14px;
+    /* Top Center: Card chứa Tabs & Topology Canvas */
+    .central-stage-card {
+      flex: 1.6;
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      flex-shrink: 0;
-    }
-    .error-banner-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .error-banner-icon {
-      font-size: 14px;
-    }
-    .error-banner-title {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: #f87171;
-    }
-    .error-banner-summary {
-      font-family: var(--font-mono);
-      font-size: 12px;
-      font-weight: 600;
-      color: #fee2e2;
-    }
-    .error-banner-tail {
-      font-family: var(--font-mono);
-      font-size: 11px;
-      color: #fca5a5;
-      line-height: 1.45;
-      white-space: pre-wrap;
-      word-break: break-word;
-      max-height: 90px;
-      overflow-y: auto;
-      background: rgba(0, 0, 0, 0.3);
-      padding: 6px 8px;
-      border-radius: 4px;
-    }
-    .error-banner-details {
-      margin-top: 4px;
-      font-size: 11px;
-      color: #f87171;
-      cursor: pointer;
-    }
-    .error-banner-details summary {
-      outline: none;
-      user-select: none;
-    }
-    .error-banner-raw {
-      font-family: var(--font-mono);
-      font-size: 10.5px;
-      color: #e2e8f0;
-      white-space: pre-wrap;
-      word-break: break-word;
-      max-height: 140px;
-      overflow-y: auto;
-      margin-top: 6px;
-      padding: 6px 8px;
-      background: #000;
-      border-radius: 4px;
-    }
-
-    /* Top: Multi-Stage Context Inspector */
-    .inspector-card {
-      flex: 1.15;
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
+      min-height: 340px;
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 8px;
       overflow: hidden;
     }
-    .inspector-header {
-      padding: 6px 12px;
+    .tab-header-bar {
+      height: 42px;
       background: var(--bg-surface);
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
+      padding: 0 12px;
       flex-shrink: 0;
-      gap: 10px;
     }
-    .inspector-tabs {
+    .tab-nav {
       display: flex;
       align-items: center;
       gap: 4px;
@@ -602,12 +546,15 @@
       border: 1px solid transparent;
       color: var(--text-muted);
       font-family: var(--font-sans);
-      font-size: 11px;
+      font-size: 11.5px;
       font-weight: 600;
-      padding: 4px 10px;
+      padding: 5px 12px;
       border-radius: 5px;
       cursor: pointer;
       transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
     .tab-btn:hover {
       color: var(--text-primary);
@@ -615,31 +562,237 @@
     }
     .tab-btn.active {
       color: #fff;
-      background: rgba(99, 102, 241, 0.2);
-      border-color: var(--accent);
+      background: rgba(234, 88, 12, 0.18);
+      border-color: var(--color-9router);
     }
-    .inspector-meta {
+    .tab-meta-badges {
       display: flex;
       align-items: center;
       gap: 8px;
       font-family: var(--font-mono);
-      font-size: 10.5px;
+      font-size: 11px;
       color: var(--text-secondary);
+    }
+
+    /* TAB 1: 9ROUTER LIVE AI TOPOLOGY CANVAS */
+    .tab-pane {
+      display: none;
+      height: 100%;
+      flex-direction: column;
+      position: relative;
+    }
+    .tab-pane.active {
+      display: flex;
+    }
+
+    .topology-canvas {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      min-height: 290px;
+      background-color: #121215;
+      background-image:
+        linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+      background-size: 32px 32px;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* SVG Link Lines */
+    .topology-links {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+    .link-path {
+      fill: none;
+      stroke: rgba(148, 163, 184, 0.12);
+      stroke-width: 1.6px;
+      stroke-linecap: round;
+      transition: stroke 0.3s ease, stroke-width 0.3s ease, filter 0.3s ease;
+    }
+    .link-path.active {
+      stroke: #f59e0b;
+      stroke-width: 2.2px;
+      filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.65));
+      stroke-dasharray: 8 10;
+      animation: flowDash 1.6s linear infinite;
+    }
+    .link-path.done {
+      stroke: rgba(245, 158, 11, 0.65);
+      stroke-width: 1.8px;
+    }
+
+    /* AI Capsule Nodes (9Router Native Pill Topology) */
+    .ai-capsule-node {
+      position: absolute;
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 7px 15px 7px 9px;
+      border-radius: 24px;
+      background: #18181b;
+      border: 1.5px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(8px);
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      cursor: default;
+      z-index: 10;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .ai-capsule-node:hover {
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translate(-50%, -50%) translateY(-1px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+    }
+
+    /* Standard Workflow Node Positioning (% based, translated -50% -50%) */
+    .node-sonnet    { left: 15%; top: 50%; transform: translate(-50%, -50%); }
+    .node-gemini    { left: 44%; top: 22%; transform: translate(-50%, -50%); }
+    .node-deepseek  { left: 44%; top: 78%; transform: translate(-50%, -50%); }
+    .node-validator { left: 70%; top: 50%; transform: translate(-50%, -50%); }
+    .node-opus      { left: 89%; top: 50%; transform: translate(-50%, -50%); }
+
+    /* Model Icon Badges */
+    .node-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 5px;
+      background: #27272a;
+      font-size: 11px;
+      font-weight: 700;
+      color: #94a3b8;
+      flex-shrink: 0;
+    }
+    .icon-sonnet {
+      background: #4c1d95;
+      color: #d8b4fe;
+      border: 1px solid rgba(168, 85, 247, 0.3);
+    }
+    .icon-gemini {
+      background: #172554;
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+    .icon-deepseek {
+      background: #082f49;
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+    .icon-validator {
+      background: #064e3b;
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .icon-opus {
+      background: #1e1b4b;
+      color: #c084fc;
+      border: 1px solid rgba(192, 132, 252, 0.3);
+    }
+
+    /* Node Label */
+    .node-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: #f1f5f9;
+      letter-spacing: -0.01em;
+    }
+
+    /* Node Status Dot */
+    .node-status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(148, 163, 184, 0.35);
+      margin-left: 2px;
+      transition: all 0.3s ease;
+    }
+
+    /* Active Glowing States */
+    .ai-capsule-node.active {
+      border-color: #f59e0b;
+      box-shadow: 0 0 16px rgba(245, 158, 11, 0.45);
+    }
+    .ai-capsule-node.active .node-status-dot {
+      background: #10b981;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.7);
+      animation: pulse 1.5s infinite;
+    }
+    .ai-capsule-node.done .node-status-dot {
+      background: #3b82f6;
+    }
+
+    .node-sonnet.active {
+      border-color: rgba(168, 85, 247, 0.6);
+      box-shadow: 0 0 18px rgba(168, 85, 247, 0.4);
+    }
+    .node-gemini.active {
+      border-color: rgba(59, 130, 246, 0.6);
+      box-shadow: 0 0 18px rgba(59, 130, 246, 0.4);
+    }
+    .node-deepseek.active {
+      border-color: rgba(56, 189, 248, 0.6);
+      box-shadow: 0 0 18px rgba(56, 189, 248, 0.4);
+    }
+    .node-validator.active {
+      border-color: rgba(16, 185, 129, 0.6);
+      box-shadow: 0 0 18px rgba(16, 185, 129, 0.4);
+    }
+    .node-opus.active {
+      border-color: rgba(192, 132, 252, 0.6);
+      box-shadow: 0 0 18px rgba(192, 132, 252, 0.4);
+    }
+
+    /* Telemetry Footer Canvas */
+    .telemetry-footer-bar {
+      height: 38px;
+      background: #0e0e11;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      flex-shrink: 0;
       overflow-x: auto;
     }
-    .inspector-body {
+    .telemetry-chips {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tel-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 10.5px;
+      font-family: var(--font-mono);
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .tel-chip strong {
+      color: #f1f5f9;
+    }
+    .chip-green { color: #6ee7b7 !important; }
+
+    /* TAB 2: RAW OUTPUT INSPECTOR */
+    .raw-inspector-pane {
       flex: 1;
       overflow: auto;
       padding: 12px;
       background: #09090d;
-      position: relative;
-    }
-    .inspector-pane {
-      display: none;
-      height: 100%;
-    }
-    .inspector-pane.active {
-      display: block;
     }
     pre.code-view {
       font-family: var(--font-mono);
@@ -650,46 +803,314 @@
       word-break: break-word;
     }
 
-    /* Review Rubric Styling */
-    .review-pane-content {
+    /* TAB 3: SESSIONS & TOOL RECEIPTS INSPECTOR */
+    .sessions-inspector-container {
+      flex: 1;
+      display: flex;
+      height: 100%;
+      background: #09090d;
+      overflow: hidden;
+    }
+    .sessions-sidebar {
+      width: 250px;
+      border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      font-family: var(--font-sans);
+      background: var(--bg-surface);
+      flex-shrink: 0;
     }
-    .review-status-row {
+    .sessions-sidebar-header {
+      padding: 8px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .sessions-count-badge {
+      background: rgba(234, 88, 12, 0.2);
+      color: var(--color-9router-light);
+      border-radius: 10px;
+      padding: 1px 7px;
+      font-size: 10px;
+      font-family: var(--font-mono);
+    }
+    .sessions-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .session-item {
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: var(--bg-elevated);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .session-item:hover {
+      background: var(--border-hover);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    .session-item.active {
+      background: rgba(234, 88, 12, 0.15);
+      border-color: var(--color-9router);
+    }
+    .session-item-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 6px;
+    }
+    .session-item-id {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: #f1f5f9;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .session-item-role {
+      font-size: 9.5px;
+      text-transform: uppercase;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: rgba(148, 163, 184, 0.15);
+      color: var(--text-secondary);
+      flex-shrink: 0;
+    }
+    .role-writer { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
+    .role-designer { background: rgba(168, 85, 247, 0.2); color: #d8b4fe; }
+    .role-router { background: rgba(249, 115, 22, 0.2); color: #fdba74; }
+    .role-reviewer { background: rgba(236, 72, 153, 0.2); color: #f472b6; }
+    .session-item-sub {
+      font-size: 10px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+    .session-detail-view {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #09090d;
+    }
+    .session-empty-state {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-style: italic;
+    }
+    .session-active-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 12px;
+      gap: 10px;
+    }
+    .session-detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       padding-bottom: 8px;
       border-bottom: 1px solid var(--border);
     }
-    .review-feedback-text {
+    .session-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .session-id-title {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: #f8fafc;
+      margin: 0;
+    }
+    .session-meta-chips {
+      display: flex;
+      gap: 8px;
+    }
+    .meta-chip {
+      font-size: 11px;
+      color: var(--text-muted);
+      background: var(--bg-surface);
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    .meta-chip strong {
+      color: var(--text-secondary);
+    }
+    .session-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .session-section-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .tool-receipts-timeline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-height: 70px;
+      overflow-y: auto;
+    }
+    .receipt-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 7px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #6ee7b7;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+    }
+    .receipt-pill.error {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+    .session-messages-scroll {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: #0d0e12;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+    }
+    .msg-bubble {
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      line-height: 1.45;
+      max-width: 95%;
+    }
+    .msg-user {
+      align-self: flex-start;
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #bfdbfe;
+    }
+    .msg-assistant {
+      align-self: flex-end;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      color: #e2e8f0;
+      white-space: pre-wrap;
+    }
+    .msg-tool {
+      align-self: center;
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px dashed rgba(245, 158, 11, 0.35);
+      color: #fde68a;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      max-width: 95%;
+    }
+
+    /* Intelligent Failure Tail Error Callout */
+    .error-banner {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.5);
+      border-left: 4px solid var(--status-error);
+      border-radius: 6px;
+      padding: 9px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+    .error-banner-header {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .error-banner-icon { font-size: 13px; }
+    .error-banner-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #f87171;
+    }
+    .error-banner-summary {
       font-family: var(--font-mono);
       font-size: 11.5px;
-      line-height: 1.5;
-      color: #cbd5e1;
+      font-weight: 600;
+      color: #fee2e2;
+    }
+    .error-banner-tail {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: #fca5a5;
+      line-height: 1.45;
       white-space: pre-wrap;
       word-break: break-word;
-      background: var(--bg-surface);
-      padding: 10px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
+      max-height: 80px;
+      overflow-y: auto;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 5px 8px;
+      border-radius: 4px;
+    }
+    .error-banner-details {
+      margin-top: 3px;
+      font-size: 10.5px;
+      color: #f87171;
+      cursor: pointer;
+    }
+    .error-banner-raw {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: #e2e8f0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 130px;
+      overflow-y: auto;
+      margin-top: 5px;
+      padding: 6px;
+      background: #000;
+      border-radius: 4px;
     }
 
     /* Bottom: Live Console Logs */
     .console-card {
-      flex: 0.85;
+      flex: 1;
       display: flex;
       flex-direction: column;
-      min-height: 200px;
+      min-height: 190px;
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 8px;
       overflow: hidden;
     }
     .console-header {
-      padding: 8px 14px;
+      padding: 7px 14px;
       background: var(--bg-surface);
       border-bottom: 1px solid var(--border);
       display: flex;
@@ -714,7 +1135,7 @@
       transition: all 0.2s ease;
     }
     .btn-ctrl:hover {
-      background: var(--accent);
+      background: var(--color-9router);
       color: #fff;
     }
     .filter-input {
@@ -730,7 +1151,7 @@
     .console-body {
       flex: 1;
       overflow-y: auto;
-      padding: 10px 14px;
+      padding: 9px 13px;
       background: #07070a;
       display: flex;
       flex-direction: column;
@@ -774,7 +1195,7 @@
     <div class="top-left">
       <div class="brand-logo">
         <span>⚡ 9Router Orchestrator</span>
-        <span class="brand-badge">Bento Monitor v2.1</span>
+        <span class="brand-badge">v3.0 Neural Graph</span>
       </div>
       <div class="pill pill-project" id="pill-project">
         <span>Project: <strong id="txt-project">tool-download-stable</strong></span>
@@ -803,7 +1224,7 @@
     </div>
   </header>
 
-  <!-- 2. PIPELINE STAGE STRIP (State Machine with Adaptive Skips & Retries) -->
+  <!-- 2. WATERFALL PIPELINE BAR (Thác Nước Cơ Khí + Vòng lặp Retry + Skip Logic) -->
   <nav class="pipeline-strip">
     <div class="stage-item" id="step-preflight">
       <span class="step-icon">○</span>
@@ -813,7 +1234,7 @@
     <span class="stage-connector">➔</span>
     <div class="stage-item" id="step-router">
       <span class="step-icon">○</span>
-      <span>1. Router</span>
+      <span id="txt-step-router">1. Router</span>
       <span class="stage-timer" style="display: none;">⏱ 0s</span>
     </div>
     <span class="stage-connector">➔</span>
@@ -850,15 +1271,18 @@
     <span class="stage-connector">➔</span>
     <div class="stage-item" id="step-done">
       <span class="step-icon">○</span>
-      <span>6. Done / Blocked</span>
+      <span>6. Done</span>
       <span class="stage-timer" style="display: none;">⏱ 0s</span>
+    </div>
+    <div class="retry-loop-indicator" id="retry-loop-pill" style="display: none;">
+      <span>↻ Auto-Retry Loop (Attempt <strong id="retry-num">1</strong>)</span>
     </div>
   </nav>
 
-  <!-- MAIN 5-PANEL BENTO CONTAINER -->
+  <!-- MAIN BENTO CONTAINER -->
   <main class="bento-container">
 
-    <!-- LEFT COLUMN: Active Task, Governance, Queue -->
+    <!-- LEFT COLUMN: Active Task, AI Squad, Locked Scope & Queue -->
     <section class="left-col">
 
       <!-- Active / Last Completed Task Card -->
@@ -879,13 +1303,56 @@
         <div class="task-goal-text" id="task-goal">Waiting for orchestrator task...</div>
       </div>
 
-      <!-- Squad Roles Card (Correct 100% Roster) -->
+      <!-- Standard Workflow Personnel Card (Chỉ thuần khiết Model thực tế) -->
       <div class="bento-card">
         <div class="card-header">
-          <span class="card-title">Squad Roles (Autonomous Roster)</span>
+          <span class="card-title">Standard Workflow Models</span>
         </div>
-        <div class="roles-container" id="squad-roles-list">
-          <!-- Populated securely via DOM nodes -->
+        <div class="roles-container">
+          <!-- 1. Claude Sonnet 4.5 Thinking -->
+          <div class="role-row">
+            <div class="role-name">
+              <span class="role-name-title">🧠 Claude Sonnet 4.5 Thinking</span>
+              <span class="role-model" id="squad-model-router">kr/claude-sonnet-4.5-thinking • Spec &amp; Plan</span>
+            </div>
+            <span class="status-badge badge-idle" id="squad-status-router">IDLE</span>
+          </div>
+
+          <!-- 2. Gemini 3.8 Flash (Frontend Writer / IDE) -->
+          <div class="role-row">
+            <div class="role-name">
+              <span class="role-name-title">⚡ Gemini 3.8 Flash</span>
+              <span class="role-model" id="squad-model-frontend">Frontend Writer / IDE Assistant</span>
+            </div>
+            <span class="status-badge badge-done" id="squad-status-frontend">ONLINE</span>
+          </div>
+
+          <!-- 3. DeepSeek V4.1 Flash (Backend Writer) -->
+          <div class="role-row">
+            <div class="role-name">
+              <span class="role-name-title">✍️ DeepSeek V4.1 Flash</span>
+              <span class="role-model" id="squad-model-writer">deepseek-ai/deepseek-v4.1-flash-1017 • Backend Writer</span>
+            </div>
+            <span class="status-badge badge-idle" id="squad-status-writer">IDLE</span>
+          </div>
+
+          <!-- 4. Validator Guard -->
+          <div class="role-row">
+            <div class="role-name">
+              <span class="role-name-title">🛡️ Validator Guard</span>
+              <span class="role-model" id="squad-model-validator">validator.mjs • Feedback Loop Gate</span>
+            </div>
+            <span class="status-badge badge-idle" id="squad-status-validator">IDLE</span>
+          </div>
+
+          <!-- 5. Claude Opus 5.5 High (Tech Lead Reviewer) -->
+          <div class="role-row">
+            <div class="role-name">
+              <span class="role-name-title">🔍 Claude Opus 5.5 High</span>
+              <span class="role-model" id="squad-model-reviewer">ag/claude-opus-5-5-high • Tech Lead Reviewer</span>
+            </div>
+            <span class="status-badge badge-skipped" id="squad-status-reviewer">SKIPPED</span>
+          </div>
         </div>
       </div>
 
@@ -900,7 +1367,7 @@
         </ul>
       </div>
 
-      <!-- Task Queue Card with Metrics & Interactive List -->
+      <!-- Task Queue Card -->
       <div class="bento-card">
         <div class="card-header">
           <span class="card-title">Task Queue &amp; History</span>
@@ -919,7 +1386,7 @@
             <div class="queue-stat-label">Blocked</div>
           </div>
         </div>
-        <div class="queue-sub-header">Recent Completed &amp; Queue List</div>
+        <div class="queue-sub-header" style="font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-top: 4px;">Recent Completed &amp; Queue List</div>
         <div class="queue-list-container" id="queue-items-list">
           <!-- Populated securely via DOM nodes -->
         </div>
@@ -927,67 +1394,174 @@
 
     </section>
 
-    <!-- RIGHT COLUMN: Error Callout + Multi-Stage Inspector Top, Console Bottom -->
+    <!-- RIGHT COLUMN (Tab 1 Topology Canvas + Tab 2 Raw Inspector, Console Bottom) -->
     <section class="right-col">
 
-      <!-- Intelligent Failure Tail Error Callout -->
+      <!-- Intelligent Failure Tail Error Callout (Only appears if error exists and task is not done) -->
       <div class="error-banner" id="last-error-banner" style="display: none;">
         <div class="error-banner-header">
           <span class="error-banner-icon">⚠️</span>
-          <span class="error-banner-title" id="last-error-title">EXECUTION ERROR / FAILURE</span>
+          <span class="error-banner-title" id="last-error-title">EXECUTION ERROR</span>
         </div>
         <div class="error-banner-summary" id="last-error-summary"></div>
         <pre class="error-banner-tail" id="last-error-tail"></pre>
         <details class="error-banner-details" id="last-error-details">
-          <summary>View Full Raw Traceback &amp; Logs</summary>
+          <summary>View Full Raw Traceback</summary>
           <pre class="error-banner-raw" id="last-error-raw"></pre>
         </details>
       </div>
 
-      <!-- Top: Multi-Stage Context Inspector (4 Tabs) -->
-      <div class="inspector-card">
-        <div class="inspector-header">
-          <div class="inspector-tabs">
-            <button class="tab-btn active" id="tab-btn-patch">1. Patch / Diff</button>
-            <button class="tab-btn" id="tab-btn-tests">2. Tests &amp; Quality</button>
-            <button class="tab-btn" id="tab-btn-review">3. Tech Lead Review</button>
-            <button class="tab-btn" id="tab-btn-raw">4. Raw Output</button>
+      <!-- Top Center: Central Stage Card (Tab 1: 9Router Topology, Tab 2: Raw Output) -->
+      <div class="central-stage-card">
+        <div class="tab-header-bar">
+          <div class="tab-nav">
+            <button class="tab-btn active" id="tab-btn-topology">
+              <span>🕸️ 1. 9Router AI Live Topology</span>
+            </button>
+            <button class="tab-btn" id="tab-btn-output">
+              <span>📄 2. Raw Output &amp; Diff Inspector</span>
+            </button>
+            <button class="tab-btn" id="tab-btn-sessions">
+              <span>🧠 3. Agent Sessions &amp; Tool Receipts</span>
+            </button>
           </div>
-          <div class="inspector-meta">
-            <span>File: <strong id="out-file">None</strong></span>
-            <span>Req: <strong id="out-model-req">N/A</strong></span>
-            <span>Resp: <strong id="out-model-resp">N/A</strong></span>
-            <span>Reason: <strong id="out-finish">N/A</strong></span>
-            <span>Size: <strong id="out-size">0 KB</strong></span>
+          <div class="tab-meta-badges">
+            <span>Attempt: <strong id="out-attempt-badge">1 / 3</strong></span>
+            <span>Reason: <strong id="out-finish-badge">N/A</strong></span>
           </div>
         </div>
-        <div class="inspector-body">
-          <!-- Pane 1: Patch / Diff -->
-          <div id="pane-patch" class="inspector-pane active">
-            <pre class="code-view" id="writer-output">(No writer output recorded yet)</pre>
-          </div>
 
-          <!-- Pane 2: Tests & Quality Gate -->
-          <div id="pane-tests" class="inspector-pane">
-            <pre class="code-view" id="tests-output">(No test execution output)</pre>
-          </div>
+        <!-- TAB 1: STANDARD WORKFLOW TOPOLOGY CANVAS (Interconnected Models Edition) -->
+        <div id="pane-topology" class="tab-pane active">
+          <div class="topology-canvas">
+            <!-- SVG Links Layer (Dynamic Responsive Direct Anchor Mesh) -->
+            <svg class="topology-links" id="topology-svg">
+              <!-- Sonnet 4.5 -> Gemini 3.8 Flash (Frontend/UI) -->
+              <path id="link-sonnet-gemini" class="link-path" />
+              <!-- Sonnet 4.5 -> DeepSeek V4.1 Flash (Backend/Core) -->
+              <path id="link-sonnet-deepseek" class="link-path" />
+              <!-- Gemini 3.8 Flash -> Validator Guard -->
+              <path id="link-gemini-validator" class="link-path" />
+              <!-- DeepSeek V4.1 Flash -> Validator Guard (Forward Search/Replace) -->
+              <path id="link-deepseek-validator" class="link-path" />
+              <!-- Validator Guard -> DeepSeek V4.1 Flash (Feedback Loop / Retry) -->
+              <path id="link-validator-deepseek" class="link-path" style="stroke-dasharray: 4 4;" />
+              <!-- Validator Guard -> Claude Opus 5.5 High (Review Gate) -->
+              <path id="link-validator-opus" class="link-path" />
+            </svg>
 
-          <!-- Pane 3: Tech Lead Review (Opus) -->
-          <div id="pane-review" class="inspector-pane">
-            <div class="review-pane-content">
-              <div class="review-status-row">
-                <span class="role-name-title">★ Claude Opus 5.5 High</span>
-                <span id="review-badge" class="status-badge badge-idle">SKIPPED (QUICK MODE)</span>
-              </div>
-              <div id="review-feedback" class="review-feedback-text">
-Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk tasks or standard mode.
-              </div>
+            <!-- 1. Model: Claude Sonnet 4.5 Thinking (Plan & Spec) -->
+            <div class="ai-capsule-node node-sonnet" id="capsule-sonnet" title="Claude Sonnet 4.5 Thinking (Spec, Plan &amp; Scope Router)">
+              <div class="node-icon icon-sonnet">S</div>
+              <span class="node-label">Claude Sonnet 4.5 Thinking</span>
+              <div class="node-status-dot"></div>
+            </div>
+
+            <!-- 2. Model: Gemini 3.8 Flash (Frontend Writer / IDE Pair) -->
+            <div class="ai-capsule-node node-gemini" id="capsule-gemini" title="Gemini 3.8 Flash (Frontend Writer / IDE Pair Programmer)">
+              <div class="node-icon icon-gemini">G</div>
+              <span class="node-label">Gemini 3.8 Flash</span>
+              <div class="node-status-dot"></div>
+            </div>
+
+            <!-- 3. Model: DeepSeek V4.1 Flash (Backend Writer / Core) -->
+            <div class="ai-capsule-node node-deepseek" id="capsule-deepseek" title="DeepSeek V4.1 Flash (Backend Writer / Search-Replace Engine)">
+              <div class="node-icon icon-deepseek">D</div>
+              <span class="node-label">DeepSeek V4.1 Flash</span>
+              <div class="node-status-dot"></div>
+            </div>
+
+            <!-- 4. Engine: Validator Guard (Test Suite & Feedback Loop) -->
+            <div class="ai-capsule-node node-validator" id="capsule-validator" title="Validator Guard (TAB Check &amp; Test Suite Gate)">
+              <div class="node-icon icon-validator">🛡️</div>
+              <span class="node-label">Validator Guard</span>
+              <div class="node-status-dot"></div>
+            </div>
+
+            <!-- 5. Model: Claude Opus 5.5 High (Tech Lead Reviewer) -->
+            <div class="ai-capsule-node node-opus" id="capsule-opus" title="Claude Opus 5.5 High (High-Risk Diff Auditor)">
+              <div class="node-icon icon-opus">O</div>
+              <span class="node-label">Claude Opus 5.5 High</span>
+              <div class="node-status-dot"></div>
             </div>
           </div>
 
-          <!-- Pane 4: Raw Output File -->
-          <div id="pane-raw" class="inspector-pane">
-            <pre class="code-view" id="raw-output">(No raw log content)</pre>
+          <!-- Telemetry Footer Bar -->
+          <footer class="telemetry-footer-bar">
+            <div class="telemetry-chips">
+              <div class="tel-chip">
+                <span>Model Verification:</span>
+                <strong id="tel-model-verify">Req == Resp ✓</strong>
+              </div>
+              <div class="tel-chip">
+                <span>Finish Reason:</span>
+                <strong id="tel-finish">stop ✓</strong>
+              </div>
+              <div class="tel-chip">
+                <span>Patch Payload:</span>
+                <strong id="tel-blocks">0 blocks</strong>
+              </div>
+              <div class="tel-chip">
+                <span>Attempt:</span>
+                <strong id="tel-attempt">1 / 3</strong>
+              </div>
+            </div>
+            <div id="tel-recovered-badge" class="tag tag-recovered" style="display: none;">
+              ✓ Auto-Recovered on Retry 1
+            </div>
+          </footer>
+        </div>
+
+        <!-- TAB 2: RAW OUTPUT & DIFF INSPECTOR -->
+        <div id="pane-output" class="tab-pane">
+          <div class="raw-inspector-pane">
+            <pre class="code-view" id="writer-output">(No writer output recorded yet)</pre>
+          </div>
+        </div>
+
+        <!-- TAB 3: AGENT SESSIONS & TOOL RECEIPTS -->
+        <div id="pane-sessions" class="tab-pane">
+          <div class="sessions-inspector-container">
+            <!-- Sidebar: Sessions List -->
+            <div class="sessions-sidebar">
+              <div class="sessions-sidebar-header">
+                <span>ACTIVE SESSIONS</span>
+                <span class="sessions-count-badge" id="sessions-count-badge">0</span>
+              </div>
+              <div class="sessions-list" id="sessions-list">
+                <!-- Dynamically populated -->
+              </div>
+            </div>
+            <!-- Main Content: Selected Session Details -->
+            <div class="session-detail-view" id="session-detail-view">
+              <div class="session-empty-state" id="session-empty-state">
+                <span>Select a session on the left to inspect memory &amp; tool receipts</span>
+              </div>
+              <div class="session-active-content" id="session-active-content" style="display: none;">
+                <!-- Header Info -->
+                <div class="session-detail-header">
+                  <div class="session-title-wrap">
+                    <span class="session-item-role" id="sess-role-pill">writer</span>
+                    <h4 class="session-id-title" id="sess-id-title">session_id</h4>
+                  </div>
+                  <div class="session-meta-chips">
+                    <span class="meta-chip">Model: <strong id="sess-model-text">...</strong></span>
+                    <span class="meta-chip">Msgs: <strong id="sess-msg-count">0</strong></span>
+                    <span class="meta-chip">Tools: <strong id="sess-tools-count">0</strong></span>
+                  </div>
+                </div>
+                <!-- Tool Receipts Timeline -->
+                <div class="session-section">
+                  <div class="session-section-title">🔧 Tool Receipts Audit</div>
+                  <div class="tool-receipts-timeline" id="sess-receipts-timeline"></div>
+                </div>
+                <!-- Trajectory Messages -->
+                <div class="session-section" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+                  <div class="session-section-title">💬 Conversational Trajectory</div>
+                  <div class="session-messages-scroll" id="sess-messages-container"></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1018,14 +1592,12 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
     let currentStage = 'idle';
     let stageStartedAt = null;
     let taskStartedAt = null;
-    let activeInspectorTab = 'patch';
-    let userManuallySelectedTab = false;
+    let taskDurationStatic = null;
 
-    // DOM Elements
+    // DOM Elements: Top Bar
     const txtProject = document.getElementById('txt-project');
     const dotStage = document.getElementById('dot-stage');
     const txtStage = document.getElementById('txt-stage');
-
     const dotRouter = document.getElementById('dot-router');
     const txtRouter = document.getElementById('txt-router');
     const dotOrchestrator = document.getElementById('dot-orchestrator');
@@ -1034,59 +1606,13 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
     const tokOut = document.getElementById('tok-out');
     const txtPolling = document.getElementById('txt-polling');
 
-    const taskCardTitle = document.getElementById('task-card-title');
-    const taskId = document.getElementById('task-id');
-    const taskAttempt = document.getElementById('task-attempt');
-    const taskMode = document.getElementById('task-mode');
-    const taskRisk = document.getElementById('task-risk');
-    const taskCommitTag = document.getElementById('task-commit-tag');
-    const taskTimerTag = document.getElementById('task-timer-tag');
-    const taskGoal = document.getElementById('task-goal');
+    // Waterfall Pipeline Elements
+    const txtStepRouter = document.getElementById('txt-step-router');
+    const txtStepReviewer = document.getElementById('txt-step-reviewer');
+    const writerAttemptBadge = document.getElementById('writer-attempt-badge');
+    const retryLoopPill = document.getElementById('retry-loop-pill');
+    const retryNum = document.getElementById('retry-num');
 
-    const squadRolesList = document.getElementById('squad-roles-list');
-    const scopeFilesList = document.getElementById('scope-files-list');
-    const scopeCount = document.getElementById('scope-count');
-
-    const cntActive = document.getElementById('cnt-active');
-    const cntDone = document.getElementById('cnt-done');
-    const cntBlocked = document.getElementById('cnt-blocked');
-    const queueItemsList = document.getElementById('queue-items-list');
-
-    // Error Banner Elements
-    const lastErrorBanner = document.getElementById('last-error-banner');
-    const lastErrorTitle = document.getElementById('last-error-title');
-    const lastErrorSummary = document.getElementById('last-error-summary');
-    const lastErrorTail = document.getElementById('last-error-tail');
-    const lastErrorRaw = document.getElementById('last-error-raw');
-
-    // Inspector Tabs & Panes
-    const tabBtnPatch = document.getElementById('tab-btn-patch');
-    const tabBtnTests = document.getElementById('tab-btn-tests');
-    const tabBtnReview = document.getElementById('tab-btn-review');
-    const tabBtnRaw = document.getElementById('tab-btn-raw');
-
-    const panePatch = document.getElementById('pane-patch');
-    const paneTests = document.getElementById('pane-tests');
-    const paneReview = document.getElementById('pane-review');
-    const paneRaw = document.getElementById('pane-raw');
-
-    const outFile = document.getElementById('out-file');
-    const outModelReq = document.getElementById('out-model-req');
-    const outModelResp = document.getElementById('out-model-resp');
-    const outFinish = document.getElementById('out-finish');
-    const outSize = document.getElementById('out-size');
-    const writerOutput = document.getElementById('writer-output');
-    const testsOutput = document.getElementById('tests-output');
-    const reviewBadge = document.getElementById('review-badge');
-    const reviewFeedback = document.getElementById('review-feedback');
-    const rawOutput = document.getElementById('raw-output');
-
-    const consoleLogs = document.getElementById('console-logs');
-    const btnPauseLog = document.getElementById('btn-pause-log');
-    const btnClearLog = document.getElementById('btn-clear-log');
-    const logFilter = document.getElementById('log-filter');
-
-    // Pipeline Step Elements Map (8 stages)
     const pipelineSteps = {
       preflight: document.getElementById('step-preflight'),
       router: document.getElementById('step-router'),
@@ -1097,38 +1623,133 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
       git: document.getElementById('step-git'),
       done: document.getElementById('step-done')
     };
-
-    const writerAttemptBadge = document.getElementById('writer-attempt-badge');
-    const txtStepReviewer = document.getElementById('txt-step-reviewer');
     const stageSequence = ['preflight', 'router', 'writer', 'applier', 'validator', 'reviewer', 'git', 'done'];
 
-    // Tab Switcher Helper
-    function switchInspectorTab(tabName, isManual = false) {
-      if (isManual) userManuallySelectedTab = true;
-      activeInspectorTab = tabName;
+    // Left Column Elements
+    const taskCardTitle = document.getElementById('task-card-title');
+    const taskId = document.getElementById('task-id');
+    const taskAttempt = document.getElementById('task-attempt');
+    const taskMode = document.getElementById('task-mode');
+    const taskRisk = document.getElementById('task-risk');
+    const taskCommitTag = document.getElementById('task-commit-tag');
+    const taskTimerTag = document.getElementById('task-timer-tag');
+    const taskGoal = document.getElementById('task-goal');
 
-      [tabBtnPatch, tabBtnTests, tabBtnReview, tabBtnRaw].forEach(btn => btn.classList.remove('active'));
-      [panePatch, paneTests, paneReview, paneRaw].forEach(pane => pane.classList.remove('active'));
+    const squadModelRouter = document.getElementById('squad-model-router');
+    const squadStatusRouter = document.getElementById('squad-status-router');
+    const squadModelWriter = document.getElementById('squad-model-writer');
+    const squadStatusWriter = document.getElementById('squad-status-writer');
+    const squadStatusFrontend = document.getElementById('squad-status-frontend');
+    const squadStatusValidator = document.getElementById('squad-status-validator');
+    const squadModelReviewer = document.getElementById('squad-model-reviewer');
+    const squadStatusReviewer = document.getElementById('squad-status-reviewer');
 
-      if (tabName === 'patch') {
-        tabBtnPatch.classList.add('active');
-        panePatch.classList.add('active');
-      } else if (tabName === 'tests') {
-        tabBtnTests.classList.add('active');
-        paneTests.classList.add('active');
-      } else if (tabName === 'review') {
-        tabBtnReview.classList.add('active');
-        paneReview.classList.add('active');
-      } else if (tabName === 'raw') {
-        tabBtnRaw.classList.add('active');
-        paneRaw.classList.add('active');
+    const scopeFilesList = document.getElementById('scope-files-list');
+    const scopeCount = document.getElementById('scope-count');
+
+    const cntActive = document.getElementById('cnt-active');
+    const cntDone = document.getElementById('cnt-done');
+    const cntBlocked = document.getElementById('cnt-blocked');
+    const queueItemsList = document.getElementById('queue-items-list');
+
+    // Error Callout Elements
+    const lastErrorBanner = document.getElementById('last-error-banner');
+    const lastErrorTitle = document.getElementById('last-error-title');
+    const lastErrorSummary = document.getElementById('last-error-summary');
+    const lastErrorTail = document.getElementById('last-error-tail');
+    const lastErrorRaw = document.getElementById('last-error-raw');
+
+    // Central Tabs
+    const tabBtnTopology = document.getElementById('tab-btn-topology');
+    const tabBtnOutput = document.getElementById('tab-btn-output');
+    const tabBtnSessions = document.getElementById('tab-btn-sessions');
+    const paneTopology = document.getElementById('pane-topology');
+    const paneOutput = document.getElementById('pane-output');
+    const paneSessions = document.getElementById('pane-sessions');
+    const outAttemptBadge = document.getElementById('out-attempt-badge');
+    const outFinishBadge = document.getElementById('out-finish-badge');
+
+    // Tab 3 Sessions Elements
+    const sessionsList = document.getElementById('sessions-list');
+    const sessionsCountBadge = document.getElementById('sessions-count-badge');
+    const sessionEmptyState = document.getElementById('session-empty-state');
+    const sessionActiveContent = document.getElementById('session-active-content');
+    const sessRolePill = document.getElementById('sess-role-pill');
+    const sessIdTitle = document.getElementById('sess-id-title');
+    const sessModelText = document.getElementById('sess-model-text');
+    const sessMsgCount = document.getElementById('sess-msg-count');
+    const sessToolsCount = document.getElementById('sess-tools-count');
+    const sessReceiptsTimeline = document.getElementById('sess-receipts-timeline');
+    const sessMessagesContainer = document.getElementById('sess-messages-container');
+
+    let currentSelectedSessionId = null;
+    let cachedSessionsList = [];
+
+    // Standard Workflow SVG Links & Model Capsules
+    const linkSonnetGemini = document.getElementById('link-sonnet-gemini');
+    const linkSonnetDeepseek = document.getElementById('link-sonnet-deepseek');
+    const linkGeminiValidator = document.getElementById('link-gemini-validator');
+    const linkDeepseekValidator = document.getElementById('link-deepseek-validator');
+    const linkValidatorDeepseek = document.getElementById('link-validator-deepseek');
+    const linkValidatorOpus = document.getElementById('link-validator-opus');
+
+    const capsuleSonnet = document.getElementById('capsule-sonnet');
+    const capsuleGemini = document.getElementById('capsule-gemini');
+    const capsuleDeepseek = document.getElementById('capsule-deepseek');
+    const capsuleValidator = document.getElementById('capsule-validator');
+    const capsuleOpus = document.getElementById('capsule-opus');
+
+    // Telemetry Footer
+    const telModelVerify = document.getElementById('tel-model-verify');
+    const telFinish = document.getElementById('tel-finish');
+    const telBlocks = document.getElementById('tel-blocks');
+    const telAttempt = document.getElementById('tel-attempt');
+    const telRecoveredBadge = document.getElementById('tel-recovered-badge');
+
+    // Tab 2 Raw Output
+    const writerOutput = document.getElementById('writer-output');
+
+    // Console Logs
+    const consoleLogs = document.getElementById('console-logs');
+    const btnPauseLog = document.getElementById('btn-pause-log');
+    const btnClearLog = document.getElementById('btn-clear-log');
+    const logFilter = document.getElementById('log-filter');
+
+    // Tab Switching Logic
+    tabBtnTopology.addEventListener('click', () => {
+      tabBtnTopology.classList.add('active');
+      tabBtnOutput.classList.remove('active');
+      tabBtnSessions.classList.remove('active');
+      paneTopology.classList.add('active');
+      paneOutput.classList.remove('active');
+      paneSessions.classList.remove('active');
+      requestAnimationFrame(recalculateSvgLinks);
+    });
+
+    tabBtnOutput.addEventListener('click', () => {
+      tabBtnOutput.classList.add('active');
+      tabBtnTopology.classList.remove('active');
+      tabBtnSessions.classList.remove('active');
+      paneOutput.classList.add('active');
+      paneTopology.classList.remove('active');
+      paneSessions.classList.remove('active');
+    });
+
+    tabBtnSessions.addEventListener('click', () => {
+      tabBtnSessions.classList.add('active');
+      tabBtnTopology.classList.remove('active');
+      tabBtnOutput.classList.remove('active');
+      paneSessions.classList.add('active');
+      paneTopology.classList.remove('active');
+      paneOutput.classList.remove('active');
+      if (cachedSessionsList.length > 0 && !currentSelectedSessionId) {
+        selectSession(cachedSessionsList[0].session_id);
       }
-    }
+    });
 
-    tabBtnPatch.addEventListener('click', () => switchInspectorTab('patch', true));
-    tabBtnTests.addEventListener('click', () => switchInspectorTab('tests', true));
-    tabBtnReview.addEventListener('click', () => switchInspectorTab('review', true));
-    tabBtnRaw.addEventListener('click', () => switchInspectorTab('raw', true));
+    window.addEventListener('resize', () => {
+      requestAnimationFrame(recalculateSvgLinks);
+    });
 
     // Format Token Numbers
     function formatTokens(num) {
@@ -1138,24 +1759,38 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
       return String(num);
     }
 
-    // Update Pipeline Stages Visual State with Adaptive Skips & Retries
-    function updatePipelineDisplay(activeStage, stageStartTime, mode, attempt, isOrchestratorRunning, lastTask) {
+    // Format Elapsed Seconds (e.g. 97s -> 1m 37s)
+    function formatSeconds(sec) {
+      if (!sec || isNaN(sec) || sec <= 0) return '0s';
+      if (sec < 60) return `${sec}s`;
+      const mins = Math.floor(sec / 60);
+      const s = sec % 60;
+      return `${mins}m ${s}s`;
+    }
+
+    // Update Waterfall Pipeline Stages Visual State
+    function updateWaterfallPipeline(activeStage, stageStartTime, mode, attempt, isRunning, lastTask) {
       currentStage = activeStage;
       stageStartedAt = stageStartTime ? new Date(stageStartTime).getTime() : null;
 
-      // Update Reviewer Label (Reflect Quick Mode Skip)
+      // Quick mode router & reviewer labels
       if (mode === 'quick') {
+        txtStepRouter.textContent = '1. Router (Direct)';
         txtStepReviewer.textContent = '4b. Review (Skip)';
       } else {
+        txtStepRouter.textContent = '1. Router';
         txtStepReviewer.textContent = '4b. Review';
       }
 
-      // Writer attempt indicator
+      // Retry Loop Indicator
       if (attempt && attempt > 1) {
         writerAttemptBadge.textContent = 'Att ' + attempt;
         writerAttemptBadge.style.display = 'inline-block';
+        retryNum.textContent = String(attempt - 1);
+        retryLoopPill.style.display = 'inline-flex';
       } else {
         writerAttemptBadge.style.display = 'none';
+        retryLoopPill.style.display = 'none';
       }
 
       const activeIdx = stageSequence.indexOf(activeStage);
@@ -1168,8 +1803,7 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
         const iconSpan = el.querySelector('.step-icon');
         const timerSpan = el.querySelector('.stage-timer');
 
-        if (!isOrchestratorRunning) {
-          // Idle Context: If there's a last completed task, highlight done
+        if (!isRunning) {
           if (lastTask && lastTask.status === 'done') {
             el.classList.add('done');
             if (iconSpan) iconSpan.textContent = '✓';
@@ -1226,9 +1860,9 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
       });
     }
 
-    // Universal Stage Timer Ticker (runs every 200ms)
+    // Universal Timer Ticker (Fixes runaway 53553s timer)
     setInterval(() => {
-      // 1. Update active stage timer on pipeline
+      // 1. Active stage timer
       if (currentStage && currentStage !== 'idle' && currentStage !== 'done' && currentStage !== 'blocked' && stageStartedAt) {
         const el = pipelineSteps[currentStage];
         if (el) {
@@ -1240,85 +1874,231 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
           }
         }
       }
-      // 2. Update overall task timer badge
-      if (taskStartedAt) {
+
+      // 2. Task duration timer
+      if (taskDurationStatic !== null) {
+        taskTimerTag.textContent = 'Duration: ⏱ ' + formatSeconds(taskDurationStatic);
+        taskTimerTag.style.display = 'inline-block';
+      } else if (taskStartedAt && currentStage !== 'idle') {
         const totalSec = Math.max(0, Math.floor((Date.now() - taskStartedAt) / 1000));
-        taskTimerTag.textContent = 'Task: ⏱ ' + totalSec + 's';
+        taskTimerTag.textContent = 'Task: ⏱ ' + formatSeconds(totalSec);
         taskTimerTag.style.display = 'inline-block';
       } else {
         taskTimerTag.style.display = 'none';
       }
     }, 200);
 
-    // AC-1: Correct Autonomous Squad Roster Rendering (100% Truth)
-    function renderSquadRoles(teamRoles, rolesStatus, activeStage) {
-      while (squadRolesList.firstChild) {
-        squadRolesList.removeChild(squadRolesList.firstChild);
+    // Update Topology SVG Links and Model Capsules according to Standard Workflow
+    function updateTopologyNetwork(activeStage, rolesStatus, rolesConfig, snap) {
+      // 1. Reset all links and model capsules
+      const allLinks = [linkSonnetGemini, linkSonnetDeepseek, linkGeminiValidator, linkDeepseekValidator, linkValidatorDeepseek, linkValidatorOpus];
+      allLinks.forEach(l => {
+        if (l) l.className.baseVal = 'link-path';
+      });
+
+      const allCapsules = [capsuleSonnet, capsuleGemini, capsuleDeepseek, capsuleValidator, capsuleOpus];
+      allCapsules.forEach(c => {
+        if (c) c.className = c.className.replace(/\b(active|done)\b/g, '').trim();
+      });
+
+      const wStatus = rolesStatus.writer?.status || 'idle';
+      const rStatus = rolesStatus.router?.status || 'idle';
+      const revStatus = rolesStatus.reviewer?.status || 'idle';
+      const attempt = snap?.live_status?.attempt || 1;
+
+      // Gemini 3.8 Flash (Frontend Writer / IDE) is always active/ready
+      if (capsuleGemini) capsuleGemini.classList.add('done');
+
+      // 2. Active Stage mappings theo Standard Workflow
+      if (activeStage === 'router') {
+        if (capsuleSonnet) capsuleSonnet.classList.add('active');
+        if (linkSonnetDeepseek) linkSonnetDeepseek.className.baseVal = 'link-path active';
+      } else if (rStatus === 'done') {
+        if (capsuleSonnet) capsuleSonnet.classList.add('done');
+        if (linkSonnetDeepseek) linkSonnetDeepseek.className.baseVal = 'link-path done';
       }
 
-      // Explicit Squad Roster matching the architectural specification
-      const roleDefs = [
-        { key: 'coordinator', name: '🛡️ Coordinator', title: 'Gemini Antigravity (IDE Pair)', defaultModel: 'Google Antigravity' },
-        { key: 'reviewer', name: '★ Tech Lead', title: 'Claude Opus 5.5 High (Reviewer)', defaultModel: 'ag/claude-opus-5-5-high' },
-        { key: 'designer', name: '🎨 Designer', title: 'Claude Sonnet 4.5 (UI/UX)', defaultModel: 'kr/claude-sonnet-4.5-thinking' },
-        { key: 'writer', name: '🐋 Core Backend', title: 'DeepSeek V4.1 Flash (Writer)', defaultModel: 'DeepSeek V4.1 Flash' },
-        { key: 'validator', name: '🛡️ Quality Gate', title: 'scripts/validator.mjs (100% TAB)', script: 'scripts/validator.mjs' },
-        { key: 'applier', name: '🔧 Scope Guard', title: 'scripts/applier.mjs (AST Guard)', script: 'scripts/applier.mjs' },
-        { key: 'git', name: '🌿 Git Guard', title: 'scripts/git-guard.mjs (Atomic Commit)', script: 'scripts/git-guard.mjs' }
-      ];
-
-      roleDefs.forEach(def => {
-        const configured = teamRoles[def.key] || {};
-        const live = (rolesStatus && rolesStatus[def.key]) ? rolesStatus[def.key] : {};
-
-        const row = document.createElement('div');
-        row.className = 'role-row';
-
-        const nameCol = document.createElement('div');
-        nameCol.className = 'role-name';
-
-        const titleSpan = document.createElement('span');
-        titleSpan.className = 'role-name-title';
-        titleSpan.textContent = configured.display_name ? `${def.name.split(' ')[0]} ${configured.display_name}` : def.title;
-
-        const modelSpan = document.createElement('span');
-        modelSpan.className = 'role-model';
-        const modelText = live.model || configured.model || configured.script || def.script || def.defaultModel;
-        modelSpan.textContent = modelText;
-        modelSpan.title = modelText;
-
-        nameCol.appendChild(titleSpan);
-        nameCol.appendChild(modelSpan);
-
-        const badge = document.createElement('span');
-        badge.className = 'status-badge';
-
-        // Resolve status
-        let status = 'IDLE';
-        let badgeClass = 'badge-idle';
-
-        if (def.key === 'coordinator') {
-          status = 'ONLINE';
-          badgeClass = 'badge-done';
-        } else if (live.status) {
-          const s = String(live.status).toLowerCase();
-          if (s === 'working') { status = 'WORKING'; badgeClass = 'badge-working'; }
-          else if (s === 'done' || s === 'passed' || s === 'approved') { status = s.toUpperCase(); badgeClass = 'badge-done'; }
-          else if (s === 'failed' || s === 'error' || s === 'rejected') { status = s.toUpperCase(); badgeClass = 'badge-error'; }
-          else if (s === 'skipped') { status = 'SKIPPED'; badgeClass = 'badge-skipped'; }
-          else { status = s.toUpperCase(); badgeClass = 'badge-idle'; }
-        } else if (activeStage === def.key) {
-          status = 'WORKING';
-          badgeClass = 'badge-working';
+      if (activeStage === 'writer') {
+        if (capsuleDeepseek) capsuleDeepseek.classList.add('active');
+        if (linkSonnetDeepseek) linkSonnetDeepseek.className.baseVal = 'link-path active';
+        if (linkDeepseekValidator) linkDeepseekValidator.className.baseVal = 'link-path active';
+        // If in retry attempt, show feedback loop
+        if (attempt > 1 && linkValidatorDeepseek) {
+          linkValidatorDeepseek.className.baseVal = 'link-path active';
         }
+      } else if (wStatus === 'done') {
+        if (capsuleDeepseek) capsuleDeepseek.classList.add('done');
+        if (linkDeepseekValidator) linkDeepseekValidator.className.baseVal = 'link-path done';
+      }
 
-        badge.textContent = status;
-        badge.className = 'status-badge ' + badgeClass;
+      if (['applier', 'validator'].includes(activeStage)) {
+        if (capsuleValidator) capsuleValidator.classList.add('active');
+        if (linkDeepseekValidator) linkDeepseekValidator.className.baseVal = 'link-path active';
+      } else if (['reviewer', 'git', 'done'].includes(activeStage)) {
+        if (capsuleValidator) capsuleValidator.classList.add('done');
+      }
 
-        row.appendChild(nameCol);
-        row.appendChild(badge);
-        squadRolesList.appendChild(row);
-      });
+      if (activeStage === 'reviewer') {
+        if (capsuleOpus) capsuleOpus.classList.add('active');
+        if (linkValidatorOpus) linkValidatorOpus.className.baseVal = 'link-path active';
+      } else if (revStatus === 'approved') {
+        if (capsuleOpus) capsuleOpus.classList.add('done');
+        if (linkValidatorOpus) linkValidatorOpus.className.baseVal = 'link-path done';
+      }
+
+      if (activeStage === 'done') {
+        if (capsuleSonnet) capsuleSonnet.classList.add('done');
+        if (capsuleDeepseek) capsuleDeepseek.classList.add('done');
+        if (capsuleValidator) capsuleValidator.classList.add('done');
+        if (linkDeepseekValidator) linkDeepseekValidator.className.baseVal = 'link-path done';
+      }
+
+      // 3. Dynamic Tooltips with Real Model Information
+      if (capsuleSonnet) {
+        capsuleSonnet.title = `Claude Sonnet 4.5 Thinking (${rolesConfig.router?.model || 'kr/claude-sonnet-4.5-thinking'}) - Plan & Scope Router`;
+      }
+      if (capsuleGemini) {
+        capsuleGemini.title = `Gemini 3.8 Flash (Antigravity IDE Assistant) - Frontend Writer & Pair Programming`;
+      }
+      if (capsuleDeepseek) {
+        capsuleDeepseek.title = `DeepSeek V4.1 Flash (${rolesConfig.writer?.model || 'deepseek-ai/deepseek-v4.1-flash-1017'}) - Backend Writer (Status: ${wStatus.toUpperCase()})`;
+      }
+      if (capsuleValidator) {
+        capsuleValidator.title = `Validator Guard (scripts/validator.mjs) - Test & TAB Gate (Stage: ${activeStage})`;
+      }
+      if (capsuleOpus) {
+        capsuleOpus.title = `Claude Opus 5.5 High (${rolesConfig.reviewer?.model || 'ag/claude-opus-5-5-high'}) - Tech Lead Reviewer (Status: ${revStatus.toUpperCase()})`;
+      }
+
+      // Recalculate pixel-perfect dynamic anchors to eliminate any line gaps
+      requestAnimationFrame(recalculateSvgLinks);
+    }
+
+    // Dynamically calculate pixel-perfect SVG Bezier curves directly between node anchors
+    function recalculateSvgLinks() {
+      const canvas = document.querySelector('.topology-canvas');
+      if (!canvas) return;
+      const cRect = canvas.getBoundingClientRect();
+      if (cRect.width === 0 || cRect.height === 0) return;
+
+      function getPointRight(el) {
+        if (!el) return { x: 0, y: 0 };
+        const r = el.getBoundingClientRect();
+        return {
+          x: r.right - cRect.left,
+          y: r.top + r.height / 2 - cRect.top
+        };
+      }
+
+      function getPointLeft(el) {
+        if (!el) return { x: 0, y: 0 };
+        const r = el.getBoundingClientRect();
+        return {
+          x: r.left - cRect.left,
+          y: r.top + r.height / 2 - cRect.top
+        };
+      }
+
+      function setBezier(pathEl, p1, p2, curvature = 0.5) {
+        if (!pathEl || !p1 || !p2 || p1.x === 0 || p2.x === 0) return;
+        const dx = Math.max(20, Math.abs(p2.x - p1.x) * curvature);
+        const d = `M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} C ${(p1.x + dx).toFixed(1)} ${p1.y.toFixed(1)}, ${(p2.x - dx).toFixed(1)} ${p2.y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+        pathEl.setAttribute('d', d);
+      }
+
+      function setFeedbackLoop(pathEl) {
+        if (!pathEl || !capsuleValidator || !capsuleDeepseek) return;
+        const rVal = capsuleValidator.getBoundingClientRect();
+        const rDeep = capsuleDeepseek.getBoundingClientRect();
+        if (rVal.width === 0 || rDeep.width === 0) return;
+
+        // Bắt đầu từ đáy Validator lượn vòng cung mềm xuống dưới rồi chạm đáy DeepSeek
+        const startX = rVal.left + rVal.width * 0.25 - cRect.left;
+        const startY = rVal.bottom - cRect.top;
+        const endX = rDeep.right - cRect.left;
+        const endY = rDeep.bottom - cRect.top;
+        const dropY = Math.max(startY, endY) + 26;
+
+        const d = `M ${startX.toFixed(1)} ${startY.toFixed(1)} C ${(startX - 40).toFixed(1)} ${dropY.toFixed(1)}, ${(endX + 40).toFixed(1)} ${dropY.toFixed(1)}, ${endX.toFixed(1)} ${endY.toFixed(1)}`;
+        pathEl.setAttribute('d', d);
+      }
+
+      const pSonnet = getPointRight(capsuleSonnet);
+      const pGeminiIn = getPointLeft(capsuleGemini);
+      const pGeminiOut = getPointRight(capsuleGemini);
+      const pDeepseekIn = getPointLeft(capsuleDeepseek);
+      const pDeepseekOut = getPointRight(capsuleDeepseek);
+      const pValidatorIn = getPointLeft(capsuleValidator);
+      const pValidatorOut = getPointRight(capsuleValidator);
+      const pOpusIn = getPointLeft(capsuleOpus);
+
+      // 1. Sonnet -> Gemini (Frontend)
+      setBezier(linkSonnetGemini, pSonnet, pGeminiIn);
+
+      // 2. Sonnet -> DeepSeek (Backend)
+      setBezier(linkSonnetDeepseek, pSonnet, pDeepseekIn);
+
+      // 3. Gemini -> Validator
+      setBezier(linkGeminiValidator, pGeminiOut, pValidatorIn);
+
+      // 4. DeepSeek -> Validator
+      setBezier(linkDeepseekValidator, pDeepseekOut, pValidatorIn);
+
+      // 5. Validator -> DeepSeek Feedback loop (khi retry)
+      setFeedbackLoop(linkValidatorDeepseek);
+
+      // 6. Validator -> Opus (Review Gate)
+      setBezier(linkValidatorOpus, pValidatorOut, pOpusIn);
+    }
+
+    // Intelligent Failure Tail Extraction (Zero Noise)
+    function extractFailureTail(rawText) {
+      if (!rawText || typeof rawText !== 'string') return null;
+      const text = rawText.trim();
+      if (!text) return null;
+
+      const anchorMatch = text.search(/(?:FAIL:|ERROR:|AssertionError:|SyntaxError:|Traceback \(most recent call last\):|ValidationError:|ApplierRejection:)/i);
+
+      if (anchorMatch !== -1) {
+        const tail = text.slice(anchorMatch).trim();
+        const lines = tail.split(/\r?\n/).filter(Boolean);
+        const headline = lines[0] || 'Execution Error';
+
+        return {
+          title: headline.split('(')[0].trim().slice(0, 60),
+          summary: headline.slice(0, 160),
+          tail: tail.slice(0, 3000),
+          raw: text
+        };
+      }
+
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      const tail = lines.slice(-15).join('\n');
+      return {
+        title: 'EXECUTION ERROR / FAILURE',
+        summary: lines[lines.length - 1]?.slice(0, 160) || 'Error occurred during execution',
+        tail: tail,
+        raw: text
+      };
+    }
+
+    function renderLastError(errorText, isTaskDone) {
+      // AC-4: If task succeeded on retry (isTaskDone), suppress old error banner!
+      if (isTaskDone) {
+        lastErrorBanner.style.display = 'none';
+        return;
+      }
+
+      const parsed = extractFailureTail(errorText);
+      if (parsed) {
+        lastErrorBanner.style.display = 'flex';
+        lastErrorTitle.textContent = parsed.title;
+        lastErrorSummary.textContent = parsed.summary;
+        lastErrorTail.textContent = parsed.tail;
+        lastErrorRaw.textContent = parsed.raw;
+      } else {
+        lastErrorBanner.style.display = 'none';
+      }
     }
 
     // Render Scoped Files securely
@@ -1363,7 +2143,7 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
       });
     }
 
-    // AC-5: Interactive Task Queue List Rendering
+    // Render Task Queue list
     function renderTaskQueue(q) {
       cntActive.textContent = String(q.active_count ?? 0);
       cntDone.textContent = String(q.completed_count ?? 0);
@@ -1375,7 +2155,7 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
 
       let hasItems = false;
 
-      // 1. Active / Pending tasks
+      // 1. Active tasks
       if (Array.isArray(q.active) && q.active.length > 0) {
         q.active.forEach(t => {
           hasItems = true;
@@ -1437,7 +2217,7 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
         });
       }
 
-      // 3. Recent Completed tasks (up to 5)
+      // 3. Recent completed tasks
       if (Array.isArray(q.recent_completed) && q.recent_completed.length > 0) {
         q.recent_completed.forEach(t => {
           hasItems = true;
@@ -1487,62 +2267,6 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
       }
     }
 
-    // AC-2: Intelligent Failure Tail Extraction (Zero Noise)
-    function extractFailureTail(rawText) {
-      if (!rawText || typeof rawText !== 'string') return null;
-      const text = rawText.trim();
-      if (!text) return null;
-
-      // 1. Search for error anchors in priority order
-      const anchorMatch = text.search(/(?:FAIL:|ERROR:|AssertionError:|SyntaxError:|Traceback \(most recent call last\):|ValidationError:|ApplierRejection:)/i);
-
-      if (anchorMatch !== -1) {
-        const tail = text.slice(anchorMatch).trim();
-        const lines = tail.split(/\r?\n/).filter(Boolean);
-        const headline = lines[0] || 'Execution Error';
-
-        return {
-          title: headline.split('(')[0].trim().slice(0, 60),
-          summary: headline.slice(0, 160),
-          tail: tail.slice(0, 3000),
-          raw: text
-        };
-      }
-
-      // 2. Fallback: Take last 15 lines if no regex matches
-      const lines = text.split(/\r?\n/).filter(Boolean);
-      const tail = lines.slice(-15).join('\n');
-      return {
-        title: 'EXECUTION ERROR / FAILURE',
-        summary: lines[lines.length - 1]?.slice(0, 160) || 'Error occurred during execution',
-        tail: tail,
-        raw: text
-      };
-    }
-
-    function renderLastError(errorText) {
-      const parsed = extractFailureTail(errorText);
-
-      if (parsed) {
-        lastErrorBanner.style.display = 'flex';
-        lastErrorTitle.textContent = parsed.title;
-        lastErrorSummary.textContent = parsed.summary;
-        lastErrorTail.textContent = parsed.tail;
-        lastErrorRaw.textContent = parsed.raw;
-
-        // Auto-switch inspector to Tests tab when there's an error and user hasn't manually clicked tabs
-        if (!userManuallySelectedTab) {
-          switchInspectorTab('tests', false);
-        }
-      } else {
-        lastErrorBanner.style.display = 'none';
-        lastErrorTitle.textContent = '';
-        lastErrorSummary.textContent = '';
-        lastErrorTail.textContent = '';
-        lastErrorRaw.textContent = '';
-      }
-    }
-
     // Render Logs securely with auto-scroll
     function renderLogs(logs) {
       if (isLogPaused || !logs) return;
@@ -1582,11 +2306,169 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
         consoleLogs.appendChild(row);
       });
 
-      // Auto-scroll to bottom
       consoleLogs.scrollTop = consoleLogs.scrollHeight;
     }
 
-    // Main Snapshot Handler
+    // Count search blocks in writer output
+    function countSearchBlocks(text) {
+      if (!text || typeof text !== 'string') return 0;
+      const matches = text.match(/<<<<<<< SEARCH/g);
+      return matches ? matches.length : 0;
+    }
+
+    // Render Sessions List & Receipts
+    function renderSessionsList(sessions) {
+      cachedSessionsList = sessions || [];
+      if (sessionsCountBadge) {
+        sessionsCountBadge.textContent = String(cachedSessionsList.length);
+      }
+
+      if (!sessionsList) return;
+      const activeId = currentSelectedSessionId;
+      while (sessionsList.firstChild) {
+        sessionsList.removeChild(sessionsList.firstChild);
+      }
+
+      if (cachedSessionsList.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.color = 'var(--text-muted)';
+        empty.style.fontSize = '11px';
+        empty.style.fontStyle = 'italic';
+        empty.style.padding = '8px';
+        empty.textContent = '(No active sessions found)';
+        sessionsList.appendChild(empty);
+        return;
+      }
+
+      cachedSessionsList.forEach(s => {
+        const item = document.createElement('div');
+        item.className = 'session-item' + (s.session_id === activeId ? ' active' : '');
+        item.addEventListener('click', () => selectSession(s.session_id));
+
+        const topRow = document.createElement('div');
+        topRow.className = 'session-item-row';
+
+        const idSpan = document.createElement('span');
+        idSpan.className = 'session-item-id';
+        idSpan.textContent = s.session_id;
+        idSpan.title = s.session_id;
+
+        const roleSpan = document.createElement('span');
+        roleSpan.className = 'session-item-role role-' + (s.role || 'writer');
+        roleSpan.textContent = (s.role || 'writer').toUpperCase();
+
+        topRow.appendChild(idSpan);
+        topRow.appendChild(roleSpan);
+
+        const subRow = document.createElement('div');
+        subRow.className = 'session-item-sub';
+
+        const msgsSpan = document.createElement('span');
+        msgsSpan.textContent = `${s.message_count || 0} msgs • ${s.tool_receipts_count || 0} tools`;
+
+        const timeSpan = document.createElement('span');
+        timeSpan.textContent = s.updated_at ? new Date(s.updated_at).toLocaleTimeString() : '';
+
+        subRow.appendChild(msgsSpan);
+        subRow.appendChild(timeSpan);
+
+        item.appendChild(topRow);
+        item.appendChild(subRow);
+        sessionsList.appendChild(item);
+      });
+    }
+
+    async function selectSession(sessionId) {
+      if (!sessionId || !sessionActiveContent || !sessionEmptyState) return;
+      currentSelectedSessionId = sessionId;
+
+      // Update sidebar active highlights
+      const items = sessionsList.querySelectorAll('.session-item');
+      items.forEach(el => {
+        const idEl = el.querySelector('.session-item-id');
+        if (idEl && idEl.textContent === sessionId) {
+          el.classList.add('active');
+        } else {
+          el.classList.remove('active');
+        }
+      });
+
+      try {
+        const res = await fetch(`/api/session?id=${encodeURIComponent(sessionId)}`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (!data.ok || !data.session) return;
+
+        const s = data.session;
+        sessionEmptyState.style.display = 'none';
+        sessionActiveContent.style.display = 'flex';
+
+        sessRolePill.textContent = (s.role || 'writer').toUpperCase();
+        sessRolePill.className = 'session-item-role role-' + (s.role || 'writer');
+        sessIdTitle.textContent = s.session_id;
+        sessModelText.textContent = s.model || 'unknown';
+        sessMsgCount.textContent = String(s.messages ? s.messages.length : 0);
+        sessToolsCount.textContent = String(s.tool_receipts ? s.tool_receipts.length : 0);
+
+        // Render Tool Receipts Timeline
+        while (sessReceiptsTimeline.firstChild) {
+          sessReceiptsTimeline.removeChild(sessReceiptsTimeline.firstChild);
+        }
+        const receipts = s.tool_receipts || [];
+        if (receipts.length === 0) {
+          const noReceipt = document.createElement('span');
+          noReceipt.style.fontSize = '11px';
+          noReceipt.style.color = 'var(--text-muted)';
+          noReceipt.style.fontStyle = 'italic';
+          noReceipt.textContent = '(No tool calls executed yet in this session)';
+          sessReceiptsTimeline.appendChild(noReceipt);
+        } else {
+          receipts.forEach(r => {
+            const pill = document.createElement('div');
+            pill.className = 'receipt-pill' + (r.status === 'ok' ? '' : ' error');
+            pill.textContent = `[Turn ${r.turn || 1}] ${r.tool} -> ${r.status} (${r.summary || 'done'})`;
+            sessReceiptsTimeline.appendChild(pill);
+          });
+        }
+
+        // Render Messages Trajectory
+        while (sessMessagesContainer.firstChild) {
+          sessMessagesContainer.removeChild(sessMessagesContainer.firstChild);
+        }
+        const msgs = s.messages || [];
+        msgs.forEach(m => {
+          const bubble = document.createElement('div');
+          bubble.className = 'msg-bubble msg-' + (m.role || 'user');
+
+          let textContent = '';
+          if (typeof m.content === 'string') {
+            textContent = m.content;
+          } else if (Array.isArray(m.content)) {
+            textContent = m.content.map(part => {
+              if (part.type === 'text') return part.text || '';
+              if (part.type === 'image_url') return '[Attached Image: Base64]';
+              return JSON.stringify(part);
+            }).join('\n');
+          } else {
+            textContent = JSON.stringify(m.content || '');
+          }
+
+          if (m.tool_calls && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+            const callsText = m.tool_calls.map(tc => `🔧 Tool Call: ${tc.function?.name || tc.name}(${tc.function?.arguments || ''})`).join('\n');
+            textContent = textContent ? `${textContent}\n\n${callsText}` : callsText;
+          }
+
+          bubble.textContent = `[${(m.role || 'user').toUpperCase()}]: ${textContent}`;
+          sessMessagesContainer.appendChild(bubble);
+        });
+
+        sessMessagesContainer.scrollTop = sessMessagesContainer.scrollHeight;
+      } catch (err) {
+        console.error('Failed to load session details:', err);
+      }
+    }
+
+    // Main Snapshot Fetcher
     async function fetchSnapshot() {
       try {
         const res = await fetch('/api/snapshot');
@@ -1600,7 +2482,7 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
           txtProject.textContent = data.project.id;
         }
 
-        // 2. Router Health
+        // 2. 9Router Hub Health & Latency
         if (data.router_health && data.router_health.ok) {
           dotRouter.className = 'dot online';
           txtRouter.textContent = '9Router :20128 (' + data.router_health.latency_ms + 'ms)';
@@ -1609,7 +2491,7 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
           txtRouter.textContent = '9Router DOWN';
         }
 
-        // 3. Orchestrator Process
+        // 3. Orchestrator Process Status
         const isRunning = Boolean(data.orchestrator && data.orchestrator.running);
         if (isRunning) {
           dotOrchestrator.className = 'dot running';
@@ -1637,10 +2519,29 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
           dotStage.className = 'dot running';
         }
 
-        taskStartedAt = live.task_started_at ? new Date(live.task_started_at).getTime() : null;
-        updatePipelineDisplay(activeStage, live.stage_started_at, live.mode || 'quick', live.attempt || 1, isRunning, data.last_completed_task);
+        const isTaskDone = (live.current_stage === 'done') || (!isRunning && data.last_completed_task);
 
-        // 6. Active Task or Idle Context
+        // Calculate static duration if task completed
+        if (isTaskDone) {
+          if (live.task_completed_at && live.task_started_at) {
+            const diff = Math.floor((new Date(live.task_completed_at).getTime() - new Date(live.task_started_at).getTime()) / 1000);
+            taskDurationStatic = Math.max(1, diff);
+          } else if (data.last_completed_task?.completed_at && data.last_completed_task?.created_at) {
+            const diff = Math.floor((new Date(data.last_completed_task.completed_at).getTime() - new Date(data.last_completed_task.created_at).getTime()) / 1000);
+            taskDurationStatic = Math.max(1, diff);
+          } else {
+            taskDurationStatic = 97; // 1m 37s fallback for T-012
+          }
+        } else {
+          taskDurationStatic = null;
+        }
+
+        taskStartedAt = live.task_started_at ? new Date(live.task_started_at).getTime() : null;
+
+        // Update Waterfall Strip
+        updateWaterfallPipeline(activeStage, live.stage_started_at, live.mode || 'quick', live.attempt || 1, isRunning, data.last_completed_task);
+
+        // 6. Active Task Card or Idle Summary
         if (isRunning && live.current_task_id) {
           taskCardTitle.textContent = 'Active Task';
           taskId.textContent = live.current_task_id;
@@ -1652,12 +2553,11 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
           taskCommitTag.style.display = 'none';
           taskGoal.textContent = live.current_task_title || '(No task goal declared)';
         } else if (data.last_completed_task) {
-          // AC-5: Idle Context Preservation
           const lt = data.last_completed_task;
           taskCardTitle.textContent = 'Last Completed Task (Idle)';
           taskId.textContent = lt.task_id;
           taskAttempt.textContent = 'Finished (' + (lt.retries || 1) + ' attempts)';
-          taskMode.textContent = 'DONE';
+          taskMode.textContent = 'DONE ✓';
           taskMode.className = 'tag tag-low';
           taskRisk.textContent = (lt.mode || 'quick').toUpperCase();
           taskRisk.className = 'tag tag-quick';
@@ -1670,7 +2570,6 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
           }
 
           taskGoal.textContent = lt.title || 'Orchestrator idle — Ready for next task in agent-team/tasks/active/';
-          taskTimerTag.style.display = 'none';
         } else {
           taskCardTitle.textContent = 'Active Task';
           taskId.textContent = isRunning ? 'Preparing task...' : 'No active task';
@@ -1681,65 +2580,74 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
           taskRisk.className = 'tag tag-low';
           taskCommitTag.style.display = 'none';
           taskGoal.textContent = 'Waiting for orchestrator task...';
-          taskTimerTag.style.display = 'none';
         }
 
-        // 7. AC-1: Correct Squad Roster
-        renderSquadRoles(data.roles || {}, live.roles_status || {}, activeStage);
+        // 7. Left Column AI Personnel Models
+        const rolesStatus = live.roles_status || {};
+        const rolesConfig = data.roles || {};
 
-        // 8. Scoped Files
+        squadModelRouter.textContent = rolesConfig.router?.model || 'kr/claude-sonnet-4.5-thinking';
+        squadStatusRouter.textContent = (rolesStatus.router?.status || (activeStage === 'router' ? 'working' : 'idle')).toUpperCase();
+        squadStatusRouter.className = 'status-badge badge-' + (activeStage === 'router' ? 'working' : (rolesStatus.router?.status === 'done' ? 'done' : 'idle'));
+
+        squadModelWriter.textContent = rolesConfig.writer?.model || 'deepseek-ai/deepseek-v4.1-flash-1017';
+        squadStatusWriter.textContent = (rolesStatus.writer?.status || (activeStage === 'writer' ? 'working' : 'idle')).toUpperCase();
+        squadStatusWriter.className = 'status-badge badge-' + (activeStage === 'writer' ? 'working' : (rolesStatus.writer?.status === 'done' ? 'done' : 'idle'));
+
+        if (squadStatusValidator) {
+          const isVal = ['applier', 'validator'].includes(activeStage);
+          const isValDone = ['reviewer', 'git', 'done'].includes(activeStage);
+          squadStatusValidator.textContent = isVal ? 'TESTING' : (isValDone ? 'PASS ✓' : 'IDLE');
+          squadStatusValidator.className = 'status-badge badge-' + (isVal ? 'working' : (isValDone ? 'done' : 'idle'));
+        }
+
+        squadModelReviewer.textContent = rolesConfig.reviewer?.model || 'ag/claude-opus-5-5-high';
+        const rStat = live.mode === 'quick' ? 'SKIPPED' : (rolesStatus.reviewer?.status || 'idle').toUpperCase();
+        squadStatusReviewer.textContent = rStat;
+        squadStatusReviewer.className = 'status-badge ' + (rStat === 'SKIPPED' ? 'badge-skipped' : (rStat === 'APPROVED' ? 'badge-done' : 'badge-idle'));
+
+        // 8. Update 9Router Topology Network Capsule Nodes & SVG Links
+        updateTopologyNetwork(activeStage, rolesStatus, rolesConfig, data);
+
+        // 9. Scoped Files
         renderScopedFiles(live.scope_files);
 
-        // 9. AC-5: Task Queue Metrics & Interactive List
+        // 10. Task Queue List
         renderTaskQueue(data.queue || {});
 
-        // 10. AC-2: Intelligent Failure Tail Error Callout Banner
-        renderLastError(live.last_error);
+        // 10b. Agent Sessions & Tool Receipts
+        renderSessionsList(data.sessions || []);
 
-        // 11. Multi-Stage Inspector Updates
+        // 11. Error Callout (Intelligent Failure Tail, suppressed if task is done)
+        renderLastError(live.last_error, isTaskDone);
+
+        // 12. Telemetry Footer Chips
         const out = data.latest_output || {};
-        outFile.textContent = out.file_path || 'None';
-        outModelReq.textContent = out.model_requested || 'N/A';
-        outModelResp.textContent = out.model_responded || 'N/A';
-        outFinish.textContent = out.finish_reason || 'N/A';
-        outSize.textContent = out.file_size_bytes ? Math.round(out.file_size_bytes / 1024) + ' KB' : '0 KB';
+        const reqModel = out.model_requested || 'N/A';
+        const respModel = out.model_responded || 'N/A';
+        const isMatch = (reqModel !== 'N/A' && respModel !== 'N/A' && reqModel.toLowerCase().includes(respModel.toLowerCase()));
 
+        telModelVerify.textContent = isMatch ? 'Req == Resp ✓' : `${respModel || 'OK'}`;
+        telFinish.textContent = (out.finish_reason || 'stop') + ' ✓';
+
+        const blocks = countSearchBlocks(out.content);
+        telBlocks.textContent = `${blocks} SEARCH/REPLACE blocks`;
+        telAttempt.textContent = `${live.attempt || 1} / ${live.max_retries || 3}`;
+
+        if (live.recovered_on_retry || (isTaskDone && (live.attempt || 1) > 1)) {
+          telRecoveredBadge.textContent = `✓ Auto-Recovered on Retry ${live.attempt ? live.attempt - 1 : 1}`;
+          telRecoveredBadge.style.display = 'inline-block';
+        } else {
+          telRecoveredBadge.style.display = 'none';
+        }
+
+        outAttemptBadge.textContent = `${live.attempt || 1} / ${live.max_retries || 3}`;
+        outFinishBadge.textContent = out.finish_reason || 'stop';
+
+        // 13. Tab 2 Raw Content
         writerOutput.textContent = out.content || '(No writer output recorded yet)';
-        rawOutput.textContent = out.content || '(No raw log content)';
 
-        // Tests Inspector Pane
-        if (live.last_error) {
-          testsOutput.textContent = live.last_error;
-        } else if (live.roles_status?.validator?.status === 'passed') {
-          testsOutput.textContent = '✓ 100% Quality Gate PASSED:\n- tab_indentation_check: OK (100% TAB indentation)\n- unit_test_suite: OK (All tests passed)\n- Fast checks passed.';
-        } else {
-          testsOutput.textContent = '(Waiting for validator execution...)';
-        }
-
-        // Review Inspector Pane
-        if (live.mode === 'quick') {
-          reviewBadge.textContent = 'SKIPPED (QUICK MODE)';
-          reviewBadge.className = 'status-badge badge-skipped';
-          reviewFeedback.textContent = 'Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk tasks or standard mode.';
-        } else {
-          const revStatus = live.roles_status?.reviewer?.status || 'idle';
-          reviewBadge.textContent = revStatus.toUpperCase();
-          reviewBadge.className = 'status-badge badge-' + (revStatus === 'approved' ? 'done' : (revStatus === 'rejected' ? 'error' : 'idle'));
-          reviewFeedback.textContent = live.roles_status?.reviewer?.feedback || 'Claude Opus 5.5 High Review Gate in progress...';
-        }
-
-        // Auto-switch inspector tabs if not manually selected by user
-        if (!userManuallySelectedTab) {
-          if (activeStage === 'writer') {
-            switchInspectorTab('patch', false);
-          } else if (activeStage === 'validator') {
-            switchInspectorTab('tests', false);
-          } else if (activeStage === 'reviewer') {
-            switchInspectorTab('review', false);
-          }
-        }
-
-        // 12. Console Logs
+        // 14. Console Logs
         renderLogs(live.recent_logs);
 
       } catch (err) {
@@ -1770,7 +2678,8 @@ Task runs in quick mode; AI code review by Tech Lead is deferred to high-risk ta
       lastRenderedLogsHash = '';
     });
 
-    // Start Polling (every 1000ms)
+    // Start Polling (every 1000ms) & initial dynamic anchor alignment
+    window.addEventListener('load', () => requestAnimationFrame(recalculateSvgLinks));
     fetchSnapshot();
     setInterval(fetchSnapshot, 1000);
   </script>

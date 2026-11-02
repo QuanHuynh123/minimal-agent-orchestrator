@@ -1,0 +1,221 @@
+#!/usr/bin/env node
+/**
+ * Test Suite for Agent Runtime v3.0 Core
+ * (agent-team/scripts/test-runtime-v3.mjs)
+ */
+
+import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { resolveRepoRoot } from './applier.mjs';
+import {
+  buildUserMessage,
+  encodeImageAttachment,
+  isForbiddenAttachment,
+  readTextAttachment
+} from '../runtime/context-adapter.mjs';
+import {
+  getModelCapabilities,
+  parseToolCalls
+} from '../runtime/provider-gateway.mjs';
+import {
+  compactMessagesForContext,
+  loadSession,
+  saveSession,
+  SESSIONS_DIR
+} from '../runtime/session-store.mjs';
+import {
+  executeTool,
+  getAvailableToolSchemas,
+  toolListFiles,
+  toolReadFile,
+  toolSearchCode
+} from '../runtime/tool-runtime.mjs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const REPO_ROOT = resolveRepoRoot();
+
+console.log('Testing Agent Runtime v3.0 Core Modules...\n');
+
+// -------------------------------------------------------------
+// Test 1: Capability Matrix & Model Classification
+// -------------------------------------------------------------
+console.log('1. Testing Capability Matrix...');
+const sonnetCaps = getModelCapabilities('kr/claude-sonnet-4.5-thinking');
+assert.strictEqual(sonnetCaps.supports_vision, true, 'Sonnet 4.5 must support vision');
+assert.strictEqual(sonnetCaps.supports_tool_calls, true, 'Sonnet 4.5 must support tool calls');
+
+const deepseekCaps = getModelCapabilities('deepseek-ai/deepseek-v4.1-flash-1017');
+assert.strictEqual(deepseekCaps.supports_vision, false, 'DeepSeek V4.1 should not support vision');
+assert.strictEqual(deepseekCaps.supports_code_generation, true, 'DeepSeek V4.1 must support code generation');
+
+const unknownGptCaps = getModelCapabilities('gpt-4o-custom');
+assert.strictEqual(unknownGptCaps.supports_vision, true, 'GPT-4 variant should heuristic vision');
+
+console.log('✓ Capability Matrix tests passed.');
+
+// -------------------------------------------------------------
+// Test 2: Dual Tool Call Parser (Native + Fallback)
+// -------------------------------------------------------------
+console.log('2. Testing Dual Tool Call Parser...');
+// Native
+const nativeMsg = {
+  tool_calls: [
+    { id: 'call_1', function: { name: 'read_file', arguments: '{"path": "package.json"}' } }
+  ]
+};
+const nativeParsed = parseToolCalls(nativeMsg);
+assert.strictEqual(nativeParsed.length, 1);
+assert.strictEqual(nativeParsed[0].name, 'read_file');
+assert.strictEqual(nativeParsed[0].arguments.path, 'package.json');
+
+// Fallback tag in text
+const fallbackMsg = {
+  content: 'I need to check the code first.\n<tool_call>{"name": "search_code", "arguments": {"pattern": "liveStatus"}}</tool_call>\nAnd then inspect.'
+};
+const fallbackParsed = parseToolCalls(fallbackMsg);
+assert.strictEqual(fallbackParsed.length, 1);
+assert.strictEqual(fallbackParsed[0].name, 'search_code');
+assert.strictEqual(fallbackParsed[0].arguments.pattern, 'liveStatus');
+
+console.log('✓ Dual Tool Call Parser tests passed.');
+
+// -------------------------------------------------------------
+// Test 3: Context & Vision Adapter (File & Image Attachment)
+// -------------------------------------------------------------
+console.log('3. Testing Context & Vision Adapter...');
+
+// Forbidden check
+assert.strictEqual(isForbiddenAttachment('.env'), true);
+assert.strictEqual(isForbiddenAttachment('.env.local'), true);
+assert.strictEqual(isForbiddenAttachment('keys/id_rsa'), true);
+assert.strictEqual(isForbiddenAttachment('agent-team/UI_DASHBOARD_SPEC.md'), false);
+
+// Text attachment
+const textAtt = readTextAttachment(REPO_ROOT, 'agent-team/config/team.yaml');
+assert.ok(textAtt.content.includes('hybrid-agent-squad'));
+assert.strictEqual(textAtt.rel_path, 'agent-team/config/team.yaml');
+
+// Path traversal guard
+assert.throws(() => {
+  readTextAttachment(REPO_ROOT, '../../outside.txt');
+}, /Path escapes repository root/);
+
+// Image attachment (using reference-9router-graph.png)
+const testImgPath = 'agent-team/ui/reference-9router-graph.png';
+if (fs.existsSync(path.resolve(REPO_ROOT, testImgPath))) {
+  const imgAtt = encodeImageAttachment(REPO_ROOT, testImgPath);
+  assert.strictEqual(imgAtt.mime_type, 'image/png');
+  assert.ok(imgAtt.payload.image_url.url.startsWith('data:image/png;base64,'));
+}
+
+// Multimodal user message builder
+const msgVision = buildUserMessage({
+  prompt: 'Analyze this image',
+  images: [testImgPath],
+  repoRoot: REPO_ROOT,
+  modelCapabilities: { supports_vision: true }
+});
+assert.strictEqual(Array.isArray(msgVision.content), true);
+assert.strictEqual(msgVision.content[0].text, 'Analyze this image');
+assert.strictEqual(msgVision.content[1].type, 'image_url');
+
+// Vision block on non-vision model
+assert.throws(() => {
+  buildUserMessage({
+    prompt: 'Look at this',
+    images: [testImgPath],
+    repoRoot: REPO_ROOT,
+    modelCapabilities: { supports_vision: false }
+  });
+}, /does not support vision/);
+
+console.log('✓ Context & Vision Adapter tests passed.');
+
+// -------------------------------------------------------------
+// Test 4: Tool Execution Runtime & RBAC
+// -------------------------------------------------------------
+console.log('4. Testing Tool Execution Runtime...');
+
+// list_files
+const listRes = toolListFiles(REPO_ROOT, { dir: 'agent-team/roles' });
+assert.strictEqual(listRes.ok, true);
+assert.ok(listRes.files.some(f => f.includes('writer.md')));
+
+// search_code
+const searchRes = toolSearchCode(REPO_ROOT, { pattern: 'single_writer_lock', dir: 'agent-team/config' });
+assert.strictEqual(searchRes.ok, true);
+assert.ok(searchRes.count >= 1);
+assert.ok(searchRes.matches.some(m => m.file.includes('team.yaml')));
+
+// read_file
+const readRes = toolReadFile(REPO_ROOT, { path: 'agent-team/roles/writer.md', start_line: 1, end_line: 10 });
+assert.strictEqual(readRes.ok, true);
+assert.strictEqual(readRes.start_line, 1);
+assert.ok(readRes.content.includes('1: # ROLE: Writer'));
+
+// RBAC Guard
+const rbacDenied = await executeTool('apply_patch', { patch: 'test' }, {
+  role: 'router',
+  allowedTools: ['read_file', 'list_files']
+});
+assert.strictEqual(rbacDenied.ok, false);
+assert.ok(rbacDenied.error.includes('PERMISSION_DENIED'));
+
+// Schemas filter
+const schemas = getAvailableToolSchemas(['read_file', 'apply_patch']);
+assert.strictEqual(schemas.length, 2);
+assert.strictEqual(schemas[0].function.name, 'read_file');
+assert.strictEqual(schemas[1].function.name, 'apply_patch');
+
+console.log('✓ Tool Execution Runtime tests passed.');
+
+// -------------------------------------------------------------
+// Test 5: Persistent Session Memory Store & Compaction
+// -------------------------------------------------------------
+console.log('5. Testing Session Memory Store & Compaction...');
+
+const testSessionId = `test_harness_${Date.now()}`;
+const newSess = loadSession(testSessionId, 'designer', 'claude-sonnet-4.5');
+assert.strictEqual(newSess.session_id, testSessionId);
+assert.strictEqual(newSess.role, 'designer');
+
+newSess.facts.push('Node graph canvas verified');
+newSess.messages.push({ role: 'user', content: 'Design Tab 1' });
+newSess.messages.push({ role: 'assistant', content: 'Canvas layout implemented' });
+
+const saved = saveSession(newSess);
+assert.strictEqual(saved, true);
+
+// Verify reload from disk
+const reloaded = loadSession(testSessionId);
+assert.strictEqual(reloaded.facts[0], 'Node graph canvas verified');
+assert.strictEqual(reloaded.messages.length, 2);
+
+// Context compaction
+const rawOldMessages = [
+  { role: 'user', content: 'Turn 1: Read large file' },
+  { role: 'assistant', content: 'Reading...', tool_calls: [{ id: '1', function: { name: 'read_file' } }] },
+  { role: 'tool', tool_call_id: '1', content: JSON.stringify({ file: 'app.js', start_line: 1, end_line: 300, total_lines: 500 }) },
+  { role: 'user', content: 'Turn 2: Recent question' },
+  { role: 'assistant', content: 'Recent answer' }
+];
+
+const compacted = compactMessagesForContext(rawOldMessages, 1);
+assert.strictEqual(compacted.length, rawOldMessages.length);
+assert.ok(compacted[2].content.includes('[Tool Output: read_file(app.js, lines 1-300) -> OK (500 total lines)]'));
+
+// Clean up test session file
+const testSessionPath = path.resolve(SESSIONS_DIR, `${testSessionId}.json`);
+if (fs.existsSync(testSessionPath)) {
+  fs.unlinkSync(testSessionPath);
+}
+
+console.log('✓ Session Memory Store tests passed.\n');
+
+console.log('====================================================');
+console.log('ALL AGENT RUNTIME V3.0 CORE TESTS PASSED! 🚀🎯');
+console.log('====================================================');
