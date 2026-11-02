@@ -134,6 +134,8 @@ function readLatestRunOutput(targetTaskId, targetLogPath) {
     return {
       file_path: null,
       content: '(No writer output recorded yet)',
+      model_requested: 'N/A',
+      model_responded: 'N/A',
       model_used: 'N/A',
       finish_reason: 'N/A',
       file_size_bytes: 0,
@@ -158,14 +160,21 @@ function readLatestRunOutput(targetTaskId, targetLogPath) {
       content = `[... Truncated earlier output. Showing last 16 KB of ${Math.round(stat.size / 1024)} KB ...]\n` + buf.toString('utf8');
     }
 
-    const modelMatch = content.match(/Model Used:\s*([^\r\n]+)/);
+    const modelReqMatch = content.match(/Model (?:Requested|Used):\s*([^\r\n]+)/);
+    const modelRespMatch = content.match(/Model Responded:\s*([^\r\n]+)/);
     const finishMatch = content.match(/Finish Reason:\s*([^\r\n]+)/);
+
+    const modelRequested = modelReqMatch ? modelReqMatch[1].trim() : 'unknown';
+    const modelResponded = modelRespMatch ? modelRespMatch[1].trim() : 'N/A';
+    const finishReason = finishMatch ? finishMatch[1].trim() : 'N/A';
 
     return {
       file_path: path.relative(TEAM_DIR, chosenPath).replace(/\\/g, '/'),
       content,
-      model_used: modelMatch ? modelMatch[1].trim() : 'deepseek-v4.1',
-      finish_reason: finishMatch ? finishMatch[1].trim() : 'stop',
+      model_requested: modelRequested,
+      model_responded: modelResponded,
+      model_used: modelResponded !== 'N/A' ? modelResponded : modelRequested,
+      finish_reason: finishReason,
       file_size_bytes: stat.size,
       truncated
     };
@@ -173,6 +182,8 @@ function readLatestRunOutput(targetTaskId, targetLogPath) {
     return {
       file_path: chosenPath,
       content: '(Error reading output file)',
+      model_requested: 'N/A',
+      model_responded: 'N/A',
       model_used: 'N/A',
       finish_reason: 'N/A',
       file_size_bytes: 0,
@@ -211,9 +222,15 @@ function scanTaskDir(dirPath) {
 }
 
 export async function createSnapshot() {
-  // 1. Team & Policy (Cleanly scrub teamConfig.providers to prevent any secret exposure)
+  // 1. Team & Project & Policy (Cleanly scrub teamConfig.providers to prevent any secret exposure)
   const teamYaml = loadYamlSafe(path.resolve(CONFIG_DIR, 'team.yaml')) || {};
   const roles = teamYaml.roles || {};
+
+  const projectYaml = loadYamlSafe(path.resolve(CONFIG_DIR, 'project.yaml')) || {};
+  const project = {
+    id: projectYaml.project?.id || 'tool-download-stable',
+    allowed_dirs: projectYaml.project?.allowed_dirs || []
+  };
 
   const policyYaml = loadYamlSafe(path.resolve(CONFIG_DIR, 'policy.yaml')) || {};
   const policy = {
@@ -332,6 +349,7 @@ export async function createSnapshot() {
 
   return {
     timestamp: new Date().toISOString(),
+    project,
     orchestrator: {
       running: orchestratorRunning,
       pid: orchestratorLock?.pid || null,
@@ -346,7 +364,7 @@ export async function createSnapshot() {
       completed_count: completedList.length,
       blocked_count: blockedList.length,
       active: activeList,
-      recent_completed: completedList.slice(-5),
+      recent_completed: completedList.slice(-5).reverse(),
       blocked: blockedList
     },
     latest_output: latestOutput

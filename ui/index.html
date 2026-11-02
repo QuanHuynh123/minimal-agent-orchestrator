@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>9Router Orchestrator Monitor</title>
+  <title>9Router Orchestrator Monitor v2.0</title>
   <style>
     :root {
       --bg-base: #0a0a0f;
@@ -72,8 +72,8 @@
       50% { opacity: 0.5; transform: scale(0.95); }
     }
     @keyframes glow {
-      0%, 100% { box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
-      50% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.8); }
+      0%, 100% { box-shadow: 0 0 10px rgba(59, 130, 246, 0.4); }
+      50% { box-shadow: 0 0 18px rgba(99, 102, 241, 0.7); }
     }
 
     /* 1. TOP BAR */
@@ -115,7 +115,8 @@
     .top-right {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
+      overflow-x: auto;
     }
     .pill {
       display: inline-flex;
@@ -129,6 +130,20 @@
       font-family: var(--font-mono);
       color: var(--text-secondary);
       white-space: nowrap;
+    }
+    .pill strong {
+      color: var(--text-primary);
+    }
+    .pill-project {
+      background: rgba(99, 102, 241, 0.1);
+      border-color: rgba(99, 102, 241, 0.3);
+      color: #c7d2fe;
+    }
+    .pill-stage {
+      background: rgba(59, 130, 246, 0.1);
+      border-color: rgba(59, 130, 246, 0.3);
+      color: #93c5fd;
+      font-weight: 600;
     }
     .dot {
       width: 7px;
@@ -151,7 +166,7 @@
       display: flex;
       align-items: center;
       padding: 0 16px;
-      gap: 8px;
+      gap: 6px;
       overflow-x: auto;
       flex-shrink: 0;
     }
@@ -159,7 +174,7 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      padding: 5px 12px;
+      padding: 5px 11px;
       border-radius: 6px;
       background: var(--bg-surface);
       border: 1px solid var(--border);
@@ -173,9 +188,19 @@
       font-size: 10px;
       line-height: 1;
     }
+    .stage-item .stage-timer {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: #93c5fd;
+      background: rgba(59, 130, 246, 0.2);
+      padding: 1px 5px;
+      border-radius: 3px;
+      margin-left: 2px;
+    }
     .stage-connector {
       color: #334155;
       font-size: 10px;
+      user-select: none;
     }
     .stage-item.active {
       background: rgba(59, 130, 246, 0.15);
@@ -189,7 +214,7 @@
       color: #6ee7b7;
     }
     .stage-item.failed {
-      background: rgba(239, 68, 68, 0.12);
+      background: rgba(239, 68, 68, 0.15);
       border-color: var(--status-error);
       color: #fca5a5;
     }
@@ -203,7 +228,7 @@
     main.bento-container {
       flex: 1;
       display: grid;
-      grid-template-columns: 380px 1fr;
+      grid-template-columns: 390px 1fr;
       gap: 12px;
       padding: 12px;
       min-height: 0;
@@ -251,6 +276,7 @@
     .task-meta-row {
       display: flex;
       flex-wrap: wrap;
+      align-items: center;
       gap: 6px;
     }
     .tag {
@@ -268,6 +294,7 @@
     .tag-medium { background: rgba(245, 158, 11, 0.15); color: #fcd34d; border-color: rgba(245, 158, 11, 0.4); }
     .tag-high { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border-color: rgba(239, 68, 68, 0.4); }
     .tag-attempt { background: var(--bg-elevated); color: var(--text-secondary); border-color: var(--border); }
+    .tag-timer { background: rgba(99, 102, 241, 0.15); color: #a5b4fc; border-color: rgba(99, 102, 241, 0.4); }
 
     .task-goal-text {
       font-size: 12px;
@@ -280,6 +307,11 @@
     }
 
     /* Roles list */
+    .roles-container {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
     .role-row {
       display: flex;
       align-items: center;
@@ -292,23 +324,36 @@
     }
     .role-name {
       display: flex;
-      align-items: center;
-      gap: 6px;
-      font-weight: 500;
+      flex-direction: column;
+      gap: 2px;
+      overflow: hidden;
+      margin-right: 8px;
+    }
+    .role-name-title {
+      font-weight: 600;
       color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 5px;
     }
     .role-model {
       font-family: var(--font-mono);
       font-size: 10px;
       color: var(--text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 250px;
     }
     .status-badge {
-      font-size: 10px;
+      font-size: 9px;
       padding: 2px 6px;
       border-radius: 4px;
-      font-weight: 600;
+      font-weight: 700;
       text-transform: uppercase;
       font-family: var(--font-mono);
+      white-space: nowrap;
+      flex-shrink: 0;
     }
     .badge-working { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
     .badge-done { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
@@ -378,13 +423,109 @@
       margin-top: 2px;
     }
 
-    /* RIGHT COLUMN (Split: Output Inspector Top, Console Bottom) */
+    /* Queue items interactive list */
+    .queue-sub-header {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      letter-spacing: 0.5px;
+      margin-top: 4px;
+    }
+    .queue-list-container {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+    .queue-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 5px 8px;
+      background: var(--bg-surface);
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+    }
+    .queue-item-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow: hidden;
+      min-width: 0;
+    }
+    .queue-item-id {
+      color: var(--text-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .queue-item-badge {
+      font-size: 9px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-weight: 600;
+      text-transform: uppercase;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .q-active { background: rgba(59, 130, 246, 0.18); color: #93c5fd; }
+    .q-blocked { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+    .q-done { background: rgba(16, 185, 129, 0.18); color: #6ee7b7; }
+    .q-commit {
+      color: var(--text-muted);
+      font-size: 10px;
+      margin-left: 4px;
+    }
+
+    /* RIGHT COLUMN (Split: Error Banner + Output Inspector Top, Console Bottom) */
     .right-col {
       display: flex;
       flex-direction: column;
       gap: 12px;
       min-height: 0;
       overflow: hidden;
+    }
+
+    /* Critical Callout: Last Error Banner */
+    .error-banner {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.5);
+      border-left: 4px solid var(--status-error);
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .error-banner-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .error-banner-icon {
+      font-size: 14px;
+    }
+    .error-banner-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #f87171;
+    }
+    .error-banner-body {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #fca5a5;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 90px;
+      overflow-y: auto;
     }
 
     /* Top: Writer Raw Output Inspector */
@@ -399,7 +540,7 @@
       overflow: hidden;
     }
     .inspector-header {
-      padding: 10px 14px;
+      padding: 8px 14px;
       background: var(--bg-surface);
       border-bottom: 1px solid var(--border);
       display: flex;
@@ -414,6 +555,7 @@
       font-family: var(--font-mono);
       font-size: 11px;
       color: var(--text-secondary);
+      overflow-x: auto;
     }
     .inspector-body {
       flex: 1;
@@ -527,10 +669,17 @@
     <div class="top-left">
       <div class="brand-logo">
         <span>⚡ 9Router Orchestrator</span>
-        <span class="brand-badge">Bento Monitor</span>
+        <span class="brand-badge">Bento Monitor v2.0</span>
+      </div>
+      <div class="pill pill-project" id="pill-project">
+        <span>Project: <strong id="txt-project">tool-download-stable</strong></span>
       </div>
     </div>
     <div class="top-right">
+      <div class="pill pill-stage" id="pill-stage">
+        <span class="dot" id="dot-stage"></span>
+        <span id="txt-stage">Stage: IDLE</span>
+      </div>
       <div class="pill" id="pill-router">
         <span class="dot" id="dot-router"></span>
         <span id="txt-router">9Router :20128</span>
@@ -549,42 +698,54 @@
     </div>
   </header>
 
-  <!-- 2. PIPELINE STAGE STRIP -->
+  <!-- 2. PIPELINE STAGE STRIP (8 Stages + Universal Timers) -->
   <nav class="pipeline-strip">
     <div class="stage-item" id="step-preflight">
       <span class="step-icon">○</span>
       <span>0. Pre-Flight</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
     </div>
     <span class="stage-connector">➔</span>
     <div class="stage-item" id="step-router">
       <span class="step-icon">○</span>
       <span>1. Router</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
     </div>
     <span class="stage-connector">➔</span>
     <div class="stage-item" id="step-writer">
       <span class="step-icon">○</span>
       <span>2. Writer</span>
-      <span id="writer-timer" style="display: none; color: #93c5fd; font-family: var(--font-mono); font-size: 10px;">⏱ 0s</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
     </div>
     <span class="stage-connector">➔</span>
     <div class="stage-item" id="step-applier">
       <span class="step-icon">○</span>
       <span>3. Applier</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
     </div>
     <span class="stage-connector">➔</span>
     <div class="stage-item" id="step-validator">
       <span class="step-icon">○</span>
       <span>4. Validator</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
     </div>
     <span class="stage-connector">➔</span>
     <div class="stage-item" id="step-reviewer">
       <span class="step-icon">○</span>
       <span>4b. Review</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
     </div>
     <span class="stage-connector">➔</span>
     <div class="stage-item" id="step-git">
       <span class="step-icon">○</span>
       <span>5. Git</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+    </div>
+    <span class="stage-connector">➔</span>
+    <div class="stage-item" id="step-done">
+      <span class="step-icon">○</span>
+      <span>6. Done / Blocked</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
     </div>
   </nav>
 
@@ -606,35 +767,18 @@
         <div class="task-meta-row">
           <span class="tag tag-quick" id="task-mode">MODE: IDLE</span>
           <span class="tag tag-low" id="task-risk">RISK: LOW</span>
+          <span class="tag tag-timer" id="task-timer-tag" style="display: none;">Task: ⏱ 0s</span>
         </div>
         <div class="task-goal-text" id="task-goal">Waiting for orchestrator task...</div>
       </div>
 
-      <!-- Squad Roles Card -->
+      <!-- Squad Roles Card (Dynamically Rendered from config + live_status) -->
       <div class="bento-card">
         <div class="card-header">
           <span class="card-title">Squad Roles</span>
         </div>
-        <div class="role-row">
-          <div class="role-name">
-            <span>✍️ Writer:</span>
-            <span class="role-model" id="role-writer-model">deepseek-v4.1</span>
-          </div>
-          <span class="status-badge badge-idle" id="role-writer-status">IDLE</span>
-        </div>
-        <div class="role-row">
-          <div class="role-name">
-            <span>🛡️ Validator:</span>
-            <span class="role-model">Fast + Suite</span>
-          </div>
-          <span class="status-badge badge-idle" id="role-validator-status">IDLE</span>
-        </div>
-        <div class="role-row">
-          <div class="role-name">
-            <span>🔍 Reviewer:</span>
-            <span class="role-model" id="role-reviewer-model">claude-opus</span>
-          </div>
-          <span class="status-badge badge-skipped" id="role-reviewer-status">SKIP: LOW</span>
+        <div class="roles-container" id="squad-roles-list">
+          <!-- Populated securely via DOM nodes -->
         </div>
       </div>
 
@@ -649,7 +793,7 @@
         </ul>
       </div>
 
-      <!-- Queue Stats Card -->
+      <!-- Task Queue Card with Metrics & Interactive List -->
       <div class="bento-card">
         <div class="card-header">
           <span class="card-title">Task Queue</span>
@@ -668,12 +812,25 @@
             <div class="queue-stat-label">Blocked</div>
           </div>
         </div>
+        <div class="queue-sub-header">Recent / Queue List</div>
+        <div class="queue-list-container" id="queue-items-list">
+          <!-- Populated securely via DOM nodes -->
+        </div>
       </div>
 
     </section>
 
-    <!-- RIGHT COLUMN: Output Inspector Top, Console Bottom -->
+    <!-- RIGHT COLUMN: Error Banner + Output Inspector Top, Console Bottom -->
     <section class="right-col">
+
+      <!-- Last Error Alert Callout (Shown only when last_error is not null) -->
+      <div class="error-banner" id="last-error-banner" style="display: none;">
+        <div class="error-banner-header">
+          <span class="error-banner-icon">⚠️</span>
+          <span class="error-banner-title">Last Error / Blocker</span>
+        </div>
+        <div class="error-banner-body" id="last-error-text"></div>
+      </div>
 
       <!-- Top: Writer Raw Output Inspector -->
       <div class="inspector-card">
@@ -681,6 +838,8 @@
           <span class="card-title">Writer Raw Output &amp; Error Inspector</span>
           <div class="inspector-meta">
             <span>File: <strong id="out-file">None</strong></span>
+            <span>Req: <strong id="out-model-req">N/A</strong></span>
+            <span>Resp: <strong id="out-model-resp">N/A</strong></span>
             <span>Reason: <strong id="out-finish">N/A</strong></span>
             <span>Size: <strong id="out-size">0 KB</strong></span>
           </div>
@@ -715,8 +874,13 @@
     let lastRenderedLogsHash = '';
     let currentStage = 'idle';
     let stageStartedAt = null;
+    let taskStartedAt = null;
 
     // DOM Elements
+    const txtProject = document.getElementById('txt-project');
+    const dotStage = document.getElementById('dot-stage');
+    const txtStage = document.getElementById('txt-stage');
+
     const dotRouter = document.getElementById('dot-router');
     const txtRouter = document.getElementById('txt-router');
     const dotOrchestrator = document.getElementById('dot-orchestrator');
@@ -725,28 +889,28 @@
     const tokOut = document.getElementById('tok-out');
     const txtPolling = document.getElementById('txt-polling');
 
-    const writerTimer = document.getElementById('writer-timer');
-
     const taskId = document.getElementById('task-id');
     const taskAttempt = document.getElementById('task-attempt');
     const taskMode = document.getElementById('task-mode');
     const taskRisk = document.getElementById('task-risk');
+    const taskTimerTag = document.getElementById('task-timer-tag');
     const taskGoal = document.getElementById('task-goal');
 
-    const roleWriterModel = document.getElementById('role-writer-model');
-    const roleWriterStatus = document.getElementById('role-writer-status');
-    const roleValidatorStatus = document.getElementById('role-validator-status');
-    const roleReviewerModel = document.getElementById('role-reviewer-model');
-    const roleReviewerStatus = document.getElementById('role-reviewer-status');
-
+    const squadRolesList = document.getElementById('squad-roles-list');
     const scopeFilesList = document.getElementById('scope-files-list');
     const scopeCount = document.getElementById('scope-count');
 
     const cntActive = document.getElementById('cnt-active');
     const cntDone = document.getElementById('cnt-done');
     const cntBlocked = document.getElementById('cnt-blocked');
+    const queueItemsList = document.getElementById('queue-items-list');
+
+    const lastErrorBanner = document.getElementById('last-error-banner');
+    const lastErrorText = document.getElementById('last-error-text');
 
     const outFile = document.getElementById('out-file');
+    const outModelReq = document.getElementById('out-model-req');
+    const outModelResp = document.getElementById('out-model-resp');
     const outFinish = document.getElementById('out-finish');
     const outSize = document.getElementById('out-size');
     const writerOutput = document.getElementById('writer-output');
@@ -756,7 +920,7 @@
     const btnClearLog = document.getElementById('btn-clear-log');
     const logFilter = document.getElementById('log-filter');
 
-    // Pipeline Step Elements Map
+    // Pipeline Step Elements Map (8 stages)
     const pipelineSteps = {
       preflight: document.getElementById('step-preflight'),
       router: document.getElementById('step-router'),
@@ -764,10 +928,11 @@
       applier: document.getElementById('step-applier'),
       validator: document.getElementById('step-validator'),
       reviewer: document.getElementById('step-reviewer'),
-      git: document.getElementById('step-git')
+      git: document.getElementById('step-git'),
+      done: document.getElementById('step-done')
     };
 
-    const stageSequence = ['preflight', 'router', 'writer', 'applier', 'validator', 'reviewer', 'git'];
+    const stageSequence = ['preflight', 'router', 'writer', 'applier', 'validator', 'reviewer', 'git', 'done'];
 
     // Format Token Numbers
     function formatTokens(num) {
@@ -791,47 +956,137 @@
         // Reset classes
         el.className = 'stage-item';
         const iconSpan = el.querySelector('.step-icon');
+        const timerSpan = el.querySelector('.stage-timer');
 
         if (activeStage === 'idle') {
           if (iconSpan) iconSpan.textContent = '○';
+          if (timerSpan) timerSpan.style.display = 'none';
         } else if (activeStage === 'blocked' || activeStage === 'failed') {
-          if (idx <= activeIdx) {
+          if (idx < activeIdx) {
+            el.classList.add('done');
+            if (iconSpan) iconSpan.textContent = '✓';
+            if (timerSpan) timerSpan.style.display = 'none';
+          } else if (idx === activeIdx || (activeIdx === -1 && idx === stageSequence.length - 1)) {
             el.classList.add('failed');
             if (iconSpan) iconSpan.textContent = '✕';
+            if (timerSpan) timerSpan.style.display = 'none';
           } else {
             if (iconSpan) iconSpan.textContent = '○';
+            if (timerSpan) timerSpan.style.display = 'none';
           }
         } else if (activeStage === 'done') {
           el.classList.add('done');
           if (iconSpan) iconSpan.textContent = '✓';
+          if (timerSpan) timerSpan.style.display = 'none';
         } else {
           if (idx < activeIdx) {
             el.classList.add('done');
             if (iconSpan) iconSpan.textContent = '✓';
+            if (timerSpan) timerSpan.style.display = 'none';
           } else if (idx === activeIdx) {
             el.classList.add('active');
             if (iconSpan) iconSpan.textContent = '●';
+            if (timerSpan && stageStartedAt) {
+              timerSpan.style.display = 'inline-block';
+            }
           } else {
             if (iconSpan) iconSpan.textContent = '○';
+            if (timerSpan) timerSpan.style.display = 'none';
           }
         }
       });
-
-      // Writer live elapsed timer
-      if (activeStage === 'writer' && stageStartedAt) {
-        writerTimer.style.display = 'inline-block';
-      } else {
-        writerTimer.style.display = 'none';
-      }
     }
 
-    // Local 100ms ticker for active stage timer
+    // Universal Stage Timer Ticker (runs every 200ms)
     setInterval(() => {
-      if (currentStage === 'writer' && stageStartedAt) {
-        const sec = Math.max(0, Math.floor((Date.now() - stageStartedAt) / 1000));
-        writerTimer.textContent = '⏱ ' + sec + 's';
+      // 1. Update active stage timer on pipeline
+      if (currentStage && currentStage !== 'idle' && currentStage !== 'done' && currentStage !== 'blocked' && stageStartedAt) {
+        const el = pipelineSteps[currentStage];
+        if (el) {
+          const timerSpan = el.querySelector('.stage-timer');
+          if (timerSpan) {
+            const sec = Math.max(0, Math.floor((Date.now() - stageStartedAt) / 1000));
+            timerSpan.textContent = '⏱ ' + sec + 's';
+            timerSpan.style.display = 'inline-block';
+          }
+        }
       }
-    }, 250);
+      // 2. Update overall task timer badge
+      if (taskStartedAt) {
+        const totalSec = Math.max(0, Math.floor((Date.now() - taskStartedAt) / 1000));
+        taskTimerTag.textContent = 'Task: ⏱ ' + totalSec + 's';
+        taskTimerTag.style.display = 'inline-block';
+      } else {
+        taskTimerTag.style.display = 'none';
+      }
+    }, 200);
+
+    // AC-1: Dynamic Squad Roles Rendering
+    function renderSquadRoles(teamRoles, rolesStatus, activeStage) {
+      while (squadRolesList.firstChild) {
+        squadRolesList.removeChild(squadRolesList.firstChild);
+      }
+
+      // Base role definitions with icons
+      const roleDefs = [
+        { key: 'router', name: '🧭 Router' },
+        { key: 'writer', name: '✍️ Writer' },
+        { key: 'applier', name: '🔧 Applier', script: 'scripts/applier.mjs' },
+        { key: 'validator', name: '🛡️ Validator', script: 'scripts/validator.mjs' },
+        { key: 'reviewer', name: '🔍 Reviewer' },
+        { key: 'git', name: '🌿 Git Guard', script: 'scripts/git-guard.mjs' }
+      ];
+
+      roleDefs.forEach(def => {
+        const configured = teamRoles[def.key] || {};
+        const live = (rolesStatus && rolesStatus[def.key]) ? rolesStatus[def.key] : {};
+
+        const row = document.createElement('div');
+        row.className = 'role-row';
+
+        const nameCol = document.createElement('div');
+        nameCol.className = 'role-name';
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'role-name-title';
+        titleSpan.textContent = configured.display_name ? `${def.name.split(' ')[0]} ${configured.display_name}` : def.name;
+
+        const modelSpan = document.createElement('span');
+        modelSpan.className = 'role-model';
+        const modelText = live.model || configured.model || configured.script || def.script || 'N/A';
+        modelSpan.textContent = modelText;
+        modelSpan.title = modelText;
+
+        nameCol.appendChild(titleSpan);
+        nameCol.appendChild(modelSpan);
+
+        const badge = document.createElement('span');
+        badge.className = 'status-badge';
+
+        // Resolve status
+        let status = 'IDLE';
+        let badgeClass = 'badge-idle';
+
+        if (live.status) {
+          const s = String(live.status).toLowerCase();
+          if (s === 'working') { status = 'WORKING'; badgeClass = 'badge-working'; }
+          else if (s === 'done' || s === 'passed' || s === 'approved') { status = s.toUpperCase(); badgeClass = 'badge-done'; }
+          else if (s === 'failed' || s === 'error' || s === 'rejected') { status = s.toUpperCase(); badgeClass = 'badge-error'; }
+          else if (s === 'skipped') { status = 'SKIPPED'; badgeClass = 'badge-skipped'; }
+          else { status = s.toUpperCase(); badgeClass = 'badge-idle'; }
+        } else if (activeStage === def.key) {
+          status = 'WORKING';
+          badgeClass = 'badge-working';
+        }
+
+        badge.textContent = status;
+        badge.className = 'status-badge ' + badgeClass;
+
+        row.appendChild(nameCol);
+        row.appendChild(badge);
+        squadRolesList.appendChild(row);
+      });
+    }
 
     // Render Scoped Files securely
     function renderScopedFiles(files) {
@@ -863,6 +1118,7 @@
         const pathSpan = document.createElement('span');
         pathSpan.className = 'file-path';
         pathSpan.textContent = filePath;
+        pathSpan.title = filePath;
 
         const tagSpan = document.createElement('span');
         tagSpan.className = 'file-tag file-' + fileStatus;
@@ -872,6 +1128,141 @@
         li.appendChild(tagSpan);
         scopeFilesList.appendChild(li);
       });
+    }
+
+    // AC-5: Interactive Task Queue List Rendering
+    function renderTaskQueue(q) {
+      cntActive.textContent = String(q.active_count ?? 0);
+      cntDone.textContent = String(q.completed_count ?? 0);
+      cntBlocked.textContent = String(q.blocked_count ?? 0);
+
+      while (queueItemsList.firstChild) {
+        queueItemsList.removeChild(queueItemsList.firstChild);
+      }
+
+      let hasItems = false;
+
+      // 1. Active / Pending tasks
+      if (Array.isArray(q.active) && q.active.length > 0) {
+        q.active.forEach(t => {
+          hasItems = true;
+          const item = document.createElement('div');
+          item.className = 'queue-item';
+
+          const left = document.createElement('div');
+          left.className = 'queue-item-left';
+
+          const icon = document.createElement('span');
+          icon.textContent = '⏳';
+
+          const tid = document.createElement('span');
+          tid.className = 'queue-item-id';
+          tid.textContent = t.task_id || 'active-task';
+          tid.title = t.title || t.task_id || '';
+
+          left.appendChild(icon);
+          left.appendChild(tid);
+
+          const badge = document.createElement('span');
+          badge.className = 'queue-item-badge q-active';
+          badge.textContent = 'ACTIVE';
+
+          item.appendChild(left);
+          item.appendChild(badge);
+          queueItemsList.appendChild(item);
+        });
+      }
+
+      // 2. Blocked tasks
+      if (Array.isArray(q.blocked) && q.blocked.length > 0) {
+        q.blocked.forEach(t => {
+          hasItems = true;
+          const item = document.createElement('div');
+          item.className = 'queue-item';
+
+          const left = document.createElement('div');
+          left.className = 'queue-item-left';
+
+          const icon = document.createElement('span');
+          icon.textContent = '🚫';
+
+          const tid = document.createElement('span');
+          tid.className = 'queue-item-id';
+          tid.textContent = t.task_id || 'blocked-task';
+          tid.title = (t.block_reason || t.title) ? `Reason: ${t.block_reason || t.title}` : t.task_id;
+
+          left.appendChild(icon);
+          left.appendChild(tid);
+
+          const badge = document.createElement('span');
+          badge.className = 'queue-item-badge q-blocked';
+          badge.textContent = 'BLOCKED';
+
+          item.appendChild(left);
+          item.appendChild(badge);
+          queueItemsList.appendChild(item);
+        });
+      }
+
+      // 3. Recent Completed tasks (up to 5)
+      if (Array.isArray(q.recent_completed) && q.recent_completed.length > 0) {
+        q.recent_completed.forEach(t => {
+          hasItems = true;
+          const item = document.createElement('div');
+          item.className = 'queue-item';
+
+          const left = document.createElement('div');
+          left.className = 'queue-item-left';
+
+          const icon = document.createElement('span');
+          icon.textContent = '✓';
+          icon.style.color = '#34d399';
+
+          const tid = document.createElement('span');
+          tid.className = 'queue-item-id';
+          tid.textContent = t.task_id || 'done-task';
+          tid.title = t.title || t.task_id;
+
+          left.appendChild(icon);
+          left.appendChild(tid);
+
+          if (t.commit_hash) {
+            const cSpan = document.createElement('span');
+            cSpan.className = 'q-commit';
+            cSpan.textContent = '[' + String(t.commit_hash).substring(0, 7) + ']';
+            left.appendChild(cSpan);
+          }
+
+          const badge = document.createElement('span');
+          badge.className = 'queue-item-badge q-done';
+          badge.textContent = 'DONE';
+
+          item.appendChild(left);
+          item.appendChild(badge);
+          queueItemsList.appendChild(item);
+        });
+      }
+
+      if (!hasItems) {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.style.color = 'var(--text-muted)';
+        emptyDiv.style.fontSize = '11px';
+        emptyDiv.style.fontStyle = 'italic';
+        emptyDiv.style.padding = '4px 6px';
+        emptyDiv.textContent = '(Queue is empty)';
+        queueItemsList.appendChild(emptyDiv);
+      }
+    }
+
+    // AC-4: Last Error Callout Banner Rendering
+    function renderLastError(errorText) {
+      if (errorText && typeof errorText === 'string' && errorText.trim().length > 0) {
+        lastErrorBanner.style.display = 'flex';
+        lastErrorText.textContent = errorText.trim();
+      } else {
+        lastErrorBanner.style.display = 'none';
+        lastErrorText.textContent = '';
+      }
     }
 
     // Render Logs securely with auto-scroll
@@ -926,7 +1317,12 @@
 
         txtPolling.textContent = '1s Polling';
 
-        // 1. Router Health
+        // 1. Project Info
+        if (data.project && data.project.id) {
+          txtProject.textContent = data.project.id;
+        }
+
+        // 2. Router Health
         if (data.router_health && data.router_health.ok) {
           dotRouter.className = 'dot online';
           txtRouter.textContent = '9Router :20128 (' + data.router_health.latency_ms + 'ms)';
@@ -935,7 +1331,7 @@
           txtRouter.textContent = '9Router DOWN';
         }
 
-        // 2. Orchestrator Process
+        // 3. Orchestrator Process
         if (data.orchestrator && data.orchestrator.running) {
           dotOrchestrator.className = 'dot running';
           txtOrchestrator.textContent = 'RUNNING (PID ' + data.orchestrator.pid + ')';
@@ -944,16 +1340,28 @@
           txtOrchestrator.textContent = 'IDLE';
         }
 
-        // 3. Tokens
+        // 4. Tokens
         const live = data.live_status || {};
         tokIn.textContent = formatTokens(live.tokens?.session_input || 0);
         tokOut.textContent = formatTokens(live.tokens?.session_output || 0);
 
-        // 4. Pipeline Stages
+        // 5. Pipeline Stages & Top Stage Indicator
         const activeStage = live.current_stage || (data.orchestrator?.running ? 'preflight' : 'idle');
+        txtStage.textContent = 'Stage: ' + activeStage.toUpperCase();
+        if (activeStage === 'idle') {
+          dotStage.className = 'dot';
+        } else if (activeStage === 'done') {
+          dotStage.className = 'dot online';
+        } else if (activeStage === 'blocked' || activeStage === 'failed') {
+          dotStage.className = 'dot offline';
+        } else {
+          dotStage.className = 'dot running';
+        }
+
+        taskStartedAt = live.task_started_at ? new Date(live.task_started_at).getTime() : null;
         updatePipelineDisplay(activeStage, live.stage_started_at);
 
-        // 5. Active Task
+        // 6. Active Task
         if (live.current_task_id) {
           taskId.textContent = live.current_task_id;
           taskAttempt.textContent = 'Attempt ' + (live.attempt || 1) + ' / ' + (live.max_retries || 3);
@@ -970,48 +1378,38 @@
           taskRisk.textContent = 'RISK: LOW';
           taskRisk.className = 'tag tag-low';
           taskGoal.textContent = 'Waiting for orchestrator task...';
+          taskTimerTag.style.display = 'none';
         }
 
-        // 6. Squad Roles
-        const rolesStatus = live.roles_status || {};
-        const teamRoles = data.roles || {};
+        // 7. AC-1: Dynamic Squad Roles
+        renderSquadRoles(data.roles || {}, live.roles_status || {}, activeStage);
 
-        roleWriterModel.textContent = rolesStatus.writer?.model || teamRoles.writer?.model || 'deepseek-v4.1';
-        const wStatus = rolesStatus.writer?.status || 'idle';
-        roleWriterStatus.textContent = wStatus.toUpperCase();
-        roleWriterStatus.className = 'status-badge badge-' + (wStatus === 'working' ? 'working' : (wStatus === 'done' ? 'done' : (wStatus === 'error' ? 'error' : 'idle')));
-
-        const vStatus = rolesStatus.validator?.status || 'idle';
-        roleValidatorStatus.textContent = vStatus.toUpperCase();
-        roleValidatorStatus.className = 'status-badge badge-' + (vStatus === 'working' ? 'working' : (vStatus === 'passed' ? 'done' : (vStatus === 'failed' ? 'error' : 'idle')));
-
-        roleReviewerModel.textContent = rolesStatus.reviewer?.model || teamRoles.reviewer?.model || 'claude-opus';
-        const rStatus = rolesStatus.reviewer?.status || 'idle';
-        roleReviewerStatus.textContent = rStatus.toUpperCase();
-        roleReviewerStatus.className = 'status-badge badge-' + (rStatus === 'working' ? 'working' : (rStatus === 'approved' ? 'done' : (rStatus === 'rejected' ? 'error' : (rStatus === 'skipped' ? 'skipped' : 'idle'))));
-
-        // 7. Scoped Files
+        // 8. Scoped Files
         renderScopedFiles(live.scope_files);
 
-        // 8. Queue Counts
-        const q = data.queue || {};
-        cntActive.textContent = String(q.active_count ?? 0);
-        cntDone.textContent = String(q.completed_count ?? 0);
-        cntBlocked.textContent = String(q.blocked_count ?? 0);
+        // 9. AC-5: Task Queue Metrics & Interactive List
+        renderTaskQueue(data.queue || {});
 
-        // 9. Writer Raw Output Inspector
+        // 10. AC-4: Last Error Alert Callout Banner
+        renderLastError(live.last_error);
+
+        // 11. AC-2: Writer Raw Output Inspector (Zero fake data)
         const out = data.latest_output || {};
         outFile.textContent = out.file_path || 'None';
+        outModelReq.textContent = out.model_requested || 'N/A';
+        outModelResp.textContent = out.model_responded || 'N/A';
         outFinish.textContent = out.finish_reason || 'N/A';
         outSize.textContent = out.file_size_bytes ? Math.round(out.file_size_bytes / 1024) + ' KB' : '0 KB';
         writerOutput.textContent = out.content || '(No writer output recorded yet)';
 
-        // 10. Console Logs
+        // 12. Console Logs
         renderLogs(live.recent_logs);
 
       } catch (err) {
         txtPolling.textContent = '○ Reconnecting...';
         dotOrchestrator.className = 'dot';
+        dotStage.className = 'dot';
+        txtStage.textContent = 'Stage: OFFLINE';
       }
     }
 

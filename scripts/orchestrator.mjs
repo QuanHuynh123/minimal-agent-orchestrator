@@ -1417,7 +1417,7 @@ async function runOrchestrator() {
             roles_status: {
               writer: { model: writerModel, status: 'done' },
               validator: { status: 'passed' },
-              reviewer: { model: teamConfig.roles?.reviewer?.model || 'claude-opus', status: 'working' }
+              reviewer: { model: teamConfig.roles?.reviewer?.model || 'ag/claude-opus-5-5-high', status: 'working' }
             }
           });
 
@@ -1438,7 +1438,7 @@ async function runOrchestrator() {
               roles_status: {
                 writer: { model: writerModel, status: 'done' },
                 validator: { status: 'passed' },
-                reviewer: { model: teamConfig.roles?.reviewer?.model || 'claude-opus', status: 'rejected' }
+                reviewer: { model: teamConfig.roles?.reviewer?.model || 'ag/claude-opus-5-5-high', status: 'rejected' }
               }
             });
             const revHash = hashString(revRes.error);
@@ -1450,7 +1450,7 @@ async function runOrchestrator() {
             roles_status: {
               writer: { model: writerModel, status: 'done' },
               validator: { status: 'passed' },
-              reviewer: { model: teamConfig.roles?.reviewer?.model || 'claude-opus', status: 'approved' }
+              reviewer: { model: teamConfig.roles?.reviewer?.model || 'ag/claude-opus-5-5-high', status: 'approved' }
             }
           });
         } else {

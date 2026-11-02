@@ -41,8 +41,8 @@ roles:
   reviewer:
     enabled: true
     provider: "local_9router"
-    display_name: "Claude Sonnet 4.5"
-    model: "kr/claude-sonnet-4.5"
+    display_name: "Claude Opus 5.5 High"
+    model: "ag/claude-opus-5-5-high"
     fallback_model: null
     temperature: 0.1
     allowed_actions: ["review_diff", "approve", "reject"]
