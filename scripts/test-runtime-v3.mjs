@@ -33,6 +33,7 @@ import {
   toolReadFile,
   toolSearchCode
 } from '../runtime/tool-runtime.mjs';
+import { loadRoleConfig } from '../runtime/index.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -104,13 +105,22 @@ assert.throws(() => {
   readTextAttachment(REPO_ROOT, '../../outside.txt');
 }, /Path escapes repository root/);
 
-// Image attachment (using reference-9router-graph.png)
-const testImgPath = 'agent-team/ui/reference-9router-graph.png';
-if (fs.existsSync(path.resolve(REPO_ROOT, testImgPath))) {
-  const imgAtt = encodeImageAttachment(REPO_ROOT, testImgPath);
-  assert.strictEqual(imgAtt.mime_type, 'image/png');
-  assert.ok(imgAtt.payload.image_url.url.startsWith('data:image/png;base64,'));
+// Image attachment (self-contained fallback 1x1 PNG if sample image was removed by user)
+let testImgPath = 'agent-team/ui/reference-9router-graph.png';
+let tempImgCreated = false;
+const absDefaultImg = path.resolve(REPO_ROOT, testImgPath);
+if (!fs.existsSync(absDefaultImg)) {
+  testImgPath = 'agent-team/state/temp-test-1x1.png';
+  const absTempImg = path.resolve(REPO_ROOT, testImgPath);
+  fs.mkdirSync(path.dirname(absTempImg), { recursive: true });
+  const tinyPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  fs.writeFileSync(absTempImg, Buffer.from(tinyPngBase64, 'base64'));
+  tempImgCreated = true;
 }
+
+const imgAtt = encodeImageAttachment(REPO_ROOT, testImgPath);
+assert.strictEqual(imgAtt.mime_type, 'image/png');
+assert.ok(imgAtt.payload.image_url.url.startsWith('data:image/png;base64,'));
 
 // Multimodal user message builder
 const msgVision = buildUserMessage({
@@ -133,7 +143,25 @@ assert.throws(() => {
   });
 }, /does not support vision/);
 
-console.log('✓ Context & Vision Adapter tests passed.');
+if (tempImgCreated) {
+  const absTempImg = path.resolve(REPO_ROOT, testImgPath);
+  if (fs.existsSync(absTempImg)) fs.unlinkSync(absTempImg);
+}
+
+// 1-Model Minimal Onboarding inheritance check
+const singleModelCfg = loadRoleConfig('designer', {
+  providers: { local_9router: { base_url: 'http://127.0.0.1:11434/v1', default_key: 'ollama' } },
+  roles: {
+    writer: { enabled: true, model: 'qwen2.5-coder:14b' },
+    router: { enabled: false },
+    reviewer: { enabled: false }
+  }
+});
+assert.strictEqual(singleModelCfg.model, 'qwen2.5-coder:14b', 'Designer role should inherit writer.model when router/designer omitted');
+assert.strictEqual(singleModelCfg.base_url, 'http://127.0.0.1:11434/v1');
+assert.strictEqual(singleModelCfg.api_key, 'ollama');
+
+console.log('✓ Context & Vision Adapter + 1-Model Onboarding tests passed.');
 
 // -------------------------------------------------------------
 // Test 4: Tool Execution Runtime & RBAC

@@ -24,42 +24,58 @@ export const CONFIG_FILE = path.resolve(TEAM_DIR, 'config', 'team.yaml');
 export const MAX_AGENT_TOOL_TURNS = 4; // Hard ceiling to prevent infinite tool loops
 
 /**
- * Loads team role configuration from team.yaml
+ * Loads team role & provider configuration from team.yaml.
+ * Supports 1-Model Minimal Onboarding: if a specialized role is omitted or disabled in team.yaml,
+ * it automatically inherits roles.writer.model so newcomers only need 1 working model.
  */
-export function loadRoleConfig(roleName = 'designer') {
-  let teamCfg = {};
-  if (fs.existsSync(CONFIG_FILE)) {
+export function loadRoleConfig(roleName = 'designer', customTeamCfg = null) {
+  let teamCfg = customTeamCfg || {};
+  if (!customTeamCfg && fs.existsSync(CONFIG_FILE)) {
     try {
       teamCfg = YAML.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) || {};
     } catch {}
   }
 
+  const providerCfg = teamCfg.providers?.local_9router || {};
+  const baseUrl = providerCfg.base_url || 'http://127.0.0.1:20128/v1';
+  const envName = providerCfg.api_key_env || 'NINE_ROUTER_API_KEY';
+  const apiKey = (process.env[envName] && process.env[envName].trim())
+    ? process.env[envName].trim()
+    : (providerCfg.default_key || 'sk-default');
+
   const roles = teamCfg.roles || {};
+  const writerCfg = roles.writer || {};
   const roleCfg = roles[roleName] || {};
 
-  // Resolve default role settings
-  let defaultModel = 'kr/claude-sonnet-4.5-thinking';
+  // Resolve default tools by role archetype
   let defaultTools = ['read_file', 'list_files', 'search_code'];
+  let fallbackDefaultModel = writerCfg.model || 'kr/claude-sonnet-4.5-thinking';
 
   if (roleName === 'writer' || roleName === 'backend_writer') {
-    defaultModel = 'deepseek-ai/deepseek-v4.1-flash-1017';
     defaultTools = ['read_file', 'list_files', 'search_code', 'apply_patch', 'run_validator'];
+    fallbackDefaultModel = writerCfg.model || 'deepseek-ai/deepseek-v4.1-flash-1017';
   } else if (roleName === 'designer') {
-    defaultModel = 'kr/claude-sonnet-4.5-thinking';
     defaultTools = ['read_file', 'list_files', 'search_code', 'apply_patch', 'run_validator'];
+    fallbackDefaultModel = roles.router?.model || writerCfg.model || 'kr/claude-sonnet-4.5-thinking';
   } else if (roleName === 'reviewer') {
-    defaultModel = 'ag/claude-opus-5-5-high';
     defaultTools = ['read_file', 'search_code'];
+    fallbackDefaultModel = writerCfg.model || 'ag/claude-opus-5-5-high';
   }
+
+  const resolvedModel = (roleCfg.enabled !== false && roleCfg.model)
+    ? roleCfg.model
+    : fallbackDefaultModel;
 
   return {
     name: roleName,
     display_name: roleCfg.display_name || roleName,
-    model: roleCfg.model || defaultModel,
-    fallback_model: roleCfg.fallback_model || null,
+    model: resolvedModel,
+    fallback_model: roleCfg.fallback_model || writerCfg.fallback_model || writerCfg.model || null,
     allowed_tools: roleCfg.allowed_tools || defaultTools,
     allowed_scope: roleCfg.allowed_scope || [],
-    temperature: roleCfg.temperature ?? 0.2
+    temperature: roleCfg.temperature ?? 0.2,
+    base_url: baseUrl,
+    api_key: apiKey
   };
 }
 
@@ -147,7 +163,9 @@ export async function runAgent(options = {}) {
       messages,
       tools: toolSchemas.length > 0 ? toolSchemas : null,
       temperature: roleConfig.temperature,
-      timeoutMs
+      timeoutMs,
+      baseUrl: roleConfig.base_url,
+      apiKey: roleConfig.api_key
     });
 
     if (!callRes.ok) {

@@ -21,6 +21,7 @@ project:
     - "requirements.txt"
     - "tests/test_indentation.py"
     - "agent-team/scripts/**"
+    - "agent-team/runtime/**"
     - "agent-team/config/**"
     - ".github/workflows/**"
 
@@ -32,6 +33,9 @@ project:
         timeout_sec: 15
       - name: "agent_team_self_test"
         run: "node agent-team/scripts/test-applier-v2.1.mjs"
+        timeout_sec: 10
+      - name: "agent_runtime_self_test"
+        run: "node agent-team/scripts/test-runtime-v3.mjs"
         timeout_sec: 10
     suite_checks:
       - name: "unit_test_suite"

@@ -9,7 +9,7 @@ Hệ thống này cưỡng chế sự tách biệt tuyệt đối giữa **Môi 
 
 | Thành phần | Quyền hạn Được phép (Allowed) | Hành vi Bị cấm Tuyệt đối (Forbidden) |
 | :--- | :--- | :--- |
-| **1. IDE Chat Agent**<br>*(Cline, Antigravity, Cursor, Claude...)* | - **Read-only mặc định** đối với mã nguồn dự án.<br>- Khảo sát cấu trúc thư mục, đọc code, phân tích lỗi.<br>- **Soạn thảo (Draft)** nội dung cấu hình (`project.yaml`, `team.yaml`) và soạn file Task Contract (`tasks/active/*.yaml`) để Human duyệt. | ❌ **CẤM** trực tiếp sửa mã nguồn dự án trong phiên chat.<br>❌ **CẤM** tự ý ghi đè các file hệ thống trong `protected_files` (`agent-team/config/**`, `agent-team/scripts/**`, `.env*`). |
+| **1. IDE Chat Agent**<br>*(Cline, Antigravity, Cursor, Claude...)* | - **Read-only mặc định** đối với mã nguồn dự án.<br>- Khảo sát cấu trúc thư mục, đọc code, phân tích lỗi.<br>- **Soạn thảo (Draft)** nội dung cấu hình (`project.yaml`, `team.yaml`) và soạn file Task Contract (`tasks/active/*.yaml`) để Human duyệt. | ❌ **CẤM** trực tiếp sửa mã nguồn dự án trong phiên chat.<br>❌ **CẤM** tự ý ghi đè các file hệ thống trong `protected_files` (`agent-team/config/**`, `agent-team/scripts/**`, `agent-team/runtime/**`, `.env*`). |
 | **2. Human Operator**<br>*(Kỹ sư vận hành)* | - Giao yêu cầu bằng ngôn ngữ tự nhiên trong khung Chat.<br>- Duyệt cấu hình đề xuất, duyệt `scope_hash` cho các task `high-risk`.<br>- Kích hoạt lệnh chạy từ **CLI Terminal** (`npm start`, `npm test`). | Không cần tự gõ tay toàn bộ nội dung file task YAML từ đầu (do IDE Chat Agent đã hỗ trợ soạn bản nháp). |
 | **3. CLI Runner & Applier**<br>*(`orchestrator.mjs`, `applier.mjs`, `validator.mjs`)* | - Cổng **duy nhất** được phép ghi mã nguồn xuống ổ cứng thông qua pipeline 8 bước của `applier.mjs`.<br>- Chạy kiểm thử tự động 0-token (`validator.mjs`).<br>- Tự động rollback khi test fail và commit theo đúng `scope`. | Không bao giờ ghi file nằm ngoài `task.scope` hoặc ngoài `project.allowed_dirs`. |
 
@@ -54,7 +54,7 @@ node scripts/validator.mjs fast
 > Bạn đang đóng vai **Read-Only Planner & Task Drafter**, KHÔNG PHẢI **Direct Code Editor**. Bạn phải tuân thủ nghiêm ngặt 3 quy tắc sau:
 
 ### Quy tắc 1: Không tự ý sửa mã nguồn dự án hay `protected_files`
-- Danh sách `agent-team/config/**`, `agent-team/scripts/**`, `package.json`, `requirements.txt`, `.env*` nằm trong vùng bảo vệ (`protected_files`).
+- Danh sách `agent-team/config/**`, `agent-team/scripts/**`, `agent-team/runtime/**`, `package.json`, `requirements.txt`, `.env*` nằm trong vùng bảo vệ (`protected_files`).
 - Khi hỗ trợ người dùng Onboarding, bạn chỉ **đọc** cấu trúc thư mục dự án (`../`) để xác định ngôn ngữ, thư mục nguồn (`allowed_dirs`), lệnh chạy test (`validation`), sau đó **xuất nội dung cấu hình đề xuất** ra khung chat (hoặc file nháp được phép) để Human kiểm tra và áp dụng.
 
 ### Quy tắc 1.5: Cổng Thu thập Thông tin Bắt buộc (Mandatory Intake Gate — Thiếu là Hỏi hoặc Fail, Cấm Tự Đoán)
@@ -105,8 +105,11 @@ Khi người dùng mô tả một tính năng hoặc lỗi cần sửa trong khu
   - Mọi đầu ra thô của Writer cho từng lần thử đều được lưu tại `agent-team/state/runs/<TASK-ID>/attempt-<N>.txt`.
   - Các task có `status: "blocked"` trong `agent-team/tasks/active/` sẽ tự động được bỏ qua ở các lượt chạy sau để không đốt token lặp lại. Sau khi điều chỉnh `goal` hoặc chia nhỏ task, đổi lại `status: "ready"` để chạy tiếp.
 
-### Quy tắc 3: Chuyển giao Thực thi cho CLI Runner (`orchestrator.mjs`)
-Sau khi Task Contract đã được xác nhận và đặt trong `agent-team/tasks/active/`, bạn hướng dẫn Human chạy lệnh thực thi từ **CLI Terminal**:
+### Quy tắc 3: Chuyển giao Thực thi cho CLI Runner (`orchestrator.mjs` & `runtime/index.mjs`)
+Hệ thống cung cấp **2 Chế độ Thực thi dùng chung 100% cấu hình (`team.yaml` & `project.yaml` — Zero Extra Config)**:
+
+#### A. Chế độ Chạy Lô Tự Động (Batch Waterfall Mode — `npm start`)
+Sau khi Task Contract đã được xác nhận và đặt trong `agent-team/tasks/active/`, hướng dẫn Human chạy từ **CLI Terminal**:
 ```bash
 cd agent-team
 npm start
@@ -120,3 +123,11 @@ Toàn bộ quá trình:
 6. Tự động Rollback nếu lỗi hoặc Scoped Commit nếu thành công
 
 ...sẽ do **CLI Runner (`scripts/orchestrator.mjs`)** đảm nhiệm độc lập và xuất báo cáo vào `agent-team/state/morning-report.md`.
+
+#### B. Chế độ Tác Tử Độc Lập Có Tay Chân, Mắt & Trí Nhớ (Interactive Agent Runtime — `npm run agent`)
+Khi cần gọi trực tiếp 1 Agent (`designer`, `writer`, `router`, `reviewer`) kèm **đính kèm ảnh Vision (`--image`)**, **đính kèm file (`--file`)**, **trí nhớ dài hạn (`--session`)** và **5 công cụ cục bộ (`list_files`, `search_code`, `read_file`, `apply_patch`, `run_validator`)**:
+```bash
+cd agent-team
+npm run agent -- --role designer --session ui_v1 --image ui/mockup.png --file UI_DASHBOARD_SPEC.md --prompt "Phân tích bố cục và đề xuất cải tiến"
+```
+- **Tự động kế thừa 1-Model:** Nếu người mới chỉ cấu hình 1 model duy nhất tại `roles.writer.model` trong `config/team.yaml`, mọi role trong `runtime/` sẽ tự động kế thừa model và `base_url` đó mà không cần cấu hình thêm.

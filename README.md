@@ -109,7 +109,14 @@ agent-team/
 ├── state/
 │   ├── task-state.schema.json # JSON Schema chuẩn hóa trạng thái task (v2.1)
 │   ├── task-state.json        # Trạng thái vận hành ghi atomic (.tmp + rename)
-│   └── morning-report.md      # Báo cáo tổng hợp tự động sau mỗi phiên chạy
+│   ├── morning-report.md      # Báo cáo tổng hợp tự động sau mỗi phiên chạy
+│   └── sessions/              # Lưu trữ Persistent Session Memory & Tool Receipts (v3.0)
+├── runtime/                   # Agent Runtime Core v3.0 (Tay chân, Mắt Vision & Trí nhớ cho Model)
+│   ├── index.mjs              # CLI & API chạy Agent độc lập (Bounded Tool Loop ≤ 4 turns)
+│   ├── provider-gateway.mjs   # Capability Matrix & Dual Tool Call Parser (Native + <tool_call> XML)
+│   ├── context-adapter.mjs    # Bộ đóng gói Multimodal Vision (Base64 Image) & File Text
+│   ├── tool-runtime.mjs       # 5 Local Tools (list_files, search_code, read_file, apply_patch, run_validator)
+│   └── session-store.mjs      # Persistent Session Memory & Context Compaction
 ├── tasks/
 │   ├── task-template.yaml     # Mẫu khởi tạo task chuẩn v2.1
 │   ├── active/                # Hàng đợi các task đang chờ thực thi
@@ -119,7 +126,9 @@ agent-team/
     ├── git-guard.mjs          # Quản lý Scoped Snapshot, Diff, Rollback và Commit
     ├── validator.mjs          # 0-Token Test Runner, Process-Tree Kill, Normalized Hash & Scope Audit
     ├── orchestrator.mjs       # Bộ điều phối trung tâm (Mode-Based Engine, Healthcheck, Stale Lock Recovery)
-    └── test-applier-v2.1.mjs  # Bộ unit test tự kiểm định toàn bộ cơ chế bảo vệ v2.1
+    ├── dashboard.mjs          # Máy chủ Live Monitor UI v3.0 (http://127.0.0.1:4310)
+    ├── test-applier-v2.1.mjs  # Bộ unit test tự kiểm định cơ chế bảo vệ v2.1
+    └── test-runtime-v3.mjs    # Bộ unit test tự kiểm định Agent Runtime v3.0
 ```
 
 ---
@@ -168,6 +177,7 @@ project:
     - "package.json"
     - "requirements.txt"
     - "agent-team/scripts/**"
+    - "agent-team/runtime/**"
     - "agent-team/config/**"
   validation:
     fast_checks:
@@ -203,14 +213,18 @@ acceptance_criteria:
 ### Bước 4: Thực thi & Kiểm định từ CLI Terminal
 - **Chạy kiểm định cấu hình & phạm vi từ CLI:**
   ```bash
-  node scripts/test-applier-v2.1.mjs
+  npm test
   node scripts/validator.mjs fast --scope src/health.py,tests/test_health.py
   ```
-- **Chạy hàng đợi Task qua Orchestrator Runner (Write via Applier):**
+- **Chế độ 1 — Chạy hàng đợi Task tự động qua Orchestrator Runner (`scripts/orchestrator.mjs`):**
   ```bash
   npm start
   ```
-- **Mở giao diện quan sát trực tiếp (Bento Dark Live Monitor tại `http://127.0.0.1:4310`):**
+- **Chế độ 2 — Gọi trực tiếp Agent có Vision, File, Tool & Trí nhớ (`runtime/index.mjs` — Zero Extra Config):**
+  ```bash
+  npm run agent -- --role designer --session ui_s1 --image ui/mockup.png --file UI_DASHBOARD_SPEC.md --prompt "Review giao diện"
+  ```
+- **Mở giao diện quan sát trực tiếp (9Router AI Live Topology & Runtime Inspector tại `http://127.0.0.1:4310`):**
   ```bash
   npm run dashboard
   ```

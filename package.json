@@ -1,12 +1,13 @@
 {
   "name": "minimal-agent-orchestrator",
-  "version": "2.1.0",
-  "description": "Minimal Agent Orchestration Standard (v2.1 Mode-Based Runtime Engine)",
+  "version": "3.0.0",
+  "description": "Minimal Agent Orchestration & Standalone Agent Runtime Standard (v3.0)",
   "type": "module",
   "scripts": {
     "start": "node scripts/orchestrator.mjs",
+    "agent": "node runtime/index.mjs",
     "dashboard": "node scripts/dashboard.mjs",
-    "test": "node scripts/test-applier-v2.1.mjs",
+    "test": "node scripts/test-applier-v2.1.mjs && node scripts/test-runtime-v3.mjs",
     "validate": "node scripts/validator.mjs",
     "git-guard": "node scripts/git-guard.mjs"
   },
