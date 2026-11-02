@@ -57,33 +57,50 @@ node scripts/validator.mjs fast
 - Danh sách `agent-team/config/**`, `agent-team/scripts/**`, `package.json`, `requirements.txt`, `.env*` nằm trong vùng bảo vệ (`protected_files`).
 - Khi hỗ trợ người dùng Onboarding, bạn chỉ **đọc** cấu trúc thư mục dự án (`../`) để xác định ngôn ngữ, thư mục nguồn (`allowed_dirs`), lệnh chạy test (`validation`), sau đó **xuất nội dung cấu hình đề xuất** ra khung chat (hoặc file nháp được phép) để Human kiểm tra và áp dụng.
 
+### Quy tắc 1.5: Cổng Thu thập Thông tin Bắt buộc (Mandatory Intake Gate — Thiếu là Hỏi hoặc Fail, Cấm Tự Đoán)
+Khi khởi tạo dự án mới hoặc nhận một bài toán lớn từ người dùng, nếu bất kỳ thông tin cốt lõi nào dưới đây chưa rõ hoặc chưa có trong `config/team.yaml`, `config/project.yaml`, bạn **BẮT BUỘC phải dừng lại hỏi người dùng (hoặc báo thiếu để fail-fast)** — **TUYỆT ĐỐI KHÔNG tự bịa tên model hay đoán bừa**:
+1. **Đội hình & Nhân sự AI (`config/team.yaml`):**
+   - Team có bao nhiêu thành viên (roles)? Gồm những vị trí nào (`router` lập kế hoạch, `writer` viết code, `reviewer` duyệt diff, `validator` chạy script 0-token)?
+   - Cổng kết nối LLM (`base_url`, biến môi trường chứa API key `api_key_env` — *lưu ý: chỉ lưu tên biến môi trường trong YAML, không dán key thật*)?
+   - Tên model chính xác (`model` ID trên 9Router/provider) cho từng vị trí là gì? Role nào cần cấu hình `max_thinking_tokens`?
+2. **Đầu ra Phần mềm & Ranh giới Dự án (`config/project.yaml`):**
+   - Mô tả dự án, ngôn ngữ/stack, thư mục nào được phép sửa (`allowed_dirs`), file nào cấm đụng (`protected_files`)?
+   - Lệnh kiểm thử nhanh (`fast_checks`) và kiểm thử toàn bộ (`suite_checks`) để xác nhận đầu ra phần mềm đạt chuẩn là gì?
+3. **Mục tiêu & Nghiệm thu Task (`tasks/active/*.yaml`):**
+   - Nếu người dùng chỉ nêu `goal` chung chung mà chưa rõ đầu ra mong đợi hoặc tiêu chí nghiệm thu (`acceptance_criteria`), bạn phải hỏi lại để chốt trước khi tạo file task `status: "ready"`.
+
 ### Quy tắc 2: Chuyển hóa Yêu cầu của Người dùng thành Task Contract (`.yaml`)
 Khi người dùng mô tả một tính năng hoặc lỗi cần sửa trong khung chat:
 1. Bạn đọc các file liên quan trong dự án để hiểu ngữ cảnh (**Read-Only**).
-2. Bạn soạn thảo **Task Contract** theo đúng khuôn mẫu `agent-team/tasks/task-template.yaml` (cho mục tiêu `agent-team/tasks/active/T-YYYY-MM-DD-XXX.yaml`):
+2. Bạn soạn thảo **Task Contract** theo đúng khuôn mẫu [`agent-team/tasks/task-template.yaml`](file:///d:/tool-download/agent-team/tasks/task-template.yaml) (cho mục tiêu `agent-team/tasks/active/T-YYYY-MM-DD-XXX.yaml`), chỉ cần điền **6 trường bắt buộc** (các trường nội bộ như `retries`, `error_history`, `last_report` do Orchestrator tự quản lý):
    ```yaml
-   task_id: "T-2026-10-31-001"
-   project_id: "my-application"
-   title: "Tiêu đề ngắn gọn của tác vụ"
-   mode: "quick" # "quick" (<=3 files, low risk) hoặc "standard" (có Reviewer gate)
-   status: "ready"
-   owner: "writer"
-   goal: "Mô tả chính xác mục tiêu kỹ thuật cần thực hiện"
+   # 1. CÁC TRƯỜNG BẮT BUỘC (REQUIRED)
+   task_id: "T-2026-11-02-001"
+   title: "Tiêu đề ngắn gọn của tác vụ (< 80 ký tự)"
+   status: "ready" # "ready" khi đã có scope rõ ràng
+   goal: "Mô tả chính xác hàm/lớp cần thêm hoặc sửa (< 150 dòng thay đổi mỗi task)"
    scope:
-     - "src/module_a.py"
+     - "core/module_a.py"
      - "tests/test_module_a.py"
-   risk_level: "low"
-   allow_scope_expansion: false
-   justification: ""
-   approval: null
-   constraints:
-     - "Không sửa ngoài danh sách scope"
-     - "Đảm bảo toàn bộ unit test PASS 100%"
    acceptance_criteria:
      - "Tiêu chí nghiệm thu cụ thể 1"
-     - "Tiêu chí nghiệm thu cụ thể 2"
+     - "Toàn bộ unit tests trong scope và tests/test_indentation.py PASS 100%"
+
+   # 2. CÁC TRƯỜNG TÙY CHỌN (OPTIONAL — CÓ MẶC ĐỊNH AN TOÀN)
+   mode: "quick" # "quick" (<=3 files, low/medium risk) | "standard" (bật Reviewer gate khi risk >= high)
+   risk_level: "low" # "low" | "medium" | "high" | "critical"
+   constraints:
+     - "100% TAB indentation cho mọi file Python"
+     - "Không sửa ngoài danh sách scope"
    ```
 3. Nếu tác vụ chạm vào vùng nhạy cảm (`auth`, `keyring`, `secret`, `migration`, `infra`), bạn phải đặt `risk_level: "high"` và thông báo mã `scope_hash` để Human cấp quyền `approval` trước khi chạy.
+
+### Quy tắc 2.5: Chia nhỏ Task theo Độ phức tạp & Giới hạn của `SEARCH/REPLACE`
+- **Giới hạn độ phức tạp mỗi Task (< 150 dòng code sinh mới/sửa đổi):** Dù một task chỉ chạm 1–2 file, nếu tổng lượng code + unit test vượt quá ~150 dòng (hoặc vừa viết thuật toán lõi vừa viết wiring + bộ test lớn), hãy **tách thành chuỗi tuần tự** (`T-...-001A`, `T-...-001B`) để tránh bị cắt cụt (`finish_reason: "length"`).
+- **Tránh đổi tên symbol xuyên nhiều file (Cross-file Rename):** Cơ chế `<<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE` rất mạnh khi thêm/sửa hàm cục bộ, nhưng dễ sót điểm gọi khi đổi tên một hàm/biến xuất hiện ở hàng chục vị trí. Chỉ đổi tên symbol trong phạm vi `task.scope` đã nạp đầy đủ.
+- **Chẩn đoán & Chạy lại khi Task bị `blocked`:**
+  - Mọi đầu ra thô của Writer cho từng lần thử đều được lưu tại `agent-team/state/runs/<TASK-ID>/attempt-<N>.txt`.
+  - Các task có `status: "blocked"` trong `agent-team/tasks/active/` sẽ tự động được bỏ qua ở các lượt chạy sau để không đốt token lặp lại. Sau khi điều chỉnh `goal` hoặc chia nhỏ task, đổi lại `status: "ready"` để chạy tiếp.
 
 ### Quy tắc 3: Chuyển giao Thực thi cho CLI Runner (`orchestrator.mjs`)
 Sau khi Task Contract đã được xác nhận và đặt trong `agent-team/tasks/active/`, bạn hướng dẫn Human chạy lệnh thực thi từ **CLI Terminal**:

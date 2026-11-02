@@ -1,31 +1,38 @@
-task_id: "T-2026-10-30-001"
-project_id: "tool-download-stable"
-title: "Mô tả ngắn gọn tiêu đề task"
-mode: "quick" # "direct" | "quick" | "standard"
-status: "draft"
-owner: "router"
-goal: "Mục tiêu cụ thể cần đạt được của task"
+# ============================================================================
+# 1. CÁC TRƯỜNG BẮT BUỘC DO IDE PLANNER / HUMAN ĐIỀN (REQUIRED FIELDS)
+# ============================================================================
+task_id: "T-2026-11-02-001"
+title: "Mô tả ngắn gọn tiêu đề task (< 80 ký tự)"
+status: "ready" # Đặt "ready" khi đã có scope rõ ràng; "draft" nếu muốn Router tự lập scope
+goal: "Mô tả cụ thể hàm/lớp cần thêm hoặc sửa (< 150 dòng code thay đổi mỗi task; nếu lớn hơn phải tách thành 001A, 001B)"
 scope:
-  - "tests/test_sample.py"
+  - "core/example.py"
+  - "tests/test_example.py"
+acceptance_criteria:
+  - "Hàm X xử lý đúng trường hợp Y"
+  - "Toàn bộ unit tests trong scope và tests/test_indentation.py PASS 100%"
+
+# ============================================================================
+# 2. CÁC TRƯỜNG TÙY CHỌN (OPTIONAL — CÓ GIÁ TRỊ MẶC ĐỊNH AN TOÀN)
+# ============================================================================
+mode: "quick" # "quick" (<=3 files, low/medium risk, 0-token Validator) | "standard" (bật Reviewer Gate khi risk >= high)
+risk_level: "low" # "low" | "medium" | "high" | "critical"
+force_ai_review: false # Đặt true nếu muốn ép chạy AI Reviewer ngay cả khi risk_level là low/medium
+constraints:
+  - "100% TAB indentation cho mọi file Python"
+  - "Không đổi tên hàm/biến dùng chung xuyên nhiều file nếu không thực sự cần thiết"
 forbidden_files:
   - ".env*"
   - "package.json"
   - "package-lock.json"
   - "requirements.txt"
-risk_level: "low" # "low" | "medium" | "high"
 allow_scope_expansion: false
 justification: ""
-approval: null
-scope_expansions: []
-constraints:
-  - "100% TAB indentation"
-  - "Không phá vỡ các unit tests hiện có"
-acceptance_criteria:
-  - "Tất cả test case mới và cũ đều PASS 100%"
-retries: 0
-error_history: []
-validation_result: null
-review_result: null
-last_report: null
-created_at: "2026-10-30T20:00:00Z"
-updated_at: "2026-10-30T20:00:00Z"
+approval: null # Khi risk_level >= high: { by: "human", scope_hash: "<sha1>" }
+
+# ============================================================================
+# 3. CÁC TRƯỜNG NỘI BỘ DO ORCHESTRATOR TỰ GHI (KHÔNG CẦN ĐIỀN KHI TẠO TASK)
+# ============================================================================
+# project_id, owner, retries, error_history, scope_expansions,
+# validation_result, review_result, last_report, created_at, updated_at
+

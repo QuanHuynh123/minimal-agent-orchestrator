@@ -18,18 +18,22 @@ roles:
   router:
     enabled: true
     provider: "local_9router"
+    display_name: "Claude Sonnet 4.5 Thinking"
     model: "kr/claude-sonnet-4.5-thinking"
     fallback_model: null
     temperature: 0.2
+    max_thinking_tokens: 200
     allowed_actions: ["analyze", "plan", "triage"]
     forbidden_actions: ["direct_write", "modify_config"]
 
   writer:
     enabled: true
     provider: "local_9router"
+    display_name: "DeepSeek V4.1 Flash"
     model: "Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017"
     fallback_model: null
     temperature: 0.1
+    max_thinking_tokens: 200
     output_format: "search_replace_blocks"
     allowed_actions: ["read_scoped_files", "propose_patch"]
     forbidden_actions: ["out_of_scope_edit", "unapproved_dependency"]
@@ -37,6 +41,7 @@ roles:
   reviewer:
     enabled: true
     provider: "local_9router"
+    display_name: "Claude Sonnet 4.5"
     model: "kr/claude-sonnet-4.5"
     fallback_model: null
     temperature: 0.1

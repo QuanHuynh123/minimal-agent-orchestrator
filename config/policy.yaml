@@ -40,6 +40,7 @@ policy:
     prefer_mcp_tools: true
     ban_unbounded_commands: true
     block_powershell_curl_alias: true # Bắt buộc dùng curl.exe hoặc native fetch có AbortSignal
+    strict_model_match: true # Chặn task nếu 9Router trả về model khác với model đã yêu cầu trong team.yaml
 
   git_hygiene:
     require_clean_worktree_before_start: true

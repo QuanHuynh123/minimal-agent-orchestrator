@@ -15,12 +15,16 @@ import {
   acquireLock,
   buildScopedFilesContext,
   extractTaskKeywords,
+  formatValidationErrorForRetry,
   normalizeTask,
   releaseLock,
   resolveEffectiveRisk,
   resolveTaskMode,
+  sanitizeTaskState,
   shouldRunReviewerGate,
-  sliceContentByKeywords
+  sliceContentByKeywords,
+  validateConfig,
+  verifyResponseModel
 } from './orchestrator.mjs';
 import {
   auditGitScope,
@@ -205,6 +209,85 @@ const auditFail = auditGitScope(['core/downloader.py'], {
 assert.strictEqual(auditFail.ok, false);
 assert.match(auditFail.violations[0], /Out-of-scope file modified/);
 console.log('✓ Execution guardrails (HR-1/HR-2) & IDE Git Scope Audit Gate passed');
+
+// Test 11: Validation Error Tail Extraction (Strips [SQUAD] banner & keeps Python Traceback)
+const noisyUnittestOutput = [
+  '=================================================================',
+  '[SQUAD] BIET DOI AUTONOMOUS SQUAD - DIEM DANH CHAO SEP [SQUAD]',
+  '=================================================================',
+  '[1] Claude Opus | Vai tro: Tech Lead',
+  '=================================================================',
+  '[OK] Toan bo Biet doi dong long: 100% SAN SANG CHIEN DAU!',
+  '=================================================================',
+  'test_foo (test_core.CoreTests.test_foo) ... ok',
+  'test_bar (test_core.CoreTests.test_bar)',
+  'Verify bar behavior. ... ok',
+  'invalid command name "2477491847488_tick"',
+  '    while executing',
+  '"2477491847488_tick"',
+  '    ("after" script)',
+  '======================================================================',
+  'FAIL: test_inpaint_sha256 (test_inpaint_models.TestInpaintModels.test_inpaint_sha256)',
+  '----------------------------------------------------------------------',
+  'Traceback (most recent call last):',
+  '  File "d:\\tool-download\\tests\\test_inpaint_models.py", line 42, in test_inpaint_sha256',
+  '    self.assertEqual(status["status"], "ready")',
+  'AssertionError: "corrupted" != "ready"'
+].join('\r\n');
+
+const cleanedErr = formatValidationErrorForRetry(noisyUnittestOutput, 600);
+assert.strictEqual(cleanedErr.includes('BIET DOI AUTONOMOUS SQUAD'), false);
+assert.strictEqual(cleanedErr.includes('2477491847488_tick'), false);
+assert.strictEqual(cleanedErr.includes('test_foo'), false);
+assert.match(cleanedErr, /FAIL: test_inpaint_sha256/);
+assert.match(cleanedErr, /AssertionError: "corrupted" != "ready"/);
+console.log('✓ Validation error tail extraction (strips banner/noise, preserves Traceback) passed');
+
+// Test 12: State Deduplication & Stale Blocked Purge + Config Validation
+const dirtyState = {
+  completed_tasks: [
+    { task_id: 'T-001', title: 'first' },
+    { task_id: 'T-001', title: 'updated' },
+    { task_id: 'T-002', title: 'second' }
+  ],
+  blocked_tasks: [
+    { task_id: 'T-001', block_reason: 'old failure before fix' },
+    { task_id: 'T-003', block_reason: 'still blocked 1' },
+    { task_id: 'T-003', block_reason: 'still blocked 2' }
+  ]
+};
+const cleanState = sanitizeTaskState(dirtyState);
+assert.strictEqual(cleanState.completed_tasks.length, 2);
+assert.strictEqual(cleanState.completed_tasks[0].title, 'updated');
+assert.strictEqual(cleanState.blocked_tasks.length, 1);
+assert.strictEqual(cleanState.blocked_tasks[0].task_id, 'T-003');
+assert.strictEqual(cleanState.blocked_tasks[0].block_reason, 'still blocked 2');
+
+const validCfgRes = validateConfig(
+  { providers: { local_9router: { base_url: 'http://127.0.0.1:20128/v1' } }, roles: { writer: { model: 'deepseek' } } },
+  { policy: { scope_control: { max_files_per_task: 5 } } },
+  { project: { allowed_dirs: ['core/'] } }
+);
+assert.strictEqual(validCfgRes.ok, true);
+
+const invalidCfgRes = validateConfig({}, {}, {});
+assert.strictEqual(invalidCfgRes.ok, false);
+assert.strictEqual(invalidCfgRes.errors.length, 4);
+
+const matchExact = verifyResponseModel(
+  'Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017',
+  'deepseek-ai/deepseek-v4.1-flash-1017'
+);
+assert.strictEqual(matchExact.match, true);
+
+const matchUnknown = verifyResponseModel('kr/claude-sonnet-4.5', 'unknown');
+assert.strictEqual(matchUnknown.match, false);
+assert.match(matchUnknown.reason, /omitted data\.model/);
+
+const matchWrong = verifyResponseModel('kr/claude-sonnet-4.5', 'gpt-4o-mini');
+assert.strictEqual(matchWrong.match, false);
+assert.match(matchWrong.reason, /Requested model "kr\/claude-sonnet-4\.5" but upstream responded with "gpt-4o-mini"/);
+console.log('✓ State deduplication, stale blocked purge, validateConfig & verifyResponseModel passed');
 
 console.log('\n=============================================');
 console.log('ALL V2.1 APPLIER & ORCHESTRATOR TESTS PASSED! 🎯');

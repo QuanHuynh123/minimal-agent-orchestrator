@@ -142,27 +142,52 @@ export function releaseLock(lockFilePath = LOCK_FILE) {
 }
 
 // 2. Atomic State & Task Management
+export function sanitizeTaskState(state = {}) {
+  const completedMap = new Map();
+  for (const t of (state.completed_tasks || [])) {
+    const id = t?.task_id || t?.id;
+    if (id) completedMap.set(id, t);
+  }
+  const completed = Array.from(completedMap.values());
+  const completedIds = new Set(completedMap.keys());
+
+  const blockedMap = new Map();
+  for (const t of (state.blocked_tasks || [])) {
+    const id = t?.task_id || t?.id;
+    if (id && !completedIds.has(id)) {
+      blockedMap.set(id, t);
+    }
+  }
+  const blocked = Array.from(blockedMap.values());
+
+  return {
+    ...state,
+    version: state.version || '2.1',
+    active_tasks: Array.isArray(state.active_tasks) ? state.active_tasks : [],
+    completed_tasks: completed,
+    blocked_tasks: blocked,
+    metrics: state.metrics || { total_input_tokens: 0, total_output_tokens: 0, total_cost_est_usd: 0 }
+  };
+}
+
 function loadState() {
   if (!fs.existsSync(STATE_FILE)) {
-    return {
-      version: '2.1',
-      active_tasks: [],
-      completed_tasks: [],
-      blocked_tasks: [],
-      metrics: { total_input_tokens: 0, total_output_tokens: 0, total_cost_est_usd: 0 }
-    };
+    return sanitizeTaskState({});
   }
   try {
-    return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    return sanitizeTaskState(JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')));
   } catch {
-    return { version: '2.1', active_tasks: [], completed_tasks: [], blocked_tasks: [], metrics: {} };
+    return sanitizeTaskState({});
   }
 }
 
 function saveStateAtomic(state) {
+  const cleanState = sanitizeTaskState(state);
+  state.completed_tasks = cleanState.completed_tasks;
+  state.blocked_tasks = cleanState.blocked_tasks;
   const tmpPath = `${STATE_FILE}.tmp.${Date.now()}`;
   fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
-  fs.writeFileSync(tmpPath, JSON.stringify(state, null, 2), 'utf8');
+  fs.writeFileSync(tmpPath, JSON.stringify(cleanState, null, 2), 'utf8');
   fs.renameSync(tmpPath, STATE_FILE);
 }
 
@@ -452,10 +477,77 @@ export function buildScopedFilesContext(scope = [], repoRoot = REPO_ROOT, task =
   return sections.join('\n\n');
 }
 
-// 4. Pre-flight Healthcheck (HR-6) & Local 9Router API Helper
+// 4. Pre-flight Healthcheck (HR-6), Config Validation & Local 9Router API Helper
+export function resolveApiKey(teamCfg = teamConfig) {
+  const envKeyName = teamCfg?.providers?.local_9router?.api_key_env || 'NINE_ROUTER_API_KEY';
+  return process.env[envKeyName] || teamCfg?.providers?.local_9router?.default_key || 'sk-default';
+}
+
+export function validateConfig(teamCfg = teamConfig, policyCfg = policyConfig, projectCfg = projectConfig) {
+  const errors = [];
+  if (!teamCfg?.providers?.local_9router?.base_url) {
+    errors.push('team.yaml: missing providers.local_9router.base_url');
+  }
+  if (!teamCfg?.roles?.writer?.model) {
+    errors.push('team.yaml: missing roles.writer.model');
+  }
+  const allowedDirs = projectCfg?.project?.allowed_dirs;
+  if (!Array.isArray(allowedDirs) || allowedDirs.length === 0) {
+    errors.push('project.yaml: project.allowed_dirs must be a non-empty array');
+  }
+  const maxFiles = policyCfg?.policy?.scope_control?.max_files_per_task;
+  if (typeof maxFiles !== 'number' || maxFiles <= 0) {
+    errors.push('policy.yaml: policy.scope_control.max_files_per_task must be a positive number');
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+/**
+ * Strips verbose ASCII greeting banners, passing unit test lines ("... ok"), and Tkinter
+ * teardown noise from test output, keeping the tail where FAIL / ERROR / Traceback appear.
+ */
+export function formatValidationErrorForRetry(errText = '', maxChars = 1800) {
+  if (!errText) return '';
+  let cleaned = String(errText).replace(/\r\n/g, '\n');
+
+  // 1. Strip the [SQUAD] ASCII banner from test_squad_hello.py
+  cleaned = cleaned.replace(
+    /={20,}\n\[SQUAD\][\s\S]*?\[OK\][^\n]*\n={20,}\n*/g,
+    ''
+  );
+
+  // 2. Strip noisy Tkinter background timer teardown warnings
+  cleaned = cleaned.replace(
+    /invalid command name "[^"]+"\n\s+while executing\n"[^"]+"\n\s+\("after" script\)\n?/g,
+    ''
+  );
+
+  // 3. Remove standalone passing test lines ("test_xxx (...) ... ok") so tracebacks stand out
+  const lines = cleaned.split('\n');
+  const filteredLines = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Handle 2-line docstring unittest output where line i is "test_foo (...)" and line i+1 is "Docstring ... ok"
+    if (/^test_[A-Za-z0-9_]+\s+\([^)]+\)\s*$/.test(line.trim()) && i + 1 < lines.length && /\.\.\.\s*ok\s*$/.test(lines[i + 1].trim())) {
+      i++;
+      continue;
+    }
+    if (/^test_[A-Za-z0-9_]+\s+\([^)]+\)\s*\.\.\.\s*ok\s*$/.test(line.trim())) {
+      continue;
+    }
+    filteredLines.push(line);
+  }
+
+  cleaned = filteredLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (cleaned.length <= maxChars) {
+    return cleaned;
+  }
+  return `...[truncated earlier passing output]...\n${cleaned.slice(-maxChars)}`;
+}
+
 export async function check9RouterHealth(teamCfg = teamConfig, policyCfg = policyConfig) {
   const baseUrl = teamCfg.providers?.local_9router?.base_url || 'http://127.0.0.1:20128/v1';
-  const apiKey = process.env.NINE_ROUTER_API_KEY || teamCfg.providers?.local_9router?.default_key || 'sk-default';
+  const apiKey = resolveApiKey(teamCfg);
   const guardrails = policyCfg.policy?.execution_guardrails || {};
   const timeoutSec = Math.min(
     guardrails.healthcheck_timeout_sec || 15,
@@ -480,6 +572,43 @@ export async function check9RouterHealth(teamCfg = teamConfig, policyCfg = polic
   }
 }
 
+export async function check9RouterHealthWithRetry(teamCfg = teamConfig, policyCfg = policyConfig, delaysMs = [0, 5000, 15000]) {
+  let lastRes = { ok: false, error: 'Healthcheck did not run' };
+  for (let i = 0; i < delaysMs.length; i++) {
+    if (delaysMs[i] > 0) {
+      console.warn(`[Orchestrator] 9Router healthcheck attempt ${i} failed (${lastRes.error}). Retrying in ${delaysMs[i] / 1000}s...`);
+      await new Promise(r => setTimeout(r, delaysMs[i]));
+    }
+    lastRes = await check9RouterHealth(teamCfg, policyCfg);
+    if (lastRes.ok) return lastRes;
+  }
+  return lastRes;
+}
+
+export function verifyResponseModel(requestedModel = '', responseModel = 'unknown') {
+  const reqRaw = String(requestedModel || '').trim();
+  const resRaw = String(responseModel || '').trim();
+  if (!resRaw || resRaw === 'unknown') {
+    return {
+      match: false,
+      reason: `Upstream response omitted data.model (got "unknown" for requested "${reqRaw}")`
+    };
+  }
+  const norm = s => s.toLowerCase().split('/').pop().replace(/[._-]+/g, '-').trim();
+  const reqSlug = norm(reqRaw);
+  const resSlug = norm(resRaw);
+  if (
+    reqRaw.toLowerCase() === resRaw.toLowerCase() ||
+    (reqSlug && resSlug && (reqSlug === resSlug || resSlug.includes(reqSlug) || reqSlug.includes(resSlug)))
+  ) {
+    return { match: true, reason: null };
+  }
+  return {
+    match: false,
+    reason: `Requested model "${reqRaw}" but upstream responded with "${resRaw}"`
+  };
+}
+
 export function saveWriterRawOutput(taskId, attemptNum, writerRes = {}) {
   try {
     const safeId = String(taskId || 'unknown').replace(/[^A-Za-z0-9_.-]/g, '_');
@@ -489,7 +618,8 @@ export function saveWriterRawOutput(taskId, attemptNum, writerRes = {}) {
     const header = [
       `=== WRITER ATTEMPT ${attemptNum} ===`,
       `Timestamp: ${new Date().toISOString()}`,
-      `Model Used: ${writerRes.modelUsed || 'unknown'}`,
+      `Model Requested: ${writerRes.modelUsed || 'unknown'}`,
+      `Model Responded: ${writerRes.responseModel || 'unknown'}`,
       `Finish Reason: ${writerRes.finishReason || 'unknown'}`,
       `Prompt Tokens: ${writerRes.usage?.prompt_tokens || 0}`,
       `Completion Tokens: ${writerRes.usage?.completion_tokens || 0}`,
@@ -507,13 +637,14 @@ export function saveWriterRawOutput(taskId, attemptNum, writerRes = {}) {
   }
 }
 
-async function call9Router(model, systemPrompt, userMessage, maxTokens = 4096, fallbackModel = null, temperature = 0.1) {
+async function call9Router(model, systemPrompt, userMessage, maxTokens = 4096, fallbackModel = null, temperature = 0.1, options = {}) {
   const baseUrl = teamConfig.providers?.local_9router?.base_url || 'http://127.0.0.1:20128/v1';
-  const apiKey = process.env.NINE_ROUTER_API_KEY || teamConfig.providers?.local_9router?.default_key || 'sk-default';
+  const apiKey = resolveApiKey(teamConfig);
   const timeoutSec = policyConfig.policy?.execution_guardrails?.default_cli_timeout_sec
     || teamConfig.providers?.ide_bridge?.timeout_sec
     || 120;
   const timeoutMs = timeoutSec * 1000;
+  const strictModelMatch = options.strictModelMatch ?? policyConfig.policy?.execution_guardrails?.strict_model_match ?? true;
 
   const modelsToTry = [model, ...(fallbackModel && fallbackModel !== model ? [fallbackModel] : [])];
   let lastError = 'Unknown API error';
@@ -529,8 +660,8 @@ async function call9Router(model, systemPrompt, userMessage, maxTokens = 4096, f
         max_tokens: maxTokens,
         temperature
       };
-      if (candidateModel.toLowerCase().includes('deepseek') || candidateModel.toLowerCase().includes('thinking')) {
-        reqBody.max_thinking_tokens = 200;
+      if (options.maxThinkingTokens !== undefined && options.maxThinkingTokens !== null) {
+        reqBody.max_thinking_tokens = options.maxThinkingTokens;
       }
 
       const res = await fetch(`${baseUrl}/chat/completions`, {
@@ -564,6 +695,17 @@ async function call9Router(model, systemPrompt, userMessage, maxTokens = 4096, f
       const rawContent = data.choices?.[0]?.message?.content || '';
       const reasoning = data.choices?.[0]?.message?.reasoning_content || '';
       const finishReason = data.choices?.[0]?.finish_reason || 'unknown';
+      const responseModel = (typeof data.model === 'string' && data.model.trim()) ? data.model.trim() : 'unknown';
+
+      const modelCheck = verifyResponseModel(candidateModel, responseModel);
+      if (!modelCheck.match) {
+        console.warn(`[9Router] MODEL MISMATCH WARNING: ${modelCheck.reason}`);
+        if (strictModelMatch && responseModel !== 'unknown') {
+          lastError = `Model mismatch rejected by policy: ${modelCheck.reason}`;
+          continue;
+        }
+      }
+
       let content = rawContent;
       if (!content.includes('<<<<<<< SEARCH') && reasoning.includes('<<<<<<< SEARCH')) {
         content = reasoning;
@@ -576,7 +718,9 @@ async function call9Router(model, systemPrompt, userMessage, maxTokens = 4096, f
         rawReasoning: reasoning,
         finishReason,
         usage,
-        modelUsed: candidateModel
+        modelUsed: candidateModel,
+        responseModel,
+        modelMatched: modelCheck.match
       };
     } catch (err) {
       lastError = `${candidateModel}: ${err.name === 'TimeoutError' ? `Request timed out after ${timeoutSec}s` : err.message}`;
@@ -596,6 +740,7 @@ async function runRouterPlanner(task) {
   const routerModel = routerRole.model || 'kr/claude-sonnet-4.5-thinking';
   const routerFallback = routerRole.fallback_model || null;
   const routerTemp = routerRole.temperature ?? 0.2;
+  const routerMaxThinking = routerRole.max_thinking_tokens;
   const routerSystemPrompt = fs.existsSync(path.resolve(TEAM_DIR, 'roles', 'router.md'))
     ? fs.readFileSync(path.resolve(TEAM_DIR, 'roles', 'router.md'), 'utf8')
     : 'Analyze the goal and return JSON { "plan": [], "scope": [], "acceptance_criteria": [] }.';
@@ -609,7 +754,9 @@ async function runRouterPlanner(task) {
     `Return strict JSON with keys: plan, scope, acceptance_criteria.`
   ].join('\n\n');
 
-  const res = await call9Router(routerModel, routerSystemPrompt, prompt, 2048, routerFallback, routerTemp);
+  const res = await call9Router(routerModel, routerSystemPrompt, prompt, 2048, routerFallback, routerTemp, {
+    maxThinkingTokens: routerMaxThinking
+  });
   if (!res.ok) {
     return { ok: false, error: `Router API error: ${res.error}`, usage: { prompt_tokens: 0, completion_tokens: 0 } };
   }
@@ -644,6 +791,7 @@ async function runReviewerGate(task, scopedFiles) {
   const reviewerModel = reviewerRole.model || 'ag/claude-opus-5-5-high';
   const reviewerFallback = reviewerRole.fallback_model || null;
   const reviewerTemp = reviewerRole.temperature ?? 0.1;
+  const reviewerMaxThinking = reviewerRole.max_thinking_tokens;
   const reviewerSystemPrompt = fs.existsSync(path.resolve(TEAM_DIR, 'roles', 'reviewer.md'))
     ? fs.readFileSync(path.resolve(TEAM_DIR, 'roles', 'reviewer.md'), 'utf8')
     : 'Review the git diff against acceptance criteria and return JSON { "passed": boolean, "rubric_scores": {...}, "issues": [] }.';
@@ -655,7 +803,9 @@ async function runReviewerGate(task, scopedFiles) {
     `GIT DIFF:\n${diffText}`
   ].join('\n\n');
 
-  const res = await call9Router(reviewerModel, reviewerSystemPrompt, reviewMsg, 2048, reviewerFallback, reviewerTemp);
+  const res = await call9Router(reviewerModel, reviewerSystemPrompt, reviewMsg, 2048, reviewerFallback, reviewerTemp, {
+    maxThinkingTokens: reviewerMaxThinking
+  });
   if (!res.ok) {
     return { ok: false, error: `Reviewer API error: ${res.error}`, usage: { prompt_tokens: 0, completion_tokens: 0 } };
   }
@@ -663,10 +813,11 @@ async function runReviewerGate(task, scopedFiles) {
   try {
     const jsonMatch = res.content.match(/\{[\s\S]*\}/);
     const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(res.content);
+    const isPassed = parsed.passed === true;
     return {
-      ok: Boolean(parsed.passed),
+      ok: isPassed,
       reviewResult: parsed,
-      error: parsed.passed ? null : `Reviewer rejected diff: ${(parsed.issues || []).join('; ') || 'Rubric check failed'}`,
+      error: isPassed ? null : `Reviewer rejected diff: ${(parsed.issues || []).join('; ') || 'Rubric check failed'}`,
       usage: res.usage
     };
   } catch (err) {
@@ -679,7 +830,7 @@ async function runReviewerGate(task, scopedFiles) {
 }
 
 // 6. Morning Report Generator
-function writeMorningReport(state) {
+export function writeMorningReport(state) {
   const lines = [
     `# Minimal Agent Orchestration — Execution Report (v2.1 Standard)`,
     `Generated at: ${new Date().toISOString()}`,
@@ -699,7 +850,8 @@ function writeMorningReport(state) {
   } else {
     for (const t of state.completed_tasks) {
       const tid = t.task_id || t.id;
-      lines.push(`- **${tid}** [${t.mode || 'quick'}]: ${t.title || 'Untitled'} (Commit: \`${t.commit_hash || 'none'}\`, Retries: ${t.retries || 0})`);
+      const displayTitle = t.title || sanitizeGoal(t.goal || '') || 'Untitled';
+      lines.push(`- **${tid}** [${t.mode || 'quick'}]: ${displayTitle} (Commit: \`${t.commit_hash || 'none'}\`, Retries: ${t.retries || 0})`);
     }
   }
 
@@ -709,7 +861,8 @@ function writeMorningReport(state) {
   } else {
     for (const t of state.blocked_tasks) {
       const tid = t.task_id || t.id;
-      lines.push(`- **${tid}** [${t.mode || 'quick'}]: ${t.title || ''} — Reason: \`${t.block_reason || 'Unknown error'}\``);
+      const displayTitle = t.title || sanitizeGoal(t.goal || '') || 'Untitled';
+      lines.push(`- **${tid}** [${t.mode || 'quick'}]: ${displayTitle} — Reason: \`${t.block_reason || 'Unknown error'}\``);
     }
   }
 
@@ -718,14 +871,34 @@ function writeMorningReport(state) {
 
 // 7. Main Orchestrator Loop
 async function runOrchestrator() {
+  const cfgValidation = validateConfig(teamConfig, policyConfig, projectConfig);
+  if (!cfgValidation.ok) {
+    console.error(`[Orchestrator] Configuration validation failed:\n  - ${cfgValidation.errors.join('\n  - ')}`);
+    process.exit(1);
+  }
+
   if (!acquireLock()) {
     console.error('[Orchestrator] Could not acquire lock. Exiting.');
     process.exit(1);
   }
 
+  let activeRollbackTargets = [];
+  const handleGracefulShutdown = (sig) => {
+    if (activeRollbackTargets.length > 0) {
+      console.warn(`\n[Orchestrator] Caught ${sig} with uncommitted changes on disk. Rolling back scoped files...`);
+      try {
+        rollback(activeRollbackTargets);
+      } catch {}
+      activeRollbackTargets = [];
+    }
+    updateLiveStatus({ active: false, current_stage: 'idle', stage_started_at: null });
+    releaseLock();
+    process.exit(0);
+  };
+
   process.on('exit', () => releaseLock());
-  process.on('SIGINT', () => { releaseLock(); process.exit(0); });
-  process.on('SIGTERM', () => { releaseLock(); process.exit(0); });
+  process.on('SIGINT', () => handleGracefulShutdown('SIGINT'));
+  process.on('SIGTERM', () => handleGracefulShutdown('SIGTERM'));
 
   console.log('[Orchestrator] Starting session (v2.1 Mode-Based Engine)...');
 
@@ -771,11 +944,11 @@ async function runOrchestrator() {
     }
   });
 
-  // Pre-flight 9Router Healthcheck (HR-6): Abort session cleanly without mutating active tasks if 9Router is down
+  // Pre-flight 9Router Healthcheck (HR-6 with retry): Abort session cleanly without mutating active tasks if 9Router is down
   if (taskFiles.length > 0) {
-    const health = await check9RouterHealth(teamConfig, policyConfig);
+    const health = await check9RouterHealthWithRetry(teamConfig, policyConfig);
     if (!health.ok) {
-      console.error(`[Orchestrator] Pre-flight healthcheck FAILED: ${health.error}`);
+      console.error(`[Orchestrator] Pre-flight healthcheck FAILED after retries: ${health.error}`);
       console.error('[Orchestrator] Aborting session safely without mutating active tasks.');
       updateLiveStatus({ active: false, current_stage: 'blocked', last_error: health.error });
       releaseLock();
@@ -968,11 +1141,15 @@ async function runOrchestrator() {
       // Helper to record validation/review errors and enforce identical-error loop breaker
       const handleStageFailure = (stageName, errSummary, errHash) => {
         validationPassed = stageName === 'review' ? true : false;
+        const conciseErr = stageName === 'validate'
+          ? formatValidationErrorForRetry(errSummary, 1800)
+          : String(errSummary || '');
+
         task.error_history.push({
           attempt: retries + 1,
           stage: stageName,
           error_hash: errHash,
-          summary: errSummary.slice(0, 500)
+          summary: conciseErr.slice(-600)
         });
 
         if (errHash === lastErrorHash) {
@@ -984,6 +1161,7 @@ async function runOrchestrator() {
 
         if (rollbackOnValidationFail) {
           rollback(getRollbackTargets());
+          activeRollbackTargets = [];
         }
 
         if (consecutiveIdenticalErrors >= abortOnIdentical) {
@@ -993,7 +1171,7 @@ async function runOrchestrator() {
           return { shouldBreak: true };
         }
 
-        task.last_error = errSummary;
+        task.last_error = conciseErr;
         retries++;
         return { shouldBreak: false };
       };
@@ -1005,6 +1183,12 @@ async function runOrchestrator() {
       // TASK EXECUTION LOOP
       // ==========================================
       while (retries <= maxRetries && !isTaskDone) {
+        if (retries > 0) {
+          const backoffMs = Math.min(retries * 3000, 10000);
+          console.log(`[Orchestrator] Waiting ${backoffMs / 1000}s before retry attempt ${retries + 1}/${maxRetries + 1}...`);
+          await new Promise(r => setTimeout(r, backoffMs));
+        }
+
         if (taskTokensUsed > tokenBudgetPerTask) {
           blockReason = `Exceeded token budget (${taskTokensUsed} > ${tokenBudgetPerTask})`;
           task.status = 'blocked';
@@ -1027,6 +1211,7 @@ async function runOrchestrator() {
         const writerModel = writerRole.model || 'deepseek-ai/deepseek-v4.1-flash-1017';
         const writerFallback = writerRole.fallback_model || null;
         const writerTemp = writerRole.temperature ?? 0.1;
+        const writerMaxThinking = writerRole.max_thinking_tokens;
         const writerSystemRole = fs.existsSync(path.resolve(TEAM_DIR, 'roles', 'writer.md'))
           ? fs.readFileSync(path.resolve(TEAM_DIR, 'roles', 'writer.md'), 'utf8')
           : 'You are the backend code writer. Return changes in <<<<<<< SEARCH / ======= / >>>>>>> REPLACE blocks.';
@@ -1060,7 +1245,9 @@ async function runOrchestrator() {
             : 'Please generate the exact code modifications to fulfill the goal. Think briefly (<100 words) and immediately output the SEARCH/REPLACE blocks.'
         ].join('\n\n');
 
-        const writerRes = await call9Router(writerModel, writerSystemRole, userMessage, 16384, writerFallback, writerTemp);
+        const writerRes = await call9Router(writerModel, writerSystemRole, userMessage, 16384, writerFallback, writerTemp, {
+          maxThinkingTokens: writerMaxThinking
+        });
 
         if (!writerRes.ok) {
           console.error(`[Writer] API error: ${writerRes.error}`);
@@ -1100,6 +1287,18 @@ async function runOrchestrator() {
           }
         });
 
+        // Step A.5: Unconditional Truncation Guard (when finish_reason === 'length')
+        // Even if output was cut cleanly between two SEARCH/REPLACE blocks, applying partial blocks risks committing half a feature.
+        if (writerRes.finishReason === 'length') {
+          const searchCount = (writerRes.content.match(/<<<<<<< SEARCH/g) || []).length;
+          const replaceCount = (writerRes.content.match(/>>>>>>> REPLACE/g) || []).length;
+          const truncErr = `Writer output truncated at max_tokens=16384 (finish_reason="length", ${searchCount} SEARCH / ${replaceCount} REPLACE blocks). Refusing to apply partial output; emit smaller/more concise blocks or split task.${rawLogPath ? ` (raw output: ${path.relative(REPO_ROOT, rawLogPath)})` : ''}`;
+          console.warn(`[Writer] ${truncErr}`);
+          const failAction = handleStageFailure('apply', truncErr, hashString('truncated_output_length'));
+          if (failAction.shouldBreak) break;
+          continue;
+        }
+
         // Step B: 8-Step Applier Pipeline
         updateLiveStatus({
           current_stage: 'applier',
@@ -1128,6 +1327,7 @@ async function runOrchestrator() {
             blockReason = fullApplyErr;
             task.status = 'blocked';
             rollback(getRollbackTargets());
+            activeRollbackTargets = [];
             break;
           }
 
@@ -1140,6 +1340,7 @@ async function runOrchestrator() {
         task.scope_expansions = applyRes.scope_expansions || task.scope_expansions;
         const allTaskFiles = Array.from(new Set([...task.scope, ...(task.scope_expansions || []), ...(applyRes.modified || [])]));
         actualModifiedFiles = getModifiedFiles(allTaskFiles);
+        activeRollbackTargets = getRollbackTargets();
 
         updateLiveStatus({
           scope_files: allTaskFiles.map(f => ({
@@ -1278,6 +1479,7 @@ async function runOrchestrator() {
           );
           if (commitRes.ok) {
             task.commit_hash = commitRes.hash;
+            activeRollbackTargets = [];
           } else {
             blockReason = `Git commit failed: ${commitRes.error}`;
             task.status = 'blocked';
@@ -1286,12 +1488,14 @@ async function runOrchestrator() {
           }
         }
 
+        activeRollbackTargets = [];
         isTaskDone = true;
         break;
       }
     } catch (err) {
       if (!blockReason) blockReason = err.message;
     } finally {
+      activeRollbackTargets = [];
       // ==========================================
       // 3.2 POST-HOOK (0-Token Atomic Post-Report)
       // ==========================================
