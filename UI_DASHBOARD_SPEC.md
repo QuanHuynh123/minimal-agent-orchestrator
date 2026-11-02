@@ -1,178 +1,165 @@
-# Bản Thiết Kế Kỹ Thuật & Giao Diện: Orchestrator Read-Only Live Monitor (v2.0)
+# Bản Đặc Tả Kỹ Thuật & Giao Diện: Orchestrator Read-Only Live Monitor (v3.0)
 
-- **Document ID:** `SPEC-ORCHESTRATOR-UI-V2.0`
-- **Target Files:** `agent-team/scripts/dashboard.mjs`, `agent-team/ui/index.html`
-- **Triết lý Cốt lõi:** **Read-Only Telemetry & Zero Fake Data** — Dashboard chỉ là lớp kính quan sát trực tiếp từ dữ liệu thật (`live-status.json`, `team.yaml`, `project.yaml`, `task-state.json`, `state/runs/*`), tuyệt đối không điều khiển, không sửa state, và không tự bịa dữ liệu khi trường nguồn trống.
+- **Document ID:** `SPEC-ORCHESTRATOR-UI-V3.0`
+- **Target Files:**
+  - Frontend UI: [`agent-team/ui/index.html`](file:///d:/tool-download/agent-team/ui/index.html)
+  - Read-Only Telemetry Server: [`agent-team/scripts/dashboard.mjs`](file:///d:/tool-download/agent-team/scripts/dashboard.mjs)
+- **Triết lý Cốt lõi:**
+  1. **Read-Only Telemetry & Zero Fake Data:** Chỉ hiển thị dữ liệu thật từ `/api/snapshot` (`live-status.json`, `team.yaml`, `project.yaml`, `policy.yaml`, `task-state.json`, `state/runs/*`). Không bịa dữ liệu giả khi trường nguồn trống.
+  2. **Phân tách rạch ròi "Nhân sự AI (`AI Squad Models`)" và "Cơ khí Thác nước (`Waterfall Pipeline Stages`)":** Các script deterministic (`applier.mjs`, `validator.mjs`, `git-guard.mjs`) thuộc về **Sơ đồ Thác nước**, tuyệt đối không nhét vào danh sách Nhân sự AI ở cột trái.
+  3. **Waterfall & Writer Sub-Flow làm Trung tâm Thị giác (Centerpiece):** Thay vì để khung chữ thô `Writer Raw Output` chiếm 60% màn hình, khu vực chính được chia thành **2 Tab**:
+     - **Tab 1 (Mặc định): `🌊 Waterfall & Writer Sub-Flow`** — Mô phỏng trực quan cả **Tầng Vĩ mô (Macro Waterfall 7 trạm)** lẫn **Tầng Vi mô (Micro Writer & Verification Sub-Flow)** theo đúng luồng chạy thực tế của dự án.
+     - **Tab 2 (Bật khi cần): `📄 Raw Output & Error Inspector`** — Xem chi tiết nội dung `attempt-N.txt` (`SEARCH/REPLACE` blocks) và full traceback khi cần soi code/lỗi.
 
 ---
 
-## 1. Đánh Giá Bản Review & 6 Điểm Cần Nâng Cấp Từ UI v1.1 Lên v2.0
+## 1. Bốn Vấn Đề Cốt Lõi Của Bản Cũ Cần Giải Quyết Triệt Để Ở v3.0
 
-Đối chiếu bản *UI Read-Only Dashboard Specification* với code thực tế hiện tại trong [`agent-team/scripts/dashboard.mjs`](file:///d:/tool-download/agent-team/scripts/dashboard.mjs) và [`agent-team/ui/index.html`](file:///d:/tool-download/agent-team/ui/index.html), chúng ta xác nhận **6 điểm hạn chế của bản v1.1 cần được giải quyết trong v2.0**:
-
-| # | Yêu cầu trong Bản Review | Hiện trạng ở Code UI v1.1 (`dashboard.mjs` / `index.html`) | Phương án Nâng cấp trong Bản Thiết kế v2.0 |
+| # | Vấn đề ở bản cũ (Từ thực tế chạy `127.0.0.1:4310`) | Nguyên nhân Gốc | Giải pháp Kiến trúc ở bản v3.0 |
 | :--- | :--- | :--- | :--- |
-| **1** | **Team / Roles phải render động từ cấu hình `team.yaml` + `live-status.json`** (không tự định nghĩa hay hardcode). | `ui/index.html` đang viết cứng 3 dòng HTML (`Writer`, `Validator`, `Reviewer`), bỏ sót `router` và tự gán cứng chữ `'deepseek-v4.1'`, `'claude-opus'` làm fallback. | Render động danh sách role từ `data.roles` (trong `team.yaml`) + các chốt deterministic (`applier`, `validator`, `git`) dựa trên `current_stage` và `live_status.roles_status`. Hiển thị đúng `display_name` + `model` thật. |
-| **2** | **Không tự bịa dữ liệu (Zero Fake Fallback)** khi trường nguồn không có. | `dashboard.mjs` (dòng 161–168) dùng regex cũ `Model Used:` (trong khi `orchestrator.mjs` đã đổi thành `Model Requested:` / `Model Responded:`), và khi không khớp thì tự điền `'deepseek-v4.1'` và `'stop'`! | Sửa parser trong `dashboard.mjs` đọc đúng `Model Requested`, `Model Responded`, `Finish Reason`. Nếu không có thì trả `'unknown'` / `'N/A'`, tuyệt đối không điền giá trị giả. |
-| **3** | **Workflow Lifecycle & Elapsed Timer cho mọi Stage đang chạy** (bao gồm trạng thái cuối `Done / Blocked`). | Thanh Pipeline hiện chỉ có 7 bước và đồng hồ `⏱ 0s` chỉ hiện riêng ở bước `Writer`. Khi `Validator` chạy 231 unit tests (~30s), giao diện đứng im không có bộ đếm giây. | Thêm bước kết thúc `6. Done / Blocked` trên thanh Pipeline. Đồng hồ đếm giây (`⏱ Elapsed`) tự động gắn vào **bất kỳ stage nào đang active** dựa trên `stage_started_at`, kèm hiển thị tổng thời gian chạy task (`task_started_at`). |
-| **4** | **Hiển thị tách biệt rõ `Last Error` cạnh `Writer Raw Output`**. | `live_status.last_error` đã có trong JSON nhưng `ui/index.html` hoàn toàn **chưa render `last_error`**! Khi test fail hoặc bị chặn, người dùng không thấy khung báo lỗi màu đỏ. | Thêm **Banner / Callout `Last Error`** nổi bật ngay phía trên (hoặc tab cạnh) `Writer Raw Output` bất cứ khi nào `live_status.last_error` khác `null`. |
-| **5** | **Task Queue phải hiển thị cả danh sách `Pending / Active`, `Blocked` (kèm lý do), và `Recent Completed` (kèm commit hash)** đã gộp theo `task_id`. | API `/api/snapshot` đã trả về `queue.active`, `queue.blocked`, `queue.recent_completed`, nhưng `ui/index.html` mới chỉ vẽ 3 ô số đếm (`0 / 16 / 0`) và bỏ trống phần danh sách! | Nâng cấp thẻ **Task Queue** ở cột trái: bên dưới 3 ô số đếm là danh sách cuộn gọn gàng hiển thị các task `Active/Pending`, `Blocked` (kèm `block_reason`), và 5 task `Completed` gần nhất (kèm mã `commit_hash`). |
-| **6** | **Hiển thị rõ `Project / Repo`, `Current Task Label` & `Current Stage` trên Top Bar & Active Task Card**. | Chưa đọc `project_id` / `allowed_dirs` từ `project.yaml`; Top Bar chưa hiện nhãn stage hiện tại. | Bổ sung `project` metadata (`id`, `allowed_dirs`) từ `config/project.yaml` vào `/api/snapshot` và hiển thị rõ trên Top Bar + Active Task Card. |
+| **1** | **Nhập nhằng giữa "AI Squad Roles" và "Waterfall Pipeline Scripts"** | Cột trái `SQUAD ROLES` đang liệt kê chung 4 Model AI (`Antigravity`, `Sonnet 4.5`, `DeepSeek V4.1`, `Opus 5.5`) với 3 script cơ khí (`Applier`, `Validator`, `Git Guard`). | **Cột trái (`AI SQUAD MODELS`)** chỉ hiển thị **4 vị trí Nhân sự AI** kèm chức danh rõ ràng trong quy trình (`IDE Coordinator`, `Planner / Router`, `Core Code Writer`, `Tech Lead Reviewer`). Còn `Applier`, `Validator`, `Git Guard` được trả về đúng vị trí của chúng là các **Trạm Cơ khí trên Sơ đồ Thác nước (Waterfall Canvas)**. |
+| **2** | **Đảo ngược Tỷ lệ Ưu tiên Thị giác (Visual Hierarchy)** | Thanh Waterfall ở trên cùng chỉ cao `44px` với các nút chữ bé xíu, trong khi khung text thô `WRITER RAW OUTPUT` lại chiếm 60% diện tích màn hình chính dù người vận hành rất ít khi đọc từng dòng `<<<<<<< SEARCH`. | Xóa thanh strip `44px` chật hẹp trên đầu. Đưa **Sơ đồ Thác nước & Luồng Writer (Waterfall & Writer Flow)** vào **Trung tâm Khung phải trên (Tab 1 - Mặc định)** với các Node Card lớn, rõ ràng. Đẩy `Writer Raw Output & Diff Inspector` sang **Tab 2** (chỉ mở khi muốn đọc raw diff/log). |
+| **3** | **Thiếu mô phỏng Luồng Nội bộ của Đội Writer (`Writer Sub-Workflow`)** | Trạm `2. Writer` hiện chỉ là 1 pill đơn điệu, không cho thấy quy trình thực tế bên trong `orchestrator.mjs` + `roles/writer.md` (Nạp scope $\rightarrow$ Tiêm luật `policy.yaml` / lỗi Retry $\rightarrow$ Gọi 9Router $\rightarrow$ Kiểm tra `Model Match` & `finish_reason` $\rightarrow$ Bóc tách `SEARCH/REPLACE` $\rightarrow$ Vòng lặp Retry `1..3`). | Thiết kế **Bản đồ 2 Tầng (2-Layer Flow Canvas)** ngay trong Tab 1: **Tầng 1 (Macro Waterfall)** hiển thị toàn cảnh 7 trạm thác nước + đường vòng **Retry Loop**; **Tầng 2 (Micro Writer & Gate Sub-Flow)** mô phỏng chi tiết 4 bước nội bộ của Writer + 2 chốt kiểm tra `Applier (8-Step Guard)` & `Validator (Fast + Suite)` bằng dữ liệu thật. |
+| **4** | **2 Bug Telemetry: Đồng hồ đếm vô tận (`53553s`) & Báo lỗi giả sau khi Retry thành công** | 1) Khi `current_stage` là `idle`/`done`, UI vẫn lấy `Date.now() - task_started_at` khiến đồng hồ chạy suốt 15 tiếng (`53553s`).<br>2) Khi Attempt 1 lỗi nhưng Attempt 2 `done`, `last_error` của Attempt 1 vẫn lưu lại làm hiện khung đỏ báo lỗi giả. | 1) Khi task đã kết thúc (`idle`, `done`, `blocked`), đồng hồ chốt thời gian chạy thực tế (`task_completed_at - task_started_at`, VD: `⏱ 97s`).<br>2) Khi task `done`, xóa `last_error = null` (chỉ hiển thị badge nhỏ `"Recovered on Attempt 2/3"` để biết task đã tự sửa lỗi thành công). |
 
 ---
 
-## 2. Kiến Trúc Layout & Phân Vùng Thị Giác (Bento Dark v2.0)
+## 2. Kiến Trúc Bố Cục & Phân Vùng Thị Giác (Bento Obsidian v3.0)
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ 1. TOP BAR (52px cố định)                                                                            │
-│ [⚡ Orchestrator Monitor] [Project: tool-download-stable] │ [9Router: ● 12ms] [PID: 14820]           │
-│                                                           │ [Stage: VALIDATOR] [Tokens: 789k↑ 422k↓] │
-├──────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ 2. WORKFLOW LIFECYCLE STRIP (44px cố định — Chỉ 1 Stage sáng đèn + Đồng hồ đếm giây tại Stage đó)    │
-│ [0. Pre-Flight ✓] ➔ [1. Router ✓] ➔ [2. Writer ✓] ➔ [3. Applier ✓] ➔ [4. Validator ● ⏱ 14s]         │
-│                   ➔ [4b. Review ○] ➔ [5. Git ○] ➔ [6. Done / Blocked ○]                              │
-├───────────────────────────────────────────────┬──────────────────────────────────────────────────────┤
-│ 3. CỘT TRÁI (390px cố định, cuộn độc lập)     │ 4. CỘT PHẢI TRÊN (60% chiều cao phải)                │
-│                                               │                                                      │
-│ ┌─ A. ACTIVE TASK & SCOPE ──────────────────┐ │ ┌─ A. LAST ERROR ALERT (Chỉ hiện khi có lỗi) ──────┐ │
-│ │ ID: T-2026-11-01-012      [Attempt 1 / 3] │ │ │ ⚠️ LAST ERROR / BLOCKER:                         │ │
-│ │ [STATUS: RUNNING] [MODE: QUICK] [RISK:LOW]│ │ │ FAIL: test_inpaint (AssertionError: ...)         │ │
-│ │ Stage: validator (⏱ 14s) | Task: ⏱ 38s    │ │ └──────────────────────────────────────────────────┘ │
-│ │ Goal: Nâng cấp inpaint_ai trong core/...  │ │ ┌─ B. WRITER RAW OUTPUT INSPECTOR ─────────────────┐ │
-│ │ Locked Scope (2 files):                   │ │ │ File: state/runs/T-.../attempt-1.txt (12 KB)     │ │
-│ │  • core/eraser.py              [MODIFIED] │ │ │ Req: Deepseek V4.1  │ Resp: deepseek-v4.1-flash  │ │
-│ │  • tests/test_eraser.py        [MODIFIED] │ │ │ Finish Reason: [stop]                            │ │
-│ └───────────────────────────────────────────┘ │ │ ──────────────────────────────────────────────── │ │
-│ ┌─ B. SQUAD ROLES (Render động từ config) ──┐ │ │ ### FILE: core/eraser.py                         │ │
-│ │ • router    claude-sonnet-4.5-th  [IDLE]  │ │ │ <<<<<<< SEARCH                                   │ │
-│ │ • writer    deepseek-v4.1-flash   [DONE]  │ │ │ ...                                              │ │
-│ │ • validator scripts/validator.mjs [WORK]  │ │ └──────────────────────────────────────────────────┘ │
-│ │ • reviewer  claude-sonnet-4.5     [SKIP]  │ ├──────────────────────────────────────────────────────┤
-│ └───────────────────────────────────────────┘ │ 5. CỘT PHẢI DƯỚI: LIVE CONSOLE LOGS (40% chiều cao)  │
-│ ┌─ C. TASK QUEUE (Deduplicated by task_id) ─┐ │ ┌──────────────────────────────────────────────────┐ │
-│ │ [ Active: 0 ] [ Done: 16 ] [ Blocked: 0 ] │ │ │ [Filter logs...]              [⏸ Pause] [Clear] │ │
-│ │ Recent / Queue List:                      │ │ │ 11:30:01 [INFO]  [START] T-2026-11-01-012 ...    │ │
-│ │  ✓ T-2026-11-01-012  [28a30b1]  (Done)    │ │ │ 11:30:19 [INFO]  [Applier] Applied 2 blocks      │ │
-│ │  ✓ T-2026-11-01-011  [e56987c]  (Done)    │ │ │ 11:30:20 [WARN]  [Reviewer] Skipped AI review... │ │
-│ └───────────────────────────────────────────┘ │ └──────────────────────────────────────────────────┘ │
-└───────────────────────────────────────────────┴──────────────────────────────────────────────────────┘
-```
-
----
-
-## 3. Data Contract Chuẩn Hóa (`GET /api/snapshot`)
-
-Backend `agent-team/scripts/dashboard.mjs` trả về đúng cấu trúc JSON chỉ-đọc sau (đã loại bỏ hoàn toàn `providers`, `api_key_env`, `default_key`):
-
-```json
-{
-  "timestamp": "2026-11-02T05:00:00.000Z",
-  "project": {
-    "id": "tool-download-stable",
-    "allowed_dirs": ["core/", "ui/", "ui_bridge/", "tests/"]
-  },
-  "orchestrator": {
-    "running": true,
-    "pid": 14820,
-    "started_at": "2026-11-02T04:58:00.000Z"
-  },
-  "router_health": {
-    "ok": true,
-    "latency_ms": 14,
-    "model_count": 12,
-    "error": null
-  },
-  "roles": {
-    "router": { "enabled": true, "display_name": "Claude Sonnet 4.5 Thinking", "model": "kr/claude-sonnet-4.5-thinking" },
-    "writer": { "enabled": true, "display_name": "DeepSeek V4.1 Flash", "model": "Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017" },
-    "reviewer": { "enabled": true, "display_name": "Claude Sonnet 4.5", "model": "kr/claude-sonnet-4.5" },
-    "validator": { "enabled": true, "type": "deterministic_script", "script": "scripts/validator.mjs" }
-  },
-  "live_status": {
-    "active": true,
-    "pid": 14820,
-    "current_task_id": "T-2026-11-01-012",
-    "current_task_title": "Nâng cấp inpaint_ai trong core/eraser.py...",
-    "current_stage": "validator",
-    "stage_started_at": "2026-11-02T04:59:45.000Z",
-    "task_started_at": "2026-11-02T04:59:10.000Z",
-    "mode": "quick",
-    "risk_level": "low",
-    "attempt": 1,
-    "max_retries": 3,
-    "scope_files": [
-      { "path": "core/eraser.py", "status": "modified" },
-      { "path": "tests/test_eraser.py", "status": "modified" }
-    ],
-    "roles_status": {
-      "writer": { "model": "Deepseek V4.1 Flash/...", "status": "done" },
-      "validator": { "status": "working" },
-      "reviewer": { "status": "idle" }
-    },
-    "last_error": null,
-    "tokens": {
-      "task_input": 18420,
-      "task_output": 2150,
-      "session_input": 789739,
-      "session_output": 422870
-    },
-    "recent_logs": [
-      { "ts": "11:59:10", "level": "info", "msg": "[START] T-2026-11-01-012 | Mode: quick..." }
-    ]
-  },
-  "queue": {
-    "active_count": 0,
-    "completed_count": 16,
-    "blocked_count": 0,
-    "active": [],
-    "blocked": [],
-    "recent_completed": [
-      {
-        "task_id": "T-2026-11-01-012",
-        "title": "Nâng cấp inpaint_ai trong core/eraser.py...",
-        "mode": "quick",
-        "status": "done",
-        "commit_hash": "28a30b1a0221ed8ca4f72377e888bf3701fb2925",
-        "retries": 1,
-        "completed_at": "2026-11-01T16:42:03.550Z"
-      }
-    ]
-  },
-  "latest_output": {
-    "file_path": "state/runs/T-2026-11-01-012/attempt-2.txt",
-    "content": "=== WRITER ATTEMPT 2 ===\n...",
-    "model_requested": "Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017",
-    "model_responded": "deepseek-ai/deepseek-v4.1-flash-1017",
-    "finish_reason": "stop",
-    "file_size_bytes": 4120,
-    "truncated": false
-  }
-}
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 1. TOP BAR (52px cố định)                                                                                  │
+│ [⚡ 9Router Orchestrator v3.0] [Project: tool-download-stable] │ [Stage: IDLE] [9Router :20128 ● 12ms]     │
+│                                                                │ [PID: IDLE] [Tokens: 789.7k↑ | 422.9k↓]   │
+├───────────────────────────────────────────────┬────────────────────────────────────────────────────────────┤
+│ 2. CỘT TRÁI (380px cố định, cuộn độc lập)     │ 3. CỘT PHẢI TRÊN (64% chiều cao phải — Vùng Tab Trung Tâm) │
+│                                               │                                                            │
+│ ┌─ A. ACTIVE / LAST TASK & LOCKED SCOPE ────┐ │ ┌─ TAB HEADER BAR ───────────────────────────────────────┐ │
+│ │ T-2026-11-01-012          [ATTEMPT 2 / 3] │ │ │ [🌊 1. Waterfall & Writer Flow (Active)]               │ │
+│ │ [STATUS: DONE ✓] [MODE: QUICK] [RISK: LOW]│ │ │ [📄 2. Raw Output & Error Inspector (6 KB | stop)]     │ │
+│ │ Duration: ⏱ 1m 37s (Recovered on Retry 1) │ │ └────────────────────────────────────────────────────────┘ │
+│ │ Goal: Nâng cấp inpaint_ai trong core/...  │ │ ┌─ TAB 1: 2-LAYER WATERFALL & WRITER SUB-FLOW CANVAS ────┐ │
+│ │ Locked Scope (2 files):                   │ │ │                                                        │ │
+│ │  • core/eraser.py             [VALIDATED] │ │ │ PHẦN A: MACRO WATERFALL PIPELINE (7 Trạm + Retry Loop) │ │
+│ │  • tests/test_eraser.py       [VALIDATED] │ │ │                                                        │ │
+│ └───────────────────────────────────────────┘ │ │  ┌────────────┐   ┌────────────┐   ╔══════════════╗    │ │
+│                                               │ │  │0.Pre-Flight│──►│ 1. Router  │──►║  2. WRITER   ║    │ │
+│ ┌─ B. AI SQUAD (CHỈ NHÂN SỰ MODEL AI) ──────┐ │ │  │ Baseline ✓ │   │Scope Lock ✓│   ║DeepSeek V4 ✓ ║    │ │
+│ │ (Tuyệt đối không trộn script cơ khí)      │ │ │  └────────────┘   └────────────┘   ╚══════╤═══════╝    │ │
+│ │                                           │ │ │         ▲─ ─ ─ ─ (Retry Loop: Used 1/2) ─ ┼ ─ ─ ┐      │ │
+│ │ ⚡ Antigravity (IDE Coordinator)  [ONLINE] │ │ │                                           ▼     │      │ │
+│ │   Vai trò: Architect & Task Planner       │ │ │  ┌────────────┐   ┌────────────┐   ┌────────────┴───┐  │ │
+│ │                                           │ │ │  │4b.Reviewer │◄──│4.Validator │◄──│  3. Applier    │  │ │
+│ │ 🧭 Planner / UI Router             [IDLE] │ │ │  │  SKIPPED   │   │  PASSED ✓  │   │8-Step Guard ✓  │  │ │
+│ │   Model: kr/claude-sonnet-4.5-thinking    │ │ │  └─────┬──────┘   └────────────┘   └────────────────┘  │ │
+│ │   Trigger: Auto khi > 2 files / UI design │ │ │        ▼                                               │ │
+│ │                                           │ │ │  ┌────────────┐   ┌───────────────────────────────┐    │ │
+│ │ ✍️ Core Code Writer                [DONE] │ │ │  │5.Git Guard │──►│ 6. Final State: DONE ✓        │    │ │
+│ │   Model: Deepseek V4.1 Flash/...          │ │ │  │Committed ✓ │   │ Commit: 28a30b1 (Attempt 2/3) │    │ │
+│ │   Last Run: 41.5k in / 2.2k out | stop    │ │ │  └────────────┘   └───────────────────────────────┘    │ │
+│ │                                           │ │ │ ────────────────────────────────────────────────────── │ │
+│ │ 🔍 Tech Lead Reviewer           [SKIPPED] │ │ │ PHẦN B: MICRO SUB-FLOW (Mổ xẻ Luồng Writer & Gates)    │ │
+│ │   Model: ag/claude-opus-5-5-high          │ │ │                                                        │ │
+│ │   Gate: risk_level >= high (Current: low) │ │ │  [2.1 Context & Rules] ➔ [2.2 Retry Feedback]          │ │
+│ └───────────────────────────────────────────┘ │ │   • 2 locked files        • Attempt 2 / 3              │ │
+│                                               │ │   • Policy: TAB (\t)      • Injected Attempt 1 FAIL    │ │
+│ ┌─ C. TASK QUEUE & ARCHIVE ─────────────────┐ │ │          │                                             │ │
+│ │ [ Active: 0 ] [ Done: 16 ] [ Blocked: 0 ] │ │ │          ▼                                             │ │
+│ │  ✓ T-2026-11-01-012  [28a30b1]   Retry: 1 │ │ │  [2.3 LLM Generation]  ➔ [2.4 Output & Gate Guards]    │ │
+│ │  ✓ T-2026-11-01-011  [e56987c]   Retry: 0 │ │ │   • Req == Resp Match ✓   • Finish: stop (No trunc) ✓  │ │
+│ │  ✓ T-2026-11-01-010  [9a12f4b]   Retry: 0 │ │ │   • 41,547 ➔ 2,261 tok    • 2 SEARCH/REPLACE blocks ✓  │ │
+│ └───────────────────────────────────────────┘ │ └────────────────────────────────────────────────────────┘ │
+│                                               ├────────────────────────────────────────────────────────────┤
+│                                               │ 4. CỘT PHẢI DƯỚI: LIVE CONSOLE LOGS (36% chiều cao phải)   │
+│                                               │ ┌────────────────────────────────────────────────────────┐ │
+│                                               │ │ [Filter logs...]                    [⏸ Pause] [Clear] │ │
+│                                               │ │ 23:40:25 [INFO] [START] T-2026-11-01-012 | Mode: quick │ │
+│                                               │ │ 23:41:23 [WARN] [Validator] Suite check failed (Att 1) │ │
+│                                               │ │ 23:42:03 [INFO] [REPORT] T-2026-11-01-012 | Status:done│ │
+│                                               │ └────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. Quy Tắc Màu Sắc, Typography & Bảo Mật Hiển Thị (Dành cho Designer & FE Dev)
+## 3. Đặc Tả Chi Tiết Từng Khu Vực (Dành cho Designer & FE Dev)
 
-1. **Bảng màu Trạng thái Ngữ nghĩa (Semantic Status Palette — Không dùng màu ẩn logic):**
-   - **Success / Done / Validated (`#10b981` — Emerald):** Luôn đi kèm nhãn chữ tường minh `DONE`, `PASSED`, `APPROVED`, `VALIDATED` hoặc dấu `✓`.
-   - **Active / Working (`#3b82f6` — Blue & `#f59e0b` — Amber):** Luôn đi kèm nhãn `WORKING`, `RUNNING`, `MODIFIED` và đồng hồ `⏱ Ns`.
-   - **Blocked / Error / Rejected (`#ef4444` — Red):** Luôn đi kèm nhãn `BLOCKED`, `FAILED`, `ERROR`, `TRUNCATED` hoặc dấu `✕`.
-   - **Idle / Skipped (`#64748b` — Slate Gray):** Đi kèm nhãn `IDLE`, `PENDING`, `SKIPPED`.
-2. **Typography & Độ dễ đọc:**
-   - Heading & Card Title: `11px–14px`, `font-weight: 700`, uppercase cho nhãn phân mục.
-   - Code, File Path, Task ID, Commit Hash, Timers, Logs: Bắt buộc dùng `monospace` (`JetBrains Mono`, `Cascadia Code`, `Consolas`).
-3. **Bảo mật Chống XSS & Lộ Secret:**
-   - **Backend (`dashboard.mjs`):** Chỉ lấy `teamYaml.roles` và `projectYaml.project.id` / `allowed_dirs`. Tuyệt đối không trả `teamYaml.providers` qua API.
-   - **Frontend (`ui/index.html`):** 100% dữ liệu động (log, tiêu đề task, đường dẫn file, raw output, last error) phải gán qua `.textContent` hoặc `document.createElement()`. Cấm dùng `.innerHTML` với dữ liệu từ API.
+### 3.1. Cột Trái — Khu A: `ACTIVE / LAST TASK` & Đồng hồ Chuẩn Xác
+- **Hiển thị:**
+  - `current_task_id`, Badge `ATTEMPT X / Y` (`live.attempt / live.max_retries`).
+  - Hàng pills:
+    - `STATUS`: Nếu `live.active === true` $\rightarrow$ `RUNNING` (xanh dương); nếu `current_stage === 'done'` hoặc `task_final_status === 'done'` $\rightarrow$ `DONE ✓` (xanh lá); nếu `current_stage === 'blocked'` $\rightarrow$ `BLOCKED ✕` (đỏ).
+    - `MODE`: `QUICK` hoặc `STANDARD`.
+    - `RISK`: `LOW` / `MEDIUM` / `HIGH`.
+    - `DURATION / TIMER`:
+      - **Quy tắc chống đếm vô tận (BẮT BUỘC):**
+        - Chỉ đếm giây realtime (`Date.now() - Date.parse(task_started_at)`) khi **Orchestrator đang chạy (`orchestrator.running === true`) VÀ `current_stage` không nằm trong `['idle', 'done', 'blocked', 'failed']`**.
+        - Khi task đã xong hoặc hệ thống `idle`: Nếu có `live_status.task_completed_at` và `live_status.task_started_at`, hiển thị tổng thời gian tĩnh (VD: `⏱ 97s` hoặc `⏱ 1m 37s`). Nếu không tính được, hiển thị `⏱ --`. Tuyệt đối không cộng dồn lên `53553s`!
+  - **Locked Scope Files:** Hiển thị danh sách các file trong `live_status.scope_files` kèm badge `LOCKED` / `MODIFIED` / `VALIDATED` / `ROLLED_BACK`.
+
+### 3.2. Cột Trái — Khu B: `AI SQUAD MODELS` (Thuần Khiết 100% Nhân Sự AI)
+- **Nguyên tắc:** Tuyệt đối **KHÔNG** render `Applier`, `Validator`, `Git Guard` ở đây. Chỉ render đúng **4 vị trí Nhân sự AI** trong kiến trúc:
+  1. **`⚡ Antigravity (IDE Coordinator)`**
+     - **Chức danh (Role Subtitle):** `Architect, UI & Task Coordinator`
+     - **Model:** `Google Antigravity (Gemini)`
+     - **Badge:** `ONLINE`
+  2. **`🧭 Planner & Scope Router` (`roles.router`)**
+     - **Chức danh:** `Scope Planner & UI/UX Specialist`
+     - **Model:** Lấy từ `data.roles.router.model` (VD: `kr/claude-sonnet-4.5-thinking`).
+     - **Điều kiện kích hoạt (Rule Line):** `Trigger: standard mode / >2 files`
+     - **Badge:** Dựa trên `current_stage === 'router'` (`WORKING`) hoặc `roles_status.router?.status` (`IDLE` / `DONE` / `SKIPPED` / `DISABLED`).
+  3. **`✍️ Core Code Writer` (`roles.writer`)**
+     - **Chức danh:** `Autonomous SEARCH/REPLACE Engine`
+     - **Model:** Lấy từ `data.roles.writer.model` (VD: `Deepseek V4.1 Flash/...`).
+     - **Telemetry Line:** Hiển thị thông số thật từ `latest_output`: `Tokens: <prompt_tokens> in → <completion_tokens> out | Finish: <finish_reason>`.
+     - **Badge:** `WORKING` (khi `current_stage === 'writer'`), `DONE` (khi đã sinh xong), hoặc `IDLE`.
+  4. **`🔍 Tech Lead Reviewer` (`roles.reviewer`)**
+     - **Chức danh:** `High-Risk Diff & Security Auditor`
+     - **Model:** Lấy từ `data.roles.reviewer.model` (VD: `ag/claude-opus-5-5-high`).
+     - **Điều kiện kích hoạt (Rule Line):** Lấy từ `data.policy.approval_gates.review_min_risk_level` (VD: `Gate: risk_level >= high`).
+     - **Badge:** `WORKING`, `APPROVED`, `REJECTED`, `SKIPPED` (nếu task `risk_level: low`), hoặc `DISABLED` (nếu `enabled: false`).
 
 ---
 
-## 5. Checklist Nghiệm Thu cho FE Dev (`Acceptance Criteria`)
+### 3.3. Cột Phải Trên — Thiết Kế Hệ Thống 2 Tab (`Waterfall Flow` vs. `Raw Output`)
 
-- [x] **AC-1 (Dynamic Roles):** Thay thế 3 dòng role cố định trong `ui/index.html` bằng hàm `renderSquadRoles(data.roles, live.roles_status, live.current_stage)` tự động liệt kê đầy đủ các role trong `team.yaml` (`router`, `writer`, `validator`, `reviewer`, `applier`, `git`).
-- [x] **AC-2 (Zero Fake Data):** Trong `dashboard.mjs`, đọc đúng `Model Requested:` / `Model Responded:` / `Finish Reason:` từ file `attempt-N.txt`; nếu không có thì trả `'unknown'` / `'N/A'`.
-- [x] **AC-3 (Universal Stage Timer & Final Stage):** Hiển thị bộ đếm giây `⏱ Ns` ngay trên pill của bất kỳ stage nào đang active trên thanh Pipeline + bước cuối `6. Done / Blocked`.
-- [x] **AC-4 (Last Error Callout):** Khi `live_status.last_error` có nội dung, hiển thị khung cảnh báo đỏ `Last Error / Blocker` ngay phía trên khung `Writer Raw Output`.
-- [x] **AC-5 (Interactive Queue List):** Hiển thị danh sách các task `Active/Pending`, `Blocked` (kèm lý do lỗi), và `Recent Completed` (kèm 7 ký tự đầu của `commit_hash` và số lần `retries`) ngay bên dưới 3 ô thống kê Queue.
+Trên đỉnh khung Phải Trên là thanh **Tab Switcher** gồm 2 tab:
+1. **`[ 🌊 Waterfall & Writer Flow ]` *(Mặc định Active)*:** Hiển thị toàn bộ kiến trúc thác nước và luồng nội bộ của đội Writer.
+2. **`[ 📄 Raw Output & Inspector ]` *(Hiển thị kèm badge dung lượng file `attempt-N.txt` & chấm đỏ nếu có `last_error`)*:** Bấm vào mới mở khung xem raw text `<<<<<<< SEARCH` và chi tiết lỗi.
+
+---
+
+#### Chi Tiết Tab 1: `🌊 Waterfall & Writer Flow` (Bản Đồ 2 Tầng)
+
+##### TẦNG 1: `MACRO WATERFALL PIPELINE` (Sơ đồ 7 Trạm Thác Nước Cơ Khí & AI)
+Thay thế thanh strip `44px` cũ bằng một lưới **7 Node Cards lớn**, mỗi Card hiển thị:
+- **Tên Trạm & Số thứ tự**
+- **Tác nhân thực thi** (Script cơ khí hay Model AI)
+- **Trạng thái + Bộ đếm giây `⏱ Ns`** (nếu đang ở trạm đó)
+- **Thông số đầu ra thực tế**
+
+Danh sách 7 Trạm trên Tầng 1:
+1. **`0. Pre-Flight & Baseline`** (`orchestrator.mjs` + `:20128/v1/models`)
+2. **`1. Router & Scope Lock`** (`roles.router` hoặc `Direct Lock (0-Token)`)
+3. **`2. WRITER ENGINE`** (`roles.writer` — `Attempt <attempt>/<max_retries>` | `<search_block_count> blocks`)
+4. **`3. Applier (8-Step Guard)`** (`scripts/applier.mjs` — Path Traversal, Locked Scope, Atomic `.tmp`)
+5. **`4. Validator Gate`** (`scripts/validator.mjs` — `Fast Check` + `Scoped Test Suite`, kèm **đường vòng `Bounded Retry Loop`** nối ngược về `2. Writer` khi `attempt > 1`)
+6. **`4b. Tech Lead Review`** (`roles.reviewer` — hiển thị rõ `SKIPPED (0-Token Gate)` khi `risk_level < review_min_risk_level`)
+7. **`5. Git Guard & Final State`** (`scripts/git-guard.mjs` — hiển thị mã commit `<7 ký tự commit_hash>` và trạng thái `DONE ✓` hoặc `Scoped Rollback Executed`)
+
+##### TẦNG 2: `MICRO WRITER & VERIFICATION SUB-FLOW` (Mô phỏng chi tiết Luồng Nội Bộ của Writer)
+Ngay bên dưới Tầng 1 là khung phóng đại chi tiết bên trong Trạm **Writer & Cổng Kiểm Tra**, gồm **4 Node bước tuần tự**:
+- **Bước 2.1: `Context & Rules Assembly`** (`live_status.scope_files.length` file + luật `TAB (\t) Only`, `Zero New Deps`, `Bounded Timeout`, `Strict Scope`)
+- **Bước 2.2: `Retry & Traceback Injection`** (`First Pass` nếu `attempt <= 1`; `Retry Pass #<attempt> — Injected Failure Tail` nếu `attempt > 1`)
+- **Bước 2.3: `9Router LLM Generation`** (`model_requested` vs `model_responded` + `prompt_tokens` $\rightarrow$ `completion_tokens`)
+- **Bước 2.4: `Contract & Truncation Guard`** (`finish_reason` + `<search_block_count> SEARCH/REPLACE blocks` trên `target_files`)
+
+---
+
+## 4. Checklist Nghiệm Thu cho Designer & FE Dev (`Acceptance Criteria v3.0`)
+
+- [ ] **AC-1 (Tách biệt Nhân sự AI & Cơ khí Thác nước):** Khung `AI SQUAD MODELS` ở cột trái chỉ chứa 4 Agent AI (`IDE Coordinator`, `Planner/Router`, `Core Writer`, `Tech Lead Reviewer`). `Applier`, `Validator`, `Git Guard` nằm hoàn toàn trên sơ đồ `Macro Waterfall Pipeline`.
+- [ ] **AC-2 (Giao diện 2 Tab ở Khung Chính Phải Trên):** Tab 1 (`🌊 Waterfall & Writer Flow`) mở mặc định với **Tầng 1 (7 trạm Macro Waterfall + Retry Loop)** và **Tầng 2 (4 bước Micro Sub-Flow của đội Writer)**; Tab 2 (`📄 Raw Output & Error Inspector`) chứa nội dung `attempt-N.txt` và full traceback.
+- [ ] **AC-3 (Sửa dứt điểm Đồng hồ chạy vô tận `53553s`):** Khi `orchestrator.running === false` hoặc `current_stage` là `'idle'` / `'done'` / `'blocked'`, đồng hồ hiển thị thời gian tĩnh `task_completed_at - task_started_at`.
+- [ ] **AC-4 (Không báo lỗi giả khi Task đã Retry thành công):** Khi `task_final_status === 'done'` (`last_error === null`), ẩn khung đỏ `LAST ERROR` và hiện trạng thái `Recovered on Attempt 2/3`.
+- [ ] **AC-5 (100% Anti-XSS & Read-Only):** Toàn bộ dữ liệu động render qua `.textContent` / DOM APIs, tuyệt đối không dùng `.innerHTML`.

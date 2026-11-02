@@ -133,11 +133,17 @@ function readLatestRunOutput(targetTaskId, targetLogPath) {
   if (!chosenPath || !fs.existsSync(chosenPath)) {
     return {
       file_path: null,
+      attempt_number: null,
+      timestamp: null,
       content: '(No writer output recorded yet)',
       model_requested: 'N/A',
       model_responded: 'N/A',
       model_used: 'N/A',
       finish_reason: 'N/A',
+      prompt_tokens: null,
+      completion_tokens: null,
+      search_block_count: 0,
+      target_files: [],
       file_size_bytes: 0,
       truncated: false
     };
@@ -160,32 +166,63 @@ function readLatestRunOutput(targetTaskId, targetLogPath) {
       content = `[... Truncated earlier output. Showing last 16 KB of ${Math.round(stat.size / 1024)} KB ...]\n` + buf.toString('utf8');
     }
 
+    const attemptMatch = content.match(/===\s*WRITER ATTEMPT\s+(\d+)\s*===/i);
+    const tsMatch = content.match(/Timestamp:\s*([^\r\n]+)/);
     const modelReqMatch = content.match(/Model (?:Requested|Used):\s*([^\r\n]+)/);
     const modelRespMatch = content.match(/Model Responded:\s*([^\r\n]+)/);
     const finishMatch = content.match(/Finish Reason:\s*([^\r\n]+)/);
+    const promptTokMatch = content.match(/Prompt Tokens:\s*(\d+)/);
+    const compTokMatch = content.match(/Completion Tokens:\s*(\d+)/);
 
+    const attemptNumber = attemptMatch ? parseInt(attemptMatch[1], 10) : null;
+    const outputTimestamp = tsMatch ? tsMatch[1].trim() : null;
     const modelRequested = modelReqMatch ? modelReqMatch[1].trim() : 'unknown';
     const modelResponded = modelRespMatch ? modelRespMatch[1].trim() : 'N/A';
     const finishReason = finishMatch ? finishMatch[1].trim() : 'N/A';
+    const promptTokens = promptTokMatch ? parseInt(promptTokMatch[1], 10) : null;
+    const completionTokens = compTokMatch ? parseInt(compTokMatch[1], 10) : null;
+
+    const searchBlockMatches = content.match(/^<<<<<<< SEARCH/gm);
+    const searchBlockCount = searchBlockMatches ? searchBlockMatches.length : 0;
+
+    const fileHeaderRegex = /^(?:###\s*)?FILE:\s*([^\r\n]+)/gm;
+    const targetFilesSet = new Set();
+    let fm;
+    while ((fm = fileHeaderRegex.exec(content)) !== null) {
+      const p = fm[1].trim();
+      if (p) targetFilesSet.add(p);
+    }
 
     return {
       file_path: path.relative(TEAM_DIR, chosenPath).replace(/\\/g, '/'),
+      attempt_number: attemptNumber,
+      timestamp: outputTimestamp,
       content,
       model_requested: modelRequested,
       model_responded: modelResponded,
       model_used: modelResponded !== 'N/A' ? modelResponded : modelRequested,
       finish_reason: finishReason,
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      search_block_count: searchBlockCount,
+      target_files: Array.from(targetFilesSet),
       file_size_bytes: stat.size,
       truncated
     };
   } catch {
     return {
       file_path: chosenPath,
+      attempt_number: null,
+      timestamp: null,
       content: '(Error reading output file)',
       model_requested: 'N/A',
       model_responded: 'N/A',
       model_used: 'N/A',
       finish_reason: 'N/A',
+      prompt_tokens: null,
+      completion_tokens: null,
+      search_block_count: 0,
+      target_files: [],
       file_size_bytes: 0,
       truncated: false
     };
@@ -302,15 +339,31 @@ export async function createSnapshot() {
     } catch {}
   }
 
+  const completedMap = new Map(archiveMap);
+  for (const t of (taskState.completed_tasks || [])) {
+    const tid = t.task_id || t.id;
+    if (tid && !completedMap.has(tid)) {
+      completedMap.set(tid, {
+        task_id: tid,
+        title: t.title || t.goal || '',
+        mode: t.mode || 'quick',
+        status: 'done',
+        retries: t.retries || 0,
+        commit_hash: t.commit_hash || null,
+        completed_at: t.completed_at || null
+      });
+    }
+  }
+
   const blockedMap = new Map();
   for (const [tid, t] of activeMap) {
-    if (t.status === 'blocked') {
+    if (t.status === 'blocked' && !completedMap.has(tid)) {
       blockedMap.set(tid, t);
     }
   }
   for (const t of (taskState.blocked_tasks || [])) {
     const tid = t.task_id || t.id;
-    if (tid && !blockedMap.has(tid)) {
+    if (tid && !blockedMap.has(tid) && !completedMap.has(tid)) {
       blockedMap.set(tid, {
         task_id: tid,
         title: t.title || t.goal || '',
@@ -322,19 +375,16 @@ export async function createSnapshot() {
     }
   }
 
-  const completedMap = new Map(archiveMap);
-  for (const t of (taskState.completed_tasks || [])) {
-    const tid = t.task_id || t.id;
-    if (tid && !completedMap.has(tid)) {
-      completedMap.set(tid, {
-        task_id: tid,
-        title: t.title || t.goal || '',
-        mode: t.mode || 'quick',
-        status: 'done',
-        commit_hash: t.commit_hash || null,
-        completed_at: t.completed_at || null
-      });
-    }
+  // Reconcile liveStatus when the task has already finished
+  if (!liveStatus.active && liveStatus.current_task_id && completedMap.has(liveStatus.current_task_id)) {
+    const doneTask = completedMap.get(liveStatus.current_task_id);
+    liveStatus.task_final_status = 'done';
+    liveStatus.task_completed_at = liveStatus.task_completed_at || doneTask.completed_at || liveStatus.updated_at || null;
+    liveStatus.recovered_on_retry = (liveStatus.attempt || 1) > 1 || (doneTask.retries || 0) > 0;
+    liveStatus.last_error = null;
+  } else if (!liveStatus.active && liveStatus.current_task_id && blockedMap.has(liveStatus.current_task_id)) {
+    liveStatus.task_final_status = 'blocked';
+    liveStatus.task_completed_at = liveStatus.task_completed_at || liveStatus.updated_at || null;
   }
 
   const activeList = Array.from(activeMap.values()).filter(t => t.status !== 'blocked');
@@ -344,7 +394,10 @@ export async function createSnapshot() {
   // 5. Latest Writer Output File
   const latestOutput = readLatestRunOutput(liveStatus.current_task_id, liveStatus.raw_log_path);
 
-  // 6. 9Router Health Check
+  // 6. Last Completed Task Summary (For Idle Context Preservation)
+  const lastCompletedTask = completedList.length > 0 ? completedList[completedList.length - 1] : null;
+
+  // 7. 9Router Health Check
   const routerHealth = await get9RouterHealth();
 
   return {
@@ -359,6 +412,7 @@ export async function createSnapshot() {
     roles,
     policy,
     live_status: liveStatus,
+    last_completed_task: lastCompletedTask,
     queue: {
       active_count: activeList.length,
       completed_count: completedList.length,

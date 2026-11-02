@@ -63,6 +63,9 @@ Khi khởi tạo dự án mới hoặc nhận một bài toán lớn từ ngư�
    - Team có bao nhiêu thành viên (roles)? Gồm những vị trí nào (`router` lập kế hoạch, `writer` viết code, `reviewer` duyệt diff, `validator` chạy script 0-token)?
    - Cổng kết nối LLM (`base_url`, biến môi trường chứa API key `api_key_env` — *lưu ý: chỉ lưu tên biến môi trường trong YAML, không dán key thật*)?
    - Tên model chính xác (`model` ID trên 9Router/provider) cho từng vị trí là gì? Role nào cần cấu hình `max_thinking_tokens`?
+   - **Cơ chế Co giãn Đội hình (Graceful Scaling — Không sợ thiếu người hay hết Quota):**
+     - **Chế độ Tối thiểu (1 Model duy nhất):** Chỉ cần bật `writer.enabled: true` và đặt `router.enabled: false`, `reviewer.enabled: false`. Thác nước vẫn chạy trọn vẹn (`Writer` $\rightarrow$ `Applier` $\rightarrow$ `Validator` $\rightarrow$ `Git Guard`) mà không bị thủng bất kỳ mắt xích nào.
+     - **Chế độ Đầy đủ (Multi-Model Squad):** Bật thêm `router` (cho task `draft` chưa có `scope`) và `reviewer` (chỉ tự động kích hoạt khi `risk_level >= high`). Nếu một model phụ hết quota giữa chừng, chỉ cần chuyển `enabled: false` hoặc cấu hình `fallback_model` sang model của `writer`.
 2. **Đầu ra Phần mềm & Ranh giới Dự án (`config/project.yaml`):**
    - Mô tả dự án, ngôn ngữ/stack, thư mục nào được phép sửa (`allowed_dirs`), file nào cấm đụng (`protected_files`)?
    - Lệnh kiểm thử nhanh (`fast_checks`) và kiểm thử toàn bộ (`suite_checks`) để xác nhận đầu ra phần mềm đạt chuẩn là gì?

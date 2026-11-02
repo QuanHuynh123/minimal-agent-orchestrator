@@ -261,7 +261,7 @@ export function resolveEffectiveRisk(task = {}) {
 }
 
 export function shouldRunReviewerGate(task = {}, policy = policyConfig.policy || {}, roles = teamConfig.roles || {}) {
-  if (roles.reviewer && roles.reviewer.enabled === false) {
+  if (!roles?.reviewer || roles.reviewer.enabled === false) {
     return false;
   }
   if (task.force_ai_review === true) {
@@ -730,7 +730,75 @@ async function call9Router(model, systemPrompt, userMessage, maxTokens = 4096, f
   return { ok: false, error: lastError };
 }
 
-// 4b. Router Planner (Populates scope & acceptance_criteria when task is in 'draft' status)
+// 4b. Router Context Builder (Bounded file list + Codebase Google Maps table, NO file contents)
+export function buildRouterContext(allowedDirs = [], repoRoot = REPO_ROOT, maxFiles = 300) {
+  const sections = [];
+
+  // 1. Extract Codebase Google Maps table from AGENTS.md if present
+  const agentsPath = path.resolve(repoRoot, 'AGENTS.md');
+  if (fs.existsSync(agentsPath)) {
+    try {
+      const agentsContent = fs.readFileSync(agentsPath, 'utf8');
+      const mapMatch = agentsContent.match(/###\s*Codebase Google Maps[\s\S]*?(?=\n---\n|\n##\s|$)/i);
+      if (mapMatch) {
+        sections.push(`CODEBASE GOOGLE MAPS (from AGENTS.md):\n${mapMatch[0].trim()}`);
+      }
+    } catch {}
+  }
+
+  // 2. Collect bounded file paths in allowedDirs (skipping __pycache__, .venv, .git, node_modules, .pyc)
+  const IGNORED_DIRS = new Set(['__pycache__', '.venv', 'venv', '.git', 'node_modules', '.pytest_cache', '.mypy_cache']);
+  const collected = [];
+
+  function walkDir(relDir) {
+    if (collected.length >= maxFiles) return;
+    const cleanRel = relDir.replace(/\\/g, '/').replace(/\/+$/, '');
+    const absDir = path.resolve(repoRoot, cleanRel);
+    if (!fs.existsSync(absDir)) return;
+    let stat;
+    try {
+      stat = fs.statSync(absDir);
+    } catch {
+      return;
+    }
+    if (stat.isFile()) {
+      if (!cleanRel.endsWith('.pyc')) collected.push(cleanRel);
+      return;
+    }
+    if (!stat.isDirectory()) return;
+
+    let entries = [];
+    try {
+      entries = fs.readdirSync(absDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (collected.length >= maxFiles) break;
+      if (IGNORED_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
+      const childRel = cleanRel ? `${cleanRel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        walkDir(childRel);
+      } else if (entry.isFile() && !entry.name.endsWith('.pyc')) {
+        collected.push(childRel);
+      }
+    }
+  }
+
+  for (const dir of allowedDirs) {
+    if (collected.length >= maxFiles) break;
+    walkDir(String(dir || ''));
+  }
+
+  if (collected.length > 0) {
+    const suffix = collected.length >= maxFiles ? `\n... (truncated at ${maxFiles} files)` : '';
+    sections.push(`AVAILABLE WORKSPACE FILES (in allowed_dirs):\n${collected.map(f => `- ${f}`).join('\n')}${suffix}`);
+  }
+
+  return sections.join('\n\n');
+}
+
+// 4c. Router Planner (Populates scope & acceptance_criteria when task is in 'draft' status)
 async function runRouterPlanner(task) {
   const routerRole = teamConfig.roles?.router || {};
   if (routerRole.enabled === false) {
@@ -746,13 +814,15 @@ async function runRouterPlanner(task) {
     : 'Analyze the goal and return JSON { "plan": [], "scope": [], "acceptance_criteria": [] }.';
 
   const allowedDirs = projectConfig.project?.allowed_dirs || [];
+  const routerContext = buildRouterContext(allowedDirs, REPO_ROOT, 300);
   const prompt = [
     `TASK ID: ${task.task_id}`,
     `TITLE: ${task.title || ''}`,
     `GOAL: ${task.goal || task.title || ''}`,
     `ALLOWED DIRECTORIES: ${allowedDirs.join(', ')}`,
-    `Return strict JSON with keys: plan, scope, acceptance_criteria.`
-  ].join('\n\n');
+    routerContext ? routerContext : '',
+    `Select only existing file paths from AVAILABLE WORKSPACE FILES (or valid new test/module paths inside ALLOWED DIRECTORIES). Return strict JSON with keys: plan, scope, acceptance_criteria.`
+  ].filter(Boolean).join('\n\n');
 
   const res = await call9Router(routerModel, routerSystemPrompt, prompt, 2048, routerFallback, routerTemp, {
     maxThinkingTokens: routerMaxThinking
@@ -777,13 +847,37 @@ async function runRouterPlanner(task) {
   }
 }
 
-// 5. Reviewer Gate (Executed only in 'standard' mode when require_code_review is true)
-async function runReviewerGate(task, scopedFiles) {
+// 5. Reviewer Prompt Builder (Includes constraints + previous review issues only + function-context diff)
+export function buildReviewerPrompt(task, diffText, previousReviewIssues = []) {
+  const constraintsList = Array.isArray(task.constraints) && task.constraints.length > 0
+    ? task.constraints.map(c => `- ${c}`).join('\n')
+    : '(None specified)';
+
+  const prevIssuesBlock = Array.isArray(previousReviewIssues) && previousReviewIssues.length > 0
+    ? [
+        `PREVIOUS REVIEW ISSUES TO VERIFY (From your prior review of this task):`,
+        ...previousReviewIssues.map((iss, idx) => `${idx + 1}. ${iss}`),
+        `Verify whether the issues above have been resolved without introducing regressions. Do not shift goalposts with unrelated nitpicks.`
+      ].join('\n')
+    : null;
+
+  return [
+    `TASK ID: ${task.task_id}`,
+    `GOAL: ${task.goal || task.title}`,
+    `CONSTRAINTS:\n${constraintsList}`,
+    `ACCEPTANCE CRITERIA: ${(task.acceptance_criteria || []).join('; ')}`,
+    prevIssuesBlock,
+    `GIT DIFF (WITH FUNCTION CONTEXT):\n${diffText}`
+  ].filter(Boolean).join('\n\n');
+}
+
+// 5b. Reviewer Gate (Executed only in 'standard' mode when require_code_review is true)
+async function runReviewerGate(task, scopedFiles, previousReviewIssues = []) {
   const reviewerRole = teamConfig.roles?.reviewer || {};
   if (reviewerRole.enabled === false) {
     return { ok: true, skipped: true };
   }
-  const diffText = getScopedDiff(scopedFiles);
+  const diffText = getScopedDiff(scopedFiles, { functionContext: true });
   if (!diffText) {
     return { ok: true, skipped: true };
   }
@@ -796,12 +890,7 @@ async function runReviewerGate(task, scopedFiles) {
     ? fs.readFileSync(path.resolve(TEAM_DIR, 'roles', 'reviewer.md'), 'utf8')
     : 'Review the git diff against acceptance criteria and return JSON { "passed": boolean, "rubric_scores": {...}, "issues": [] }.';
 
-  const reviewMsg = [
-    `TASK ID: ${task.task_id}`,
-    `GOAL: ${task.goal || task.title}`,
-    `ACCEPTANCE CRITERIA: ${(task.acceptance_criteria || []).join('; ')}`,
-    `GIT DIFF:\n${diffText}`
-  ].join('\n\n');
+  const reviewMsg = buildReviewerPrompt(task, diffText, previousReviewIssues);
 
   const res = await call9Router(reviewerModel, reviewerSystemPrompt, reviewMsg, 2048, reviewerFallback, reviewerTemp, {
     maxThinkingTokens: reviewerMaxThinking
@@ -986,6 +1075,7 @@ async function runOrchestrator() {
     let blockReason = null;
     let validationPassed = null;
     let actualModifiedFiles = [];
+    let previousReviewIssues = [];
     const taskStartMs = Date.now();
 
     const getRollbackTargets = () => Array.from(new Set([
@@ -1421,7 +1511,7 @@ async function runOrchestrator() {
             }
           });
 
-          const revRes = await runReviewerGate(task, actualModifiedFiles);
+          const revRes = await runReviewerGate(task, actualModifiedFiles, previousReviewIssues);
           if (revRes.usage) {
             const rIn = revRes.usage.prompt_tokens || 0;
             const rOut = revRes.usage.completion_tokens || 0;
@@ -1433,6 +1523,9 @@ async function runOrchestrator() {
             task.review_result = revRes.reviewResult;
           }
           if (!revRes.ok) {
+            if (Array.isArray(revRes.reviewResult?.issues) && revRes.reviewResult.issues.length > 0) {
+              previousReviewIssues = revRes.reviewResult.issues;
+            }
             console.warn(`[Reviewer] ${revRes.error}`);
             updateLiveStatus({
               roles_status: {
@@ -1540,7 +1633,10 @@ async function runOrchestrator() {
 
       updateLiveStatus({
         current_stage: isTaskDone ? 'done' : (task.status === 'blocked' ? 'blocked' : 'failed'),
-        last_error: blockReason || task.last_error || null,
+        task_completed_at: isTaskDone ? task.completed_at : new Date().toISOString(),
+        task_final_status: finalStatus,
+        recovered_on_retry: isTaskDone && retries > 0,
+        last_error: isTaskDone ? null : (blockReason || task.last_error || null),
         queue_stats: {
           active: fs.readdirSync(ACTIVE_TASKS_DIR).filter(f => f.endsWith('.yaml') || f.endsWith('.yml')).length,
           completed: (state.completed_tasks || []).length,

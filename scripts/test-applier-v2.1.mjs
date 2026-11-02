@@ -13,6 +13,8 @@ import {
 } from './applier.mjs';
 import {
   acquireLock,
+  buildReviewerPrompt,
+  buildRouterContext,
   buildScopedFilesContext,
   extractTaskKeywords,
   formatValidationErrorForRetry,
@@ -144,6 +146,7 @@ assert.strictEqual(resolveEffectiveRisk(flatTask), 'medium');
 assert.strictEqual(shouldRunReviewerGate({ ...legacyTask, mode: 'standard' }, { approval_gates: { require_code_review: true, review_min_risk_level: 'high' } }, { reviewer: { enabled: true } }), false);
 assert.strictEqual(shouldRunReviewerGate({ ...flatTask, mode: 'standard' }, { approval_gates: { require_code_review: true, review_min_risk_level: 'high' } }, { reviewer: { enabled: true } }), false);
 assert.strictEqual(shouldRunReviewerGate({ scope: ['core/auth_secret.py'], mode: 'standard', risk_level: 'high' }, { approval_gates: { require_code_review: true, review_min_risk_level: 'high' } }, { reviewer: { enabled: true } }), true);
+assert.strictEqual(shouldRunReviewerGate({ scope: ['core/auth_secret.py'], mode: 'standard', risk_level: 'high' }, { approval_gates: { require_code_review: true, review_min_risk_level: 'high' } }, {}), false);
 console.log('✓ Task schema normalization, 4-tier risk resolution & Risk-Gated Reviewer passed');
 
 // Test 7: Deterministic Error Hashing (strips volatile test durations)
@@ -288,6 +291,41 @@ const matchWrong = verifyResponseModel('kr/claude-sonnet-4.5', 'gpt-4o-mini');
 assert.strictEqual(matchWrong.match, false);
 assert.match(matchWrong.reason, /Requested model "kr\/claude-sonnet-4\.5" but upstream responded with "gpt-4o-mini"/);
 console.log('✓ State deduplication, stale blocked purge, validateConfig & verifyResponseModel passed');
+
+// 13. Test Role-Specific Context Builders (Router Google Maps + Bounded File List, Reviewer Function-Context + Previous Issues)
+const routerCtx = buildRouterContext(['core/', 'ui_bridge/'], resolveRepoRoot(), 50);
+assert.match(routerCtx, /CODEBASE GOOGLE MAPS/);
+assert.match(routerCtx, /AVAILABLE WORKSPACE FILES/);
+assert.match(routerCtx, /- core\/eraser\.py/);
+assert.doesNotMatch(routerCtx, /__pycache__/);
+
+const revPromptFresh = buildReviewerPrompt(
+  {
+    task_id: 'T-REV-1',
+    goal: 'Fix timeout handling',
+    constraints: ['Use TAB indentation', 'Explicit timeout'],
+    acceptance_criteria: ['All unit tests pass']
+  },
+  'diff --git a/core/eraser.py b/core/eraser.py\n+timeout=30',
+  []
+);
+assert.match(revPromptFresh, /CONSTRAINTS:\n- Use TAB indentation\n- Explicit timeout/);
+assert.doesNotMatch(revPromptFresh, /PREVIOUS REVIEW ISSUES TO VERIFY/);
+assert.match(revPromptFresh, /GIT DIFF \(WITH FUNCTION CONTEXT\):/);
+
+const revPromptRetry = buildReviewerPrompt(
+  {
+    task_id: 'T-REV-1',
+    goal: 'Fix timeout handling',
+    constraints: ['Use TAB indentation'],
+    acceptance_criteria: ['All unit tests pass']
+  },
+  'diff --git a/core/eraser.py b/core/eraser.py\n+timeout=30',
+  ['Missing timeout on subprocess.run at line 142']
+);
+assert.match(revPromptRetry, /PREVIOUS REVIEW ISSUES TO VERIFY/);
+assert.match(revPromptRetry, /1\. Missing timeout on subprocess\.run at line 142/);
+console.log('✓ Role-specific context builders (Router Google Maps & Reviewer anti-goalpost-shifting) passed');
 
 console.log('\n=============================================');
 console.log('ALL V2.1 APPLIER & ORCHESTRATOR TESTS PASSED! 🎯');

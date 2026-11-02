@@ -50,12 +50,13 @@ export function getModifiedFiles(targetFiles = []) {
   }
 }
 
-export function getScopedDiff(targetFiles = []) {
+export function getScopedDiff(targetFiles = [], options = {}) {
   try {
     const pathArgs = Array.isArray(targetFiles) && targetFiles.length > 0
       ? `-- ${targetFiles.map(f => `"${f.replace(/"/g, '')}"`).join(' ')}`
       : '';
-    return execSync(`git diff HEAD ${pathArgs}`.trim(), execOpts).trim();
+    const ctxFlag = options.functionContext ? '--function-context' : '';
+    return execSync(`git diff ${ctxFlag} HEAD ${pathArgs}`.trim(), execOpts).trim();
   } catch {
     return '';
   }

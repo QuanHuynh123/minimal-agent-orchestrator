@@ -15,6 +15,21 @@ providers:
 
 # Cấu hình chi tiết từng Role và Model phụ trách
 roles:
+  coordinator:
+    enabled: true
+    provider: "ide_bridge"
+    display_name: "Antigravity (IDE Coordinator)"
+    model: "Google Antigravity (Gemini)"
+    allowed_actions: ["pair_programming", "ui_coordination", "task_dispatch", "architecture"]
+
+  designer:
+    enabled: true
+    provider: "local_9router"
+    display_name: "Claude Sonnet 4.5"
+    model: "kr/claude-sonnet-4.5-thinking"
+    allowed_actions: ["ui_ux_design", "bento_styling", "dom_contract"]
+    forbidden_actions: ["backend_write"]
+
   router:
     enabled: true
     provider: "local_9router"
