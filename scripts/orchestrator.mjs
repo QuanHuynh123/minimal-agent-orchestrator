@@ -1019,6 +1019,26 @@ async function runOrchestrator() {
   }
   const taskFiles = fs.readdirSync(ACTIVE_TASKS_DIR).filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
 
+  if (taskFiles.length === 0) {
+    console.log(`\n======================================================`);
+    console.log(`💡 [HÀNG ĐỢI RỖNG - HƯỚNG DẪN GIAO VIỆC CHO ĐỘI NGŨ AI]`);
+    console.log(`======================================================`);
+    console.log(`Thư mục "tasks/active/" hiện chưa có task nào.`);
+    console.log(`Bạn đã cấu hình xong môi trường! Giờ hãy giao việc bằng 1 trong các cách:\n`);
+    console.log(`👉 CÁCH 1 (Khuyên dùng - Bàn điều khiển Web 1-Chạm):`);
+    console.log(`   npm run dashboard`);
+    console.log(`   -> Mở http://127.0.0.1:4310 -> Nhập mục tiêu -> Bấm Phê Duyệt & Chạy!\n`);
+    console.log(`👉 CÁCH 2 (AI Architect tự sinh task qua CLI):`);
+    console.log(`   npm run plan -- "Mô tả tính năng bạn muốn làm"`);
+    console.log(`   -> AI sẽ tự bóc tách ra task YAML trong tasks/active/\n`);
+    console.log(`👉 CÁCH 3 (Tương tác trực tiếp với 1 Agent độc lập):`);
+    console.log(`   npm run agent -- --role writer --prompt "Nhiệm vụ của bạn"`);
+    console.log(`======================================================\n`);
+    updateLiveStatus({ active: false, current_stage: 'idle' });
+    releaseLock();
+    process.exit(0);
+  }
+
   console.log(`[Orchestrator] Found ${taskFiles.length} task(s) in tasks/active/`);
 
   updateLiveStatus({
