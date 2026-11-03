@@ -23,6 +23,60 @@ import {
 import { hashString, validateFast, validateSuite } from './validator.mjs';
 import { runAgent } from '../runtime/index.mjs';
 
+// Modular Helpers (Giai đoạn 1: Tách Leaf Helpers ít rủi ro)
+import {
+  extractTaskKeywords,
+  sliceContentByKeywords,
+  expandScopeItem,
+  buildScopedFilesContext,
+  formatValidationErrorForRetry,
+  buildRouterContext,
+  buildReviewerPrompt
+} from './lib/context-builders.mjs';
+
+import {
+  RISK_LEVEL_RANK,
+  resolveEffectiveRisk,
+  shouldRunReviewerGate,
+  resolveTaskMode,
+  resolveApiKey,
+  validateConfig,
+  verifyResponseModel
+} from './lib/risk-policy.mjs';
+
+import {
+  isProcessAlive,
+  acquireLock as acquireLockBase,
+  releaseLock as releaseLockBase,
+  sanitizeTaskState,
+  normalizeTask as normalizeTaskBase,
+  saveTaskAtomic as saveTaskAtomicBase,
+  saveStateAtomic as saveStateAtomicBase,
+  saveWriterRawOutput as saveWriterRawOutputBase,
+  computeScopeHash
+} from './lib/task-persistence.mjs';
+
+// Re-export leaf helpers to preserve 100% external API contract
+export {
+  extractTaskKeywords,
+  sliceContentByKeywords,
+  expandScopeItem,
+  buildScopedFilesContext,
+  formatValidationErrorForRetry,
+  buildRouterContext,
+  buildReviewerPrompt,
+  RISK_LEVEL_RANK,
+  resolveEffectiveRisk,
+  shouldRunReviewerGate,
+  resolveTaskMode,
+  resolveApiKey,
+  validateConfig,
+  verifyResponseModel,
+  isProcessAlive,
+  sanitizeTaskState,
+  computeScopeHash
+};
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEAM_DIR = path.resolve(__dirname, '..');
@@ -106,71 +160,16 @@ export function updateLiveStatus(patch = {}) {
   }
 }
 
-// 1. Lock File Management (with Stale PID Recovery)
-export function isProcessAlive(pid) {
-  if (!pid || typeof pid !== 'number') return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return err.code === 'EPERM';
-  }
-}
-
+// 1. Lock File Management (delegated to lib/task-persistence.mjs)
 export function acquireLock(lockFilePath = LOCK_FILE) {
-  if (fs.existsSync(lockFilePath)) {
-    try {
-      const lockData = JSON.parse(fs.readFileSync(lockFilePath, 'utf8'));
-      if (lockData.pid && isProcessAlive(lockData.pid)) {
-        console.warn(`[Orchestrator] Active lock file exists (PID: ${lockData.pid}, Started: ${lockData.started_at}).`);
-        return false;
-      }
-      console.warn(`[Orchestrator] Reclaiming stale lock file from dead PID: ${lockData.pid}`);
-    } catch {
-      // Corrupt lock file, overwrite
-    }
-  }
-  fs.writeFileSync(lockFilePath, JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }), 'utf8');
-  return true;
+  return acquireLockBase(lockFilePath);
 }
 
 export function releaseLock(lockFilePath = LOCK_FILE) {
-  if (fs.existsSync(lockFilePath)) {
-    try {
-      fs.unlinkSync(lockFilePath);
-    } catch {}
-  }
+  return releaseLockBase(lockFilePath);
 }
 
-// 2. Atomic State & Task Management
-export function sanitizeTaskState(state = {}) {
-  const completedMap = new Map();
-  for (const t of (state.completed_tasks || [])) {
-    const id = t?.task_id || t?.id;
-    if (id) completedMap.set(id, t);
-  }
-  const completed = Array.from(completedMap.values());
-  const completedIds = new Set(completedMap.keys());
-
-  const blockedMap = new Map();
-  for (const t of (state.blocked_tasks || [])) {
-    const id = t?.task_id || t?.id;
-    if (id && !completedIds.has(id)) {
-      blockedMap.set(id, t);
-    }
-  }
-  const blocked = Array.from(blockedMap.values());
-
-  return {
-    ...state,
-    version: state.version || '2.1',
-    active_tasks: Array.isArray(state.active_tasks) ? state.active_tasks : [],
-    completed_tasks: completed,
-    blocked_tasks: blocked,
-    metrics: state.metrics || { total_input_tokens: 0, total_output_tokens: 0, total_cost_est_usd: 0 }
-  };
-}
-
+// 2. Atomic State & Task Management (delegated to lib/task-persistence.mjs)
 function loadState() {
   if (!fs.existsSync(STATE_FILE)) {
     return sanitizeTaskState({});
@@ -183,44 +182,15 @@ function loadState() {
 }
 
 function saveStateAtomic(state) {
-  const cleanState = sanitizeTaskState(state);
-  state.completed_tasks = cleanState.completed_tasks;
-  state.blocked_tasks = cleanState.blocked_tasks;
-  const tmpPath = `${STATE_FILE}.tmp.${Date.now()}`;
-  fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
-  fs.writeFileSync(tmpPath, JSON.stringify(cleanState, null, 2), 'utf8');
-  fs.renameSync(tmpPath, STATE_FILE);
+  return saveStateAtomicBase(STATE_FILE, state);
 }
 
-/**
- * Unifies flat schema (task_id) and nested legacy format (task.id) into a canonical task object.
- */
 export function normalizeTask(parsed) {
-  if (!parsed || typeof parsed !== 'object') return null;
-  const raw = (parsed.task && typeof parsed.task === 'object') ? { ...parsed.task } : { ...parsed };
-  const canonicalId = raw.task_id || raw.id;
-  if (!canonicalId || typeof canonicalId !== 'string') return null;
-
-  raw.task_id = canonicalId.trim();
-  raw.id = raw.task_id;
-  raw.project_id = raw.project_id || projectConfig.project?.id || 'my-workspace';
-  raw.status = raw.status || 'ready';
-  raw.owner = raw.owner || 'writer';
-  raw.retries = typeof raw.retries === 'number' ? raw.retries : 0;
-  raw.error_history = Array.isArray(raw.error_history) ? raw.error_history : [];
-  raw.scope_expansions = Array.isArray(raw.scope_expansions) ? raw.scope_expansions : [];
-  raw.created_at = raw.created_at || new Date().toISOString();
-  raw.updated_at = new Date().toISOString();
-  return raw;
+  return normalizeTaskBase(parsed, projectConfig?.project?.id || 'my-workspace');
 }
 
 function saveTaskAtomic(taskPath, taskData) {
-  const tmpPath = `${taskPath}.tmp.${Date.now()}`;
-  fs.mkdirSync(path.dirname(taskPath), { recursive: true });
-  taskData.updated_at = new Date().toISOString();
-  const yamlContent = YAML.stringify(taskData);
-  fs.writeFileSync(tmpPath, yamlContent, 'utf8');
-  fs.renameSync(tmpPath, taskPath);
+  return saveTaskAtomicBase(taskPath, taskData);
 }
 
 // 3. Load Configurations
@@ -238,317 +208,8 @@ const projectConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'project.local.y
 const policyConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'policy.yaml')) || {};
 const REPO_ROOT = resolveRepoRoot(projectConfig);
 
-// Helpers for v2.1 Policy, Mode Selection & Security
-export function computeScopeHash(scope = []) {
-  const sorted = [...scope].map(s => s.trim().replace(/\\/g, '/')).sort().join('\n');
-  return hashString(sorted);
-}
-
-export const RISK_LEVEL_RANK = {
-  low: 1,
-  medium: 2,
-  high: 3,
-  critical: 4,
-  ultra: 4
-};
-
-export function resolveEffectiveRisk(task = {}) {
-  const declared = String(task.risk_level || '').toLowerCase().trim();
-  const computed = computeDeterministicRisk(task.scope || []);
-  const scopeLen = Array.isArray(task.scope) ? task.scope.length : 0;
-  const inferred = computed === 'high' ? 'high' : (scopeLen > 3 ? 'medium' : 'low');
-  const declaredRank = RISK_LEVEL_RANK[declared] || 1;
-  const inferredRank = RISK_LEVEL_RANK[inferred] || 1;
-  if (declaredRank >= inferredRank && RISK_LEVEL_RANK[declared]) {
-    return declared === 'ultra' ? 'critical' : declared;
-  }
-  return inferred;
-}
-
-export function shouldRunReviewerGate(task = {}, policy = policyConfig.policy || {}, roles = teamConfig.roles || {}) {
-  if (!roles?.reviewer || roles.reviewer.enabled === false) {
-    return false;
-  }
-  if (task.force_ai_review === true) {
-    return true;
-  }
-  const mode = (task.mode || '').toLowerCase();
-  const modeConfig = policy.task_modes?.[mode] || {};
-  const skipReviewer = modeConfig.skip_router_and_reviewer ?? (mode === 'quick' || mode === 'direct');
-  const requireReview = policy.approval_gates?.require_code_review ?? true;
-  if (skipReviewer || !requireReview) {
-    return false;
-  }
-  const minRisk = String(policy.approval_gates?.review_min_risk_level || 'high').toLowerCase();
-  const minRank = RISK_LEVEL_RANK[minRisk] || RISK_LEVEL_RANK.high;
-  const taskRisk = resolveEffectiveRisk(task);
-  const taskRank = RISK_LEVEL_RANK[taskRisk] || RISK_LEVEL_RANK.low;
-  return taskRank >= minRank;
-}
-
-export function resolveTaskMode(task, policy = policyConfig.policy || {}) {
-  const explicitMode = (task.mode || '').toLowerCase();
-  if (explicitMode === 'direct' || explicitMode === 'quick' || explicitMode === 'standard') {
-    return explicitMode;
-  }
-  const smallThreshold = policy.approval_gates?.small_task_threshold_files ?? 3;
-  const scopeLen = Array.isArray(task.scope) ? task.scope.length : 0;
-  const allowExpansion = Boolean(task.allow_scope_expansion || task.cross_role_edit);
-  const effectiveRisk = resolveEffectiveRisk(task);
-
-  if (scopeLen <= smallThreshold && effectiveRisk === 'low' && !allowExpansion) {
-    return 'quick';
-  }
-  return 'standard';
-}
-
 function sanitizeGoal(str = '') {
   return str.replace(/[\r\n\x1B]/g, ' ').slice(0, 80).trim();
-}
-
-/**
- * Extracts technical identifiers/symbols from task goal, acceptance_criteria, and last_error
- * to drive smart context window slicing on large files.
- */
-export function extractTaskKeywords(task = {}) {
-  const corpus = [
-    task.title || '',
-    task.goal || '',
-    ...(task.acceptance_criteria || []),
-    task.last_error || ''
-  ].join(' ');
-
-  const stopWords = new Set([
-    'the', 'and', 'for', 'with', 'that', 'this', 'from', 'into', 'when', 'true', 'false', 'null', 'none',
-    'file', 'files', 'code', 'test', 'tests', 'task', 'pass', 'must', 'should', 'return', 'returns',
-    'trong', 'cua', 'cho', 'voi', 'cac', 'khi', 'neu', 'phai', 'duoc', 'khong', 'thanh', 'cong', 'kiem', 'tra'
-  ]);
-
-  const matches = corpus.match(/[A-Za-z_][A-Za-z0-9_.-]{2,}/g) || [];
-  const unique = [];
-  const seen = new Set();
-
-  for (const m of matches) {
-    const clean = m.replace(/^[.-]+|[.-]+$/g, '');
-    const lower = clean.toLowerCase();
-    if (clean.length < 3 || stopWords.has(lower)) continue;
-    // Prioritize snake_case, camelCase, dot.paths, or identifiers >= 4 chars
-    if (clean.includes('_') || clean.includes('-') || clean.includes('.') || /[a-z][A-Z]/.test(clean) || clean.length >= 4) {
-      if (!seen.has(lower)) {
-        seen.add(lower);
-        unique.push(clean);
-      }
-    }
-  }
-  return unique.slice(0, 25);
-}
-
-/**
- * Slices a large file around lines matching task keywords (+/- windowLines),
- * merging overlapping windows and preserving exact lines for SEARCH/REPLACE blocks.
- */
-export function sliceContentByKeywords(rawContent, keywords = [], maxBytes = 120000, windowLines = 80) {
-  const lines = rawContent.split(/\r?\n/);
-  const totalLines = lines.length;
-  if (totalLines <= windowLines * 2 + 60) {
-    return rawContent;
-  }
-
-  const ranges = [];
-  // Always keep top header/imports (first 50 lines)
-  ranges.push([0, Math.min(50, totalLines - 1)]);
-
-  const lowerKeywords = keywords.map(k => k.toLowerCase());
-  if (lowerKeywords.length > 0) {
-    for (let i = 0; i < totalLines; i++) {
-      const lineLower = lines[i].toLowerCase();
-      if (lowerKeywords.some(k => lineLower.includes(k))) {
-        const start = Math.max(0, i - windowLines);
-        const end = Math.min(totalLines - 1, i + windowLines);
-        ranges.push([start, end]);
-      }
-    }
-  }
-
-  // Always include tail of file (last 35 lines) for appending new functions/exports
-  ranges.push([Math.max(0, totalLines - 35), totalLines - 1]);
-
-  // Sort and merge overlapping ranges
-  ranges.sort((a, b) => a[0] - b[0]);
-  const merged = [];
-  for (const r of ranges) {
-    if (merged.length === 0 || r[0] > merged[merged.length - 1][1] + 1) {
-      merged.push([...r]);
-    } else {
-      merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], r[1]);
-    }
-  }
-
-  const chunks = [];
-  let usedBytes = 0;
-  for (let idx = 0; idx < merged.length; idx++) {
-    const [start, end] = merged[idx];
-    if (idx > 0) {
-      const prevEnd = merged[idx - 1][1];
-      chunks.push(`\n/* ... [OMITTED LINES ${prevEnd + 2}..${start} — DO NOT INCLUDE THIS COMMENT IN SEARCH BLOCKS] ... */\n`);
-    }
-    const segment = lines.slice(start, end + 1).join('\n');
-    const segBytes = Buffer.byteLength(segment, 'utf8');
-    if (usedBytes + segBytes > maxBytes && idx > 0) {
-      const remaining = Math.max(4096, maxBytes - usedBytes);
-      chunks.push(segment.slice(0, remaining));
-      chunks.push(`\n/* ... [CONTEXT BUDGET REACHED AT ${maxBytes} BYTES] ... */`);
-      break;
-    }
-    chunks.push(segment);
-    usedBytes += segBytes;
-  }
-
-  return chunks.join('\n');
-}
-
-function expandScopeItem(repoRoot, rawFile, maxFiles = 5) {
-  const relPath = normalizeOrThrow(repoRoot, rawFile);
-  const absPath = path.resolve(repoRoot, relPath);
-  if (fs.existsSync(absPath) && fs.statSync(absPath).isDirectory()) {
-    const entries = fs.readdirSync(absPath, { withFileTypes: true })
-      .filter(e => e.isFile() && !e.name.startsWith('.'))
-      .slice(0, maxFiles)
-      .map(e => `${relPath.replace(/\/+$/, '')}/${e.name}`);
-    return entries.length > 0 ? entries : [relPath];
-  }
-  return [relPath];
-}
-
-/**
- * Context-Aware File Loader:
- * - Scales byte budget from token_budget_per_task instead of a rigid 64KB cap.
- * - Sends files 100% intact when within budget.
- * - Uses symbol/keyword window slicing (+/- 80 lines) when a file exceeds budget.
- */
-export function buildScopedFilesContext(scope = [], repoRoot = REPO_ROOT, task = {}, options = {}) {
-  const tokenBudget = options.tokenBudgetPerTask
-    || policyConfig.policy?.retry_and_escalation?.token_budget_per_task
-    || 150000;
-  const maxFiles = options.maxFilesPerTask
-    || policyConfig.policy?.scope_control?.max_files_per_task
-    || 5;
-
-  // Token Diet: Clamp file context budget between 24KB and 64KB (~6k - 16k tokens)
-  // Since Agent Runtime v3.0 has read_file and search_code tools, massive in-prompt dumps are unnecessary.
-  const totalContextBudgetBytes = Math.min(Math.max(Math.floor(tokenBudget * 3.2 * 0.12), 24 * 1024), 64 * 1024);
-  const expandedFiles = [];
-  for (const rawFile of scope) {
-    try {
-      for (const f of expandScopeItem(repoRoot, rawFile, maxFiles)) {
-        if (!expandedFiles.includes(f)) expandedFiles.push(f);
-      }
-    } catch {
-      expandedFiles.push(rawFile);
-    }
-  }
-
-  const perFileBudgetBytes = Math.min(
-    28 * 1024,
-    Math.max(14 * 1024, Math.floor(totalContextBudgetBytes / Math.max(1, expandedFiles.length)))
-  );
-  const keywords = extractTaskKeywords(task);
-  const sections = [];
-
-  for (const rawFile of expandedFiles) {
-    try {
-      const relPath = normalizeOrThrow(repoRoot, rawFile);
-      const absPath = path.resolve(repoRoot, relPath);
-      if (!fs.existsSync(absPath)) {
-        sections.push(`=== FILE: ${relPath} (NEW FILE - DOES NOT EXIST ON DISK YET) ===\n<Empty: Use empty SEARCH block to create this file>`);
-        continue;
-      }
-      const stat = fs.statSync(absPath);
-      if (stat.isDirectory()) {
-        sections.push(`=== DIRECTORY SCOPE: ${relPath} ===`);
-        continue;
-      }
-      const rawContent = fs.readFileSync(absPath, 'utf8');
-      const byteLen = Buffer.byteLength(rawContent, 'utf8');
-      if (byteLen > perFileBudgetBytes) {
-        const sliced = sliceContentByKeywords(rawContent, keywords, perFileBudgetBytes, 80);
-        sections.push(`=== FILE: ${relPath} (SMART CONTEXT WINDOW — RELEVANT SECTIONS FOR KEYWORDS: ${keywords.slice(0, 8).join(', ') || 'head/tail'}) ===\n${sliced}`);
-      } else {
-        sections.push(`=== FILE: ${relPath} (EXISTING CONTENT) ===\n${rawContent}`);
-      }
-    } catch (err) {
-      sections.push(`=== FILE: ${rawFile} (UNREADABLE: ${err.message}) ===`);
-    }
-  }
-  return sections.join('\n\n');
-}
-
-// 4. Pre-flight Healthcheck (HR-6), Config Validation & Local 9Router API Helper
-export function resolveApiKey(teamCfg = teamConfig) {
-  const envKeyName = teamCfg?.providers?.local_9router?.api_key_env || 'NINE_ROUTER_API_KEY';
-  return process.env[envKeyName] || teamCfg?.providers?.local_9router?.default_key || 'sk-default';
-}
-
-export function validateConfig(teamCfg = teamConfig, policyCfg = policyConfig, projectCfg = projectConfig) {
-  const errors = [];
-  if (!teamCfg?.providers?.local_9router?.base_url) {
-    errors.push('team.yaml: missing providers.local_9router.base_url');
-  }
-  if (!teamCfg?.roles?.writer?.model) {
-    errors.push('team.yaml: missing roles.writer.model');
-  }
-  const allowedDirs = projectCfg?.project?.allowed_dirs;
-  if (!Array.isArray(allowedDirs) || allowedDirs.length === 0) {
-    errors.push('project.yaml: project.allowed_dirs must be a non-empty array');
-  }
-  const maxFiles = policyCfg?.policy?.scope_control?.max_files_per_task;
-  if (typeof maxFiles !== 'number' || maxFiles <= 0) {
-    errors.push('policy.yaml: policy.scope_control.max_files_per_task must be a positive number');
-  }
-  return { ok: errors.length === 0, errors };
-}
-
-/**
- * Strips verbose ASCII greeting banners, passing unit test lines ("... ok"), and Tkinter
- * teardown noise from test output, keeping the tail where FAIL / ERROR / Traceback appear.
- */
-export function formatValidationErrorForRetry(errText = '', maxChars = 1800) {
-  if (!errText) return '';
-  let cleaned = String(errText).replace(/\r\n/g, '\n');
-
-  // 1. Strip the [SQUAD] ASCII banner from test_squad_hello.py
-  cleaned = cleaned.replace(
-    /={20,}\n\[SQUAD\][\s\S]*?\[OK\][^\n]*\n={20,}\n*/g,
-    ''
-  );
-
-  // 2. Strip noisy Tkinter background timer teardown warnings
-  cleaned = cleaned.replace(
-    /invalid command name "[^"]+"\n\s+while executing\n"[^"]+"\n\s+\("after" script\)\n?/g,
-    ''
-  );
-
-  // 3. Remove standalone passing test lines ("test_xxx (...) ... ok") so tracebacks stand out
-  const lines = cleaned.split('\n');
-  const filteredLines = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    // Handle 2-line docstring unittest output where line i is "test_foo (...)" and line i+1 is "Docstring ... ok"
-    if (/^test_[A-Za-z0-9_]+\s+\([^)]+\)\s*$/.test(line.trim()) && i + 1 < lines.length && /\.\.\.\s*ok\s*$/.test(lines[i + 1].trim())) {
-      i++;
-      continue;
-    }
-    if (/^test_[A-Za-z0-9_]+\s+\([^)]+\)\s*\.\.\.\s*ok\s*$/.test(line.trim())) {
-      continue;
-    }
-    filteredLines.push(line);
-  }
-
-  cleaned = filteredLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
-  if (cleaned.length <= maxChars) {
-    return cleaned;
-  }
-  return `...[truncated earlier passing output]...\n${cleaned.slice(-maxChars)}`;
 }
 
 export async function check9RouterHealth(teamCfg = teamConfig, policyCfg = policyConfig) {
@@ -591,56 +252,8 @@ export async function check9RouterHealthWithRetry(teamCfg = teamConfig, policyCf
   return lastRes;
 }
 
-export function verifyResponseModel(requestedModel = '', responseModel = 'unknown') {
-  const reqRaw = String(requestedModel || '').trim();
-  const resRaw = String(responseModel || '').trim();
-  if (!resRaw || resRaw === 'unknown') {
-    return {
-      match: false,
-      reason: `Upstream response omitted data.model (got "unknown" for requested "${reqRaw}")`
-    };
-  }
-  const norm = s => s.toLowerCase().split('/').pop().replace(/[._-]+/g, '-').trim();
-  const reqSlug = norm(reqRaw);
-  const resSlug = norm(resRaw);
-  if (
-    reqRaw.toLowerCase() === resRaw.toLowerCase() ||
-    (reqSlug && resSlug && (reqSlug === resSlug || resSlug.includes(reqSlug) || reqSlug.includes(resSlug)))
-  ) {
-    return { match: true, reason: null };
-  }
-  return {
-    match: false,
-    reason: `Requested model "${reqRaw}" but upstream responded with "${resRaw}"`
-  };
-}
-
 export function saveWriterRawOutput(taskId, attemptNum, writerRes = {}) {
-  try {
-    const safeId = String(taskId || 'unknown').replace(/[^A-Za-z0-9_.-]/g, '_');
-    const runDir = path.resolve(TEAM_DIR, 'state', 'runs', safeId);
-    fs.mkdirSync(runDir, { recursive: true });
-    const outPath = path.resolve(runDir, `attempt-${attemptNum}.txt`);
-    const header = [
-      `=== WRITER ATTEMPT ${attemptNum} ===`,
-      `Timestamp: ${new Date().toISOString()}`,
-      `Model Requested: ${writerRes.modelUsed || 'unknown'}`,
-      `Model Responded: ${writerRes.responseModel || 'unknown'}`,
-      `Finish Reason: ${writerRes.finishReason || 'unknown'}`,
-      `Prompt Tokens: ${writerRes.usage?.prompt_tokens || 0}`,
-      `Completion Tokens: ${writerRes.usage?.completion_tokens || 0}`,
-      `====================================\n`
-    ].join('\n');
-    const body = [
-      header,
-      `--- MESSAGE CONTENT ---\n${writerRes.rawContent ?? writerRes.content ?? ''}\n`,
-      writerRes.rawReasoning ? `\n--- REASONING CONTENT ---\n${writerRes.rawReasoning}\n` : ''
-    ].join('\n');
-    fs.writeFileSync(outPath, body, 'utf8');
-    return outPath;
-  } catch {
-    return null;
-  }
+  return saveWriterRawOutputBase(taskId, attemptNum, writerRes, TEAM_DIR);
 }
 
 async function call9Router(model, systemPrompt, userMessage, maxTokens = 4096, fallbackModel = null, temperature = 0.1, options = {}) {
@@ -736,74 +349,6 @@ async function call9Router(model, systemPrompt, userMessage, maxTokens = 4096, f
   return { ok: false, error: lastError };
 }
 
-// 4b. Router Context Builder (Bounded file list + Codebase Google Maps table, NO file contents)
-export function buildRouterContext(allowedDirs = [], repoRoot = REPO_ROOT, maxFiles = 300) {
-  const sections = [];
-
-  // 1. Extract Codebase Google Maps table from AGENTS.md if present
-  const agentsPath = path.resolve(repoRoot, 'AGENTS.md');
-  if (fs.existsSync(agentsPath)) {
-    try {
-      const agentsContent = fs.readFileSync(agentsPath, 'utf8');
-      const mapMatch = agentsContent.match(/###\s*Codebase Google Maps[\s\S]*?(?=\n---\n|\n##\s|$)/i);
-      if (mapMatch) {
-        sections.push(`CODEBASE GOOGLE MAPS (from AGENTS.md):\n${mapMatch[0].trim()}`);
-      }
-    } catch {}
-  }
-
-  // 2. Collect bounded file paths in allowedDirs (skipping __pycache__, .venv, .git, node_modules, .pyc)
-  const IGNORED_DIRS = new Set(['__pycache__', '.venv', 'venv', '.git', 'node_modules', '.pytest_cache', '.mypy_cache']);
-  const collected = [];
-
-  function walkDir(relDir) {
-    if (collected.length >= maxFiles) return;
-    const cleanRel = relDir.replace(/\\/g, '/').replace(/\/+$/, '');
-    const absDir = path.resolve(repoRoot, cleanRel);
-    if (!fs.existsSync(absDir)) return;
-    let stat;
-    try {
-      stat = fs.statSync(absDir);
-    } catch {
-      return;
-    }
-    if (stat.isFile()) {
-      if (!cleanRel.endsWith('.pyc')) collected.push(cleanRel);
-      return;
-    }
-    if (!stat.isDirectory()) return;
-
-    let entries = [];
-    try {
-      entries = fs.readdirSync(absDir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (collected.length >= maxFiles) break;
-      if (IGNORED_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
-      const childRel = cleanRel ? `${cleanRel}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        walkDir(childRel);
-      } else if (entry.isFile() && !entry.name.endsWith('.pyc')) {
-        collected.push(childRel);
-      }
-    }
-  }
-
-  for (const dir of allowedDirs) {
-    if (collected.length >= maxFiles) break;
-    walkDir(String(dir || ''));
-  }
-
-  if (collected.length > 0) {
-    const suffix = collected.length >= maxFiles ? `\n... (truncated at ${maxFiles} files)` : '';
-    sections.push(`AVAILABLE WORKSPACE FILES (in allowed_dirs):\n${collected.map(f => `- ${f}`).join('\n')}${suffix}`);
-  }
-
-  return sections.join('\n\n');
-}
-
 // 4c. Router Planner (Populates scope & acceptance_criteria when task is in 'draft' status)
 async function runRouterPlanner(task) {
   const routerRole = teamConfig.roles?.router || {};
@@ -851,30 +396,6 @@ async function runRouterPlanner(task) {
   } catch (err) {
     return { ok: false, error: `Router output was not valid JSON: ${err.message}`, usage: res.usage };
   }
-}
-
-// 5. Reviewer Prompt Builder (Includes constraints + previous review issues only + function-context diff)
-export function buildReviewerPrompt(task, diffText, previousReviewIssues = []) {
-  const constraintsList = Array.isArray(task.constraints) && task.constraints.length > 0
-    ? task.constraints.map(c => `- ${c}`).join('\n')
-    : '(None specified)';
-
-  const prevIssuesBlock = Array.isArray(previousReviewIssues) && previousReviewIssues.length > 0
-    ? [
-        `PREVIOUS REVIEW ISSUES TO VERIFY (From your prior review of this task):`,
-        ...previousReviewIssues.map((iss, idx) => `${idx + 1}. ${iss}`),
-        `Verify whether the issues above have been resolved without introducing regressions. Do not shift goalposts with unrelated nitpicks.`
-      ].join('\n')
-    : null;
-
-  return [
-    `TASK ID: ${task.task_id}`,
-    `GOAL: ${task.goal || task.title}`,
-    `CONSTRAINTS:\n${constraintsList}`,
-    `ACCEPTANCE CRITERIA: ${(task.acceptance_criteria || []).join('; ')}`,
-    prevIssuesBlock,
-    `GIT DIFF (WITH FUNCTION CONTEXT):\n${diffText}`
-  ].filter(Boolean).join('\n\n');
 }
 
 // 5b. Reviewer Gate (Executed only in 'standard' mode when require_code_review is true)
