@@ -358,15 +358,83 @@
       transform: scale(0.97);
     }
 
-    /* CONFIG HUB STYLES (TAB 4) */
-    .config-hub-container {
+    /* CONFIG MODAL OVERLAY (ĐÈ PHỦ TOÀN BỘ MÀN HÌNH) */
+    .config-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      animation: modalFadeIn 0.2s ease-out;
+    }
+    @keyframes modalFadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .config-modal-dialog {
+      background: #141418;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      width: 100%;
+      max-width: 960px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 20px rgba(99, 102, 241, 0.15);
+      overflow: hidden;
+      animation: modalScaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes modalScaleUp {
+      from { transform: scale(0.95) translateY(10px); opacity: 0; }
+      to { transform: scale(1) translateY(0); opacity: 1; }
+    }
+    .config-modal-header {
+      padding: 16px 20px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .config-modal-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .btn-modal-close {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+    .btn-modal-close:hover {
+      background: rgba(239, 68, 68, 0.2);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+    }
+    .config-modal-body {
+      padding: 20px;
+      overflow-y: auto;
       display: flex;
       flex-direction: column;
       gap: 16px;
-      padding: 16px;
-      height: 100%;
-      overflow-y: auto;
-      min-height: 0;
     }
     .config-hub-hero {
       background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(20, 20, 24, 0.6) 100%);
@@ -406,6 +474,8 @@
     }
     .config-table td {
       padding: 8px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
       border-bottom: 1px solid rgba(255, 255, 255, 0.04);
     }
 
@@ -1605,8 +1675,8 @@
 
   <!-- 2. WATERFALL PIPELINE BAR (Thác Nước Cơ Khí + Vòng lặp Retry + Skip Logic) -->
   <nav class="pipeline-strip">
-    <button id="btn-toggle-sidebar" class="btn-sidebar-toggle" title="Thu gọn / Mở rộng bảng điều khiển bên trái (Zen Focus Mode)">
-      <span id="sidebar-toggle-icon">◨</span>
+    <button id="btn-toggle-sidebar" class="btn-sidebar-toggle collapsed" title="Mở bảng điều khiển chi tiết bên trái">
+      <span id="sidebar-toggle-icon">◧</span>
       <span>Bảng Bên</span>
     </button>
     <div class="pipeline-divider"></div>
@@ -1663,8 +1733,8 @@
     </div>
   </nav>
 
-  <!-- MAIN BENTO CONTAINER -->
-  <main class="bento-container">
+  <!-- MAIN BENTO CONTAINER (Mặc định thu gọn cột trái - Zen Mode) -->
+  <main class="bento-container sidebar-collapsed">
 
     <!-- LEFT COLUMN: Active Task, AI Squad, Locked Scope & Queue -->
     <section class="left-col">
@@ -1736,111 +1806,6 @@
               <span class="role-model" id="squad-model-reviewer">ag/claude-opus-5-5-high • Tech Lead Reviewer</span>
             </div>
             <span class="status-badge badge-skipped" id="squad-status-reviewer">SKIPPED</span>
-          </div>
-        </div>
-
-        <!-- TAB 4: CONFIG & TEAM MATRIX (Placeholder chuẩn bị cho UI-hóa Settings) -->
-        <div id="pane-config" class="tab-pane">
-          <div class="config-hub-container">
-            <div class="config-hub-hero">
-              <div class="config-hub-title-row">
-                <span class="cockpit-title">⚙️ Trung Tâm Cấu Hình Đội Ngũ AI &amp; Dự Án (Config Hub)</span>
-                <span class="tag tag-quick" style="background: rgba(99, 102, 241, 0.15); border-color: var(--accent); color: #c7d2fe;">team.yaml &bull; project.yaml</span>
-              </div>
-              <p class="cockpit-desc">Giao diện trung tâm kiểm soát cấu hình Agent Squad. Bạn có thể xem trạng thái các vai trò, cổng kết nối LLM (9Router) và các quy chuẩn kiểm định tự động 0-token.</p>
-            </div>
-
-            <div class="config-cards-grid">
-              <!-- Team Matrix Card -->
-              <div class="bento-card config-preview-card">
-                <div class="card-header">
-                  <span class="card-title">🤖 Đội Ngũ AI &amp; Vai Trò (team.yaml)</span>
-                  <span class="tag tag-low">Active Squad</span>
-                </div>
-                <div class="config-table-wrapper">
-                  <table class="config-table">
-                    <thead>
-                      <tr>
-                        <th>Vai Trò (Role)</th>
-                        <th>Model Phụ Trách</th>
-                        <th>Cổng Kết Nối</th>
-                        <th>Quyền Hạn &amp; Nhiệm Vụ</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td><strong style="color: var(--color-router);">🧠 Router</strong></td>
-                        <td><code>kr/claude-sonnet-4.5-thinking</code></td>
-                        <td>9Router (:20128)</td>
-                        <td>AI Architect &bull; Phân rã Goal thành Task YAML (Read-only)</td>
-                      </tr>
-                      <tr>
-                        <td><strong style="color: var(--color-writer);">⚡ Writer</strong></td>
-                        <td><code>DeepSeek V4.1 Flash</code></td>
-                        <td>9Router (:20128)</td>
-                        <td>Lập trình viên lõi &bull; Độc quyền ghi mã nguồn (apply_patch)</td>
-                      </tr>
-                      <tr>
-                        <td><strong style="color: #ec4899;">🎨 Designer</strong></td>
-                        <td><code>kr/claude-sonnet-4.5-thinking</code></td>
-                        <td>9Router (:20128)</td>
-                        <td>Visual Auditor &bull; Thẩm định thị giác &amp; UX Spec (Read-only + Vision)</td>
-                      </tr>
-                      <tr>
-                        <td><strong style="color: #eab308;">🔍 Debugger</strong></td>
-                        <td><code>kr/claude-sonnet-4.5-thinking</code></td>
-                        <td>9Router (:20128)</td>
-                        <td>Chẩn đoán lỗi &bull; Truy vết log &amp; Báo cáo RCA (No write)</td>
-                      </tr>
-                      <tr>
-                        <td><strong style="color: var(--color-reviewer);">🛡️ Reviewer</strong></td>
-                        <td><code>ag/claude-opus-5-5-high</code></td>
-                        <td>9Router (:20128)</td>
-                        <td>TechLead Review &bull; Duyệt diff &amp; an toàn bảo mật (Read-only)</td>
-                      </tr>
-                      <tr>
-                        <td><strong style="color: #10b981;">⚖️ Validator</strong></td>
-                        <td><code>Node.js Script</code></td>
-                        <td>Cục Bộ (0-Token)</td>
-                        <td>Kiểm định tự động &bull; Fast checks &amp; TAB Indentation</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <!-- Project Bounds Card -->
-              <div class="bento-card config-preview-card">
-                <div class="card-header">
-                  <span class="card-title">📁 Ranh Giới Dự Án &amp; Kiểm Thử (project.yaml)</span>
-                  <span class="tag tag-low">Safety Sandbox</span>
-                </div>
-                <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.6; display: flex; flex-direction: column; gap: 10px;">
-                  <div>
-                    <strong style="color: var(--text-primary);">Thư mục được phép sửa (allowed_dirs):</strong>
-                    <div style="display: flex; gap: 6px; margin-top: 4px;">
-                      <span class="tag tag-quick">core</span>
-                      <span class="tag tag-quick">ui_bridge</span>
-                      <span class="tag tag-quick">ui_web</span>
-                      <span class="tag tag-quick">tests</span>
-                    </div>
-                  </div>
-                  <div>
-                    <strong style="color: var(--text-primary);">Vùng cấm xâm phạm (protected_files):</strong>
-                    <div style="display: flex; gap: 6px; margin-top: 4px;">
-                      <span class="tag tag-low" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">agent-team/config/**</span>
-                      <span class="tag tag-low" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">.env*</span>
-                    </div>
-                  </div>
-                  <div>
-                    <strong style="color: var(--text-primary);">Lệnh kiểm định nhanh (fast_checks):</strong>
-                    <div style="font-family: var(--font-mono); font-size: 11px; background: rgba(0, 0, 0, 0.3); padding: 6px 10px; border-radius: 4px; margin-top: 4px; border: 1px solid var(--border);">
-                      node agent-team/scripts/validator.mjs fast
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -1915,9 +1880,6 @@
             </button>
             <button class="tab-btn" id="tab-btn-sessions">
               <span>🧠 3. Agent Sessions &amp; Tool Receipts</span>
-            </button>
-            <button class="tab-btn" id="tab-btn-config">
-              <span>⚙️ 4. Cấu Hình &amp; Team Matrix</span>
             </button>
           </div>
           <div class="tab-meta-badges">
@@ -2110,111 +2072,6 @@
             </div>
           </div>
         </div>
-
-        <!-- TAB 4: CONFIG & TEAM MATRIX (Placeholder chuẩn bị cho UI-hóa Settings) -->
-        <div id="pane-config" class="tab-pane">
-          <div class="config-hub-container">
-            <div class="config-hub-hero">
-              <div class="config-hub-title-row">
-                <span class="cockpit-title">⚙️ Trung Tâm Cấu Hình Đội Ngũ AI &amp; Dự Án (Config Hub)</span>
-                <span class="tag tag-quick" style="background: rgba(99, 102, 241, 0.15); border-color: var(--accent); color: #c7d2fe;">team.yaml &bull; project.yaml</span>
-              </div>
-              <p class="cockpit-desc">Giao diện trung tâm kiểm soát cấu hình Agent Squad. Bạn có thể xem trạng thái các vai trò, cổng kết nối LLM (9Router) và các quy chuẩn kiểm định tự động 0-token.</p>
-            </div>
-
-            <div class="config-cards-grid">
-              <!-- Team Matrix Card -->
-              <div class="bento-card config-preview-card">
-                <div class="card-header">
-                  <span class="card-title">🤖 Đội Ngũ AI &amp; Vai Trò (team.yaml)</span>
-                  <span class="tag tag-low">Active Squad</span>
-                </div>
-                <div class="config-table-wrapper">
-                  <table class="config-table">
-                    <thead>
-                      <tr>
-                        <th>Vai Trò (Role)</th>
-                        <th>Model Phụ Trách</th>
-                        <th>Cổng Kết Nối</th>
-                        <th>Quyền Hạn &amp; Nhiệm Vụ</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td><strong style="color: var(--color-router);">🧠 Router</strong></td>
-                        <td><code>kr/claude-sonnet-4.5-thinking</code></td>
-                        <td>9Router (:20128)</td>
-                        <td>AI Architect &bull; Phân rã Goal thành Task YAML (Read-only)</td>
-                      </tr>
-                      <tr>
-                        <td><strong style="color: var(--color-writer);">⚡ Writer</strong></td>
-                        <td><code>DeepSeek V4.1 Flash</code></td>
-                        <td>9Router (:20128)</td>
-                        <td>Lập trình viên lõi &bull; Độc quyền ghi mã nguồn (apply_patch)</td>
-                      </tr>
-                      <tr>
-                        <td><strong style="color: #ec4899;">🎨 Designer</strong></td>
-                        <td><code>kr/claude-sonnet-4.5-thinking</code></td>
-                        <td>9Router (:20128)</td>
-                        <td>Visual Auditor &bull; Thẩm định thị giác &amp; UX Spec (Read-only + Vision)</td>
-                      </tr>
-                      <tr>
-                        <td><strong style="color: #eab308;">🔍 Debugger</strong></td>
-                        <td><code>kr/claude-sonnet-4.5-thinking</code></td>
-                        <td>9Router (:20128)</td>
-                        <td>Chẩn đoán lỗi &bull; Truy vết log &amp; Báo cáo RCA (No write)</td>
-                      </tr>
-                      <tr>
-                        <td><strong style="color: var(--color-reviewer);">🛡️ Reviewer</strong></td>
-                        <td><code>ag/claude-opus-5-5-high</code></td>
-                        <td>9Router (:20128)</td>
-                        <td>TechLead Review &bull; Duyệt diff &amp; an toàn bảo mật (Read-only)</td>
-                      </tr>
-                      <tr>
-                        <td><strong style="color: #10b981;">⚖️ Validator</strong></td>
-                        <td><code>Node.js Script</code></td>
-                        <td>Cục Bộ (0-Token)</td>
-                        <td>Kiểm định tự động &bull; Fast checks &amp; TAB Indentation</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <!-- Project Bounds Card -->
-              <div class="bento-card config-preview-card">
-                <div class="card-header">
-                  <span class="card-title">📁 Ranh Giới Dự Án &amp; Kiểm Thử (project.yaml)</span>
-                  <span class="tag tag-low">Safety Sandbox</span>
-                </div>
-                <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.6; display: flex; flex-direction: column; gap: 10px;">
-                  <div>
-                    <strong style="color: var(--text-primary);">Thư mục được phép sửa (allowed_dirs):</strong>
-                    <div style="display: flex; gap: 6px; margin-top: 4px;">
-                      <span class="tag tag-quick">core</span>
-                      <span class="tag tag-quick">ui_bridge</span>
-                      <span class="tag tag-quick">ui_web</span>
-                      <span class="tag tag-quick">tests</span>
-                    </div>
-                  </div>
-                  <div>
-                    <strong style="color: var(--text-primary);">Vùng cấm xâm phạm (protected_files):</strong>
-                    <div style="display: flex; gap: 6px; margin-top: 4px;">
-                      <span class="tag tag-low" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">agent-team/config/**</span>
-                      <span class="tag tag-low" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">.env*</span>
-                    </div>
-                  </div>
-                  <div>
-                    <strong style="color: var(--text-primary);">Lệnh kiểm định nhanh (fast_checks):</strong>
-                    <div style="font-family: var(--font-mono); font-size: 11px; background: rgba(0, 0, 0, 0.3); padding: 6px 10px; border-radius: 4px; margin-top: 4px; border: 1px solid var(--border);">
-                      node agent-team/scripts/validator.mjs fast
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       <!-- Bottom: Live Console Logs -->
@@ -2234,6 +2091,120 @@
 
     </section>
   </main>
+
+  <!-- MODAL CONFIG OVERLAY (Đè phủ toàn bộ màn hình khi bấm nút Cấu Hình) -->
+  <div id="modal-config-overlay" class="config-modal-backdrop" style="display: none;">
+    <div class="config-modal-dialog">
+      <div class="config-modal-header">
+        <div class="config-modal-title">
+          <span>⚙️ Cài Đặt Đội Ngũ AI &amp; Dự Án (Config Hub)</span>
+          <span class="tag tag-quick" style="background: rgba(99, 102, 241, 0.15); border-color: var(--accent); color: #c7d2fe;">team.yaml &bull; project.yaml</span>
+        </div>
+        <button id="btn-close-config-modal" class="btn-modal-close" title="Đóng cài đặt (Esc)">✕</button>
+      </div>
+      <div class="config-modal-body">
+        <div class="config-hub-hero">
+          <div class="config-hub-title-row">
+            <span class="cockpit-title">🎯 Quản Lý Cấu Hình Tập Trung</span>
+            <span class="tag tag-quick">OpenAI-Compatible &bull; 9Router</span>
+          </div>
+          <p class="cockpit-desc">Trung tâm giám sát và cấu hình các vai trò trong Agent Squad. Mọi thay đổi đều được bảo vệ bởi cơ chế an toàn và kiểm định tự động 0-token.</p>
+        </div>
+
+        <div class="config-cards-grid">
+          <!-- Team Matrix Card -->
+          <div class="bento-card config-preview-card">
+            <div class="card-header">
+              <span class="card-title">🤖 Đội Ngũ AI &amp; Vai Trò (team.yaml)</span>
+              <span class="tag tag-low">Active Squad</span>
+            </div>
+            <div class="config-table-wrapper">
+              <table class="config-table">
+                <thead>
+                  <tr>
+                    <th>Vai Trò (Role)</th>
+                    <th>Model Phụ Trách</th>
+                    <th>Cổng Kết Nối</th>
+                    <th>Quyền Hạn &amp; Nhiệm Vụ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong style="color: var(--color-router);">🧠 Router</strong></td>
+                    <td><code>kr/claude-sonnet-4.5-thinking</code></td>
+                    <td>9Router (:20128)</td>
+                    <td>AI Architect &bull; Phân rã Goal thành Task YAML (Read-only)</td>
+                  </tr>
+                  <tr>
+                    <td><strong style="color: var(--color-writer);">⚡ Writer</strong></td>
+                    <td><code>DeepSeek V4.1 Flash</code></td>
+                    <td>9Router (:20128)</td>
+                    <td>Lập trình viên lõi &bull; Độc quyền ghi mã nguồn (apply_patch)</td>
+                  </tr>
+                  <tr>
+                    <td><strong style="color: #ec4899;">🎨 Designer</strong></td>
+                    <td><code>kr/claude-sonnet-4.5-thinking</code></td>
+                    <td>9Router (:20128)</td>
+                    <td>Visual Auditor &bull; Thẩm định thị giác &amp; UX Spec (Read-only + Vision)</td>
+                  </tr>
+                  <tr>
+                    <td><strong style="color: #eab308;">🔍 Debugger</strong></td>
+                    <td><code>kr/claude-sonnet-4.5-thinking</code></td>
+                    <td>9Router (:20128)</td>
+                    <td>Chẩn đoán lỗi &bull; Truy vết log &amp; Báo cáo RCA (No write)</td>
+                  </tr>
+                  <tr>
+                    <td><strong style="color: var(--color-reviewer);">🛡️ Reviewer</strong></td>
+                    <td><code>ag/claude-opus-5-5-high</code></td>
+                    <td>9Router (:20128)</td>
+                    <td>TechLead Review &bull; Duyệt diff &amp; an toàn bảo mật (Read-only)</td>
+                  </tr>
+                  <tr>
+                    <td><strong style="color: #10b981;">⚖️ Validator</strong></td>
+                    <td><code>Node.js Script</code></td>
+                    <td>Cục Bộ (0-Token)</td>
+                    <td>Kiểm định tự động &bull; Fast checks &amp; TAB Indentation</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Project Bounds Card -->
+          <div class="bento-card config-preview-card">
+            <div class="card-header">
+              <span class="card-title">📁 Ranh Giới Dự Án &amp; Kiểm Thử (project.yaml)</span>
+              <span class="tag tag-low">Safety Sandbox</span>
+            </div>
+            <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.6; display: flex; flex-direction: column; gap: 10px;">
+              <div>
+                <strong style="color: var(--text-primary);">Thư mục được phép sửa (allowed_dirs):</strong>
+                <div style="display: flex; gap: 6px; margin-top: 4px;">
+                  <span class="tag tag-quick">core</span>
+                  <span class="tag tag-quick">ui_bridge</span>
+                  <span class="tag tag-quick">ui_web</span>
+                  <span class="tag tag-quick">tests</span>
+                </div>
+              </div>
+              <div>
+                <strong style="color: var(--text-primary);">Vùng cấm xâm phạm (protected_files):</strong>
+                <div style="display: flex; gap: 6px; margin-top: 4px;">
+                  <span class="tag tag-low" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">agent-team/config/**</span>
+                  <span class="tag tag-low" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">.env*</span>
+                </div>
+              </div>
+              <div>
+                <strong style="color: var(--text-primary);">Lệnh kiểm định nhanh (fast_checks):</strong>
+                <div style="font-family: var(--font-mono); font-size: 11px; background: rgba(0, 0, 0, 0.3); padding: 6px 10px; border-radius: 4px; margin-top: 4px; border: 1px solid var(--border);">
+                  node agent-team/scripts/validator.mjs fast
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script>
     // State
@@ -2310,23 +2281,23 @@
     const lastErrorTail = document.getElementById('last-error-tail');
     const lastErrorRaw = document.getElementById('last-error-raw');
 
-    // Central Tabs
+    // Central Tabs (4 Tabs)
     const tabBtnCockpit = document.getElementById('tab-btn-cockpit');
     const paneCockpit = document.getElementById('pane-cockpit');
     const tabBtnTopology = document.getElementById('tab-btn-topology');
     const tabBtnOutput = document.getElementById('tab-btn-output');
     const tabBtnSessions = document.getElementById('tab-btn-sessions');
-    const tabBtnConfig = document.getElementById('tab-btn-config');
     const paneTopology = document.getElementById('pane-topology');
     const paneOutput = document.getElementById('pane-output');
     const paneSessions = document.getElementById('pane-sessions');
-    const paneConfig = document.getElementById('pane-config');
     const outAttemptBadge = document.getElementById('out-attempt-badge');
     const outFinishBadge = document.getElementById('out-finish-badge');
     const btnHeaderConfig = document.getElementById('btn-header-config');
     const btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
     const sidebarToggleIcon = document.getElementById('sidebar-toggle-icon');
     const bentoContainer = document.querySelector('main.bento-container');
+    const modalConfigOverlay = document.getElementById('modal-config-overlay');
+    const btnCloseConfigModal = document.getElementById('btn-close-config-modal');
 
     // Tab 0 Cockpit Elements
     const inpGoalText = document.getElementById('inp-goal-text');
@@ -2386,14 +2357,13 @@
     const btnClearLog = document.getElementById('btn-clear-log');
     const logFilter = document.getElementById('log-filter');
 
-    // Tab Switching Logic (5 Central Tabs)
+    // Tab Switching Logic (4 Central Tabs)
     function switchTab(target) {
       const tabs = [
         { btn: tabBtnCockpit, pane: paneCockpit, name: 'cockpit' },
         { btn: tabBtnTopology, pane: paneTopology, name: 'topology' },
         { btn: tabBtnOutput, pane: paneOutput, name: 'output' },
-        { btn: tabBtnSessions, pane: paneSessions, name: 'sessions' },
-        { btn: tabBtnConfig, pane: paneConfig, name: 'config' }
+        { btn: tabBtnSessions, pane: paneSessions, name: 'sessions' }
       ];
       tabs.forEach(t => {
         if (!t.btn || !t.pane) return;
@@ -2418,22 +2388,42 @@
     tabBtnTopology.addEventListener('click', () => switchTab('topology'));
     tabBtnOutput.addEventListener('click', () => switchTab('output'));
     tabBtnSessions.addEventListener('click', () => switchTab('sessions'));
-    if (tabBtnConfig) tabBtnConfig.addEventListener('click', () => switchTab('config'));
-    if (btnHeaderConfig) btnHeaderConfig.addEventListener('click', () => switchTab('config'));
 
-    // Collapsible Sidebar Toggle Logic
+    // Config Modal Overlay Handlers (Hiện tab đè phủ toàn màn hình khi bấm nút Cấu Hình)
+    function openConfigModal() {
+      if (modalConfigOverlay) {
+        modalConfigOverlay.style.display = 'flex';
+      }
+    }
+    function closeConfigModal() {
+      if (modalConfigOverlay) {
+        modalConfigOverlay.style.display = 'none';
+      }
+    }
+    if (btnHeaderConfig) btnHeaderConfig.addEventListener('click', openConfigModal);
+    if (btnCloseConfigModal) btnCloseConfigModal.addEventListener('click', closeConfigModal);
+    if (modalConfigOverlay) {
+      modalConfigOverlay.addEventListener('click', (e) => {
+        if (e.target === modalConfigOverlay) closeConfigModal();
+      });
+    }
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && modalConfigOverlay && modalConfigOverlay.style.display === 'flex') {
+        closeConfigModal();
+      }
+    });
+
+    // Collapsible Sidebar Toggle Logic (Mặc định ẩn sang trái - Bấm thì đẩy ra)
     function setSidebarCollapsed(collapsed) {
       if (!bentoContainer) return;
       if (collapsed) {
         bentoContainer.classList.add('sidebar-collapsed');
         if (btnToggleSidebar) btnToggleSidebar.classList.add('collapsed');
         if (sidebarToggleIcon) sidebarToggleIcon.textContent = '◧';
-        try { localStorage.setItem('agent_team_sidebar_collapsed', 'true'); } catch {}
       } else {
         bentoContainer.classList.remove('sidebar-collapsed');
         if (btnToggleSidebar) btnToggleSidebar.classList.remove('collapsed');
         if (sidebarToggleIcon) sidebarToggleIcon.textContent = '◨';
-        try { localStorage.setItem('agent_team_sidebar_collapsed', 'false'); } catch {}
       }
       setTimeout(() => {
         requestAnimationFrame(recalculateSvgLinks);
@@ -2445,11 +2435,8 @@
         const isCollapsed = bentoContainer.classList.contains('sidebar-collapsed');
         setSidebarCollapsed(!isCollapsed);
       });
-      try {
-        if (localStorage.getItem('agent_team_sidebar_collapsed') === 'true') {
-          setSidebarCollapsed(true);
-        }
-      } catch {}
+      // Mặc định luôn ẩn về bên trái khi tải trang lần đầu
+      setSidebarCollapsed(true);
     }
 
     // Quick Prompt Chips
