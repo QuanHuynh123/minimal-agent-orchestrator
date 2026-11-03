@@ -1,27 +1,17 @@
 team:
   name: "hybrid-agent-squad"
-  version: "2.0"
+  version: "3.0"
   single_writer_lock: true
 
-# Định nghĩa các cổng kết nối (Providers)
+# Định nghĩa cổng kết nối 9Router tập trung
 providers:
   local_9router:
     base_url: "http://127.0.0.1:20128/v1"
     api_key_env: "NINE_ROUTER_API_KEY"
     default_key: "sk-default"
-  ide_bridge:
-    type: "mcp_loopback"
-    timeout_sec: 120
 
-# Cấu hình chi tiết từng Model phụ trách theo Standard Workflow
+# Cấu hình chuẩn 5 Vai Trò Tác Tử khớp 1:1 với thư mục agent-team/roles/
 roles:
-  frontend_writer:
-    enabled: true
-    provider: "ide_bridge"
-    display_name: "Gemini 3.8 Flash"
-    model: "Google Antigravity / Gemini 3.8 Flash"
-    allowed_actions: ["frontend_write", "ui_ux_implementation", "pair_programming", "spec_coordination"]
-
   router:
     enabled: true
     provider: "local_9router"
@@ -30,27 +20,44 @@ roles:
     fallback_model: null
     temperature: 0.2
     max_thinking_tokens: 200
+    spec_file: "roles/router.md"
     allowed_actions: ["ui_ux_design", "scope_routing", "task_planning"]
     forbidden_actions: ["direct_write"]
 
   writer:
     enabled: true
     provider: "local_9router"
-    display_name: "DeepSeek V4.1 Flash"
-    model: "Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017"
-    fallback_model: null
+    display_name: "Gemini 3.8 Flash"
+    model: "ag/gemini-3.8-flash-medium"
+    fallback_model: "Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017"
     temperature: 0.1
     max_thinking_tokens: 200
     output_format: "search_replace_blocks"
-    allowed_actions: ["backend_write", "read_scoped_files", "propose_patch"]
+    spec_file: "roles/writer.md"
+    allowed_actions: ["backend_write", "frontend_write", "ui_ux_implementation", "read_scoped_files", "propose_patch"]
     forbidden_actions: ["out_of_scope_edit", "unapproved_dependency"]
 
-  validator:
+  designer:
     enabled: true
-    type: "deterministic_script"
-    display_name: "Validator Guard"
-    script: "scripts/validator.mjs"
-    allowed_actions: ["fast_checks", "suite_checks", "scope_audit", "syntax_lint"]
+    provider: "local_9router"
+    display_name: "Claude Sonnet 4.5 Thinking"
+    model: "kr/claude-sonnet-4.5-thinking"
+    fallback_model: null
+    temperature: 0.2
+    spec_file: "roles/designer.md"
+    allowed_actions: ["visual_audit", "ui_ux_spec", "read_scoped_files"]
+    forbidden_actions: ["direct_write", "apply_patch"]
+
+  debugger:
+    enabled: true
+    provider: "local_9router"
+    display_name: "Claude Sonnet 4.5 Thinking"
+    model: "kr/claude-sonnet-4.5-thinking"
+    fallback_model: null
+    temperature: 0.1
+    spec_file: "roles/debugger.md"
+    allowed_actions: ["error_diagnostics", "rca_analysis", "read_scoped_files", "run_test_probe"]
+    forbidden_actions: ["direct_write", "apply_patch"]
 
   reviewer:
     enabled: true
@@ -59,5 +66,13 @@ roles:
     model: "ag/claude-opus-5-5-high"
     fallback_model: null
     temperature: 0.1
+    spec_file: "roles/reviewer.md"
     allowed_actions: ["review_diff", "approve", "reject"]
     forbidden_actions: ["direct_write"]
+
+  validator:
+    enabled: true
+    type: "deterministic_script"
+    display_name: "Validator Guard"
+    script: "scripts/validator.mjs"
+    allowed_actions: ["fast_checks", "suite_checks", "scope_audit", "syntax_lint"]
