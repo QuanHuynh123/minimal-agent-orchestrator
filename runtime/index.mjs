@@ -151,6 +151,7 @@ export async function runAgent(options = {}) {
   // 5. Bounded Tool Execution Loop
   let currentTurn = 0;
   const turnReceipts = [];
+  const accumulatedPatches = [];
   let finalContent = '';
   let modelUsed = activeModel;
 
@@ -212,6 +213,10 @@ export async function runAgent(options = {}) {
         allowedScope: scope.length > 0 ? scope : roleConfig.allowed_scope
       };
 
+      if (tc.name === 'apply_patch' && tc.arguments?.patch) {
+        accumulatedPatches.push(tc.arguments.patch);
+      }
+
       const execResult = await executeTool(tc.name, tc.arguments, toolContext);
       
       const receipt = {
@@ -229,6 +234,47 @@ export async function runAgent(options = {}) {
         tool_call_id: tc.id,
         content: JSON.stringify(execResult)
       });
+    }
+  }
+
+  // 5b. Final Synthesis Turn: If maxTurns reached through tool calls and finalContent is still empty,
+  // invoke model once more WITHOUT tools so it can synthesize its findings and output SEARCH/REPLACE blocks.
+  if (!finalContent && currentTurn >= maxTurns) {
+    const synthesisPrompt = (role === 'writer' || role === 'backend_writer')
+      ? 'All tool investigations are complete. Based on what you observed from the tools, immediately provide your final response containing the exact <<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE blocks to fulfill the task. Do not call any more tools.'
+      : 'All tool investigations are complete. Based on what you observed from the tools, please provide your final response now.';
+
+    messages.push({
+      role: 'user',
+      content: synthesisPrompt
+    });
+
+    const synthRes = await callModelEndpoint({
+      model: activeModel,
+      fallbackModel: roleConfig.fallback_model,
+      messages,
+      tools: null, // Zero tools in synthesis turn to force textual output
+      temperature: roleConfig.temperature,
+      timeoutMs,
+      baseUrl: roleConfig.base_url,
+      apiKey: roleConfig.api_key
+    });
+
+    if (synthRes.ok) {
+      finalContent = synthRes.content || '';
+      modelUsed = synthRes.model_used || modelUsed;
+      messages.push({
+        role: 'assistant',
+        content: finalContent
+      });
+    }
+  }
+
+  // Fallback patch preservation: if writer applied patches via apply_patch tool but finalContent lacks search/replace blocks,
+  // append the accumulated patches so downstream Orchestrator Applier & Git Guard can inspect and record the diff.
+  if ((role === 'writer' || role === 'backend_writer') && accumulatedPatches.length > 0) {
+    if (!finalContent.includes('<<<<<<< SEARCH')) {
+      finalContent = (finalContent ? `${finalContent}\n\n` : '') + accumulatedPatches.join('\n\n');
     }
   }
 

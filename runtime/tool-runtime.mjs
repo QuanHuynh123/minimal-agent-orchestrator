@@ -127,13 +127,13 @@ export const TOOL_SCHEMAS = {
     type: 'function',
     function: {
       name: 'run_command',
-      description: 'Execute a non-interactive CLI shell command in the workspace root (e.g. running python tests, inspecting git status) with strict timeout and security guardrails.',
+      description: 'Execute a non-interactive CLI shell command in the workspace root with strict timeout and security guardrails. Target OS is Windows with PowerShell. Use cross-platform CLI tools (git, python, node) or PowerShell cmdlets (Select-String, Get-Content). Do NOT use Linux-specific utilities like sed, awk, or head.',
       parameters: {
         type: 'object',
         properties: {
           command: {
             type: 'string',
-            description: 'The shell command string to execute.'
+            description: 'The shell command string to execute in Windows PowerShell.'
           },
           timeout_sec: {
             type: 'number',
@@ -266,12 +266,13 @@ export function toolReadFile(repoRoot, args = {}, context = {}) {
       const isDocOrMeta = safeRel.endsWith('.md')
         || safeRel.startsWith('docs/')
         || safeRel.startsWith('agent-team/config/')
-        || safeRel.startsWith('agent-team/roles/');
+        || safeRel.startsWith('agent-team/roles/')
+        || safeRel.startsWith('tests/'); // Allow read-only access to test suites for assertion inspection
       const inScope = normalizedScope.includes(safeRel);
       if (!inScope && !isDocOrMeta) {
         return {
           ok: false,
-          error: `SCOPE_VIOLATION: File "${safeRel}" is outside active task scope [${allowedScope.join(', ')}]. Reading restricted to scoped files or project docs.`
+          error: `SCOPE_VIOLATION: File "${safeRel}" is outside active task scope [${allowedScope.join(', ')}]. Reading restricted to scoped files, test suites, or project docs.`
         };
       }
     }
