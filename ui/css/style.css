@@ -423,395 +423,551 @@
       border-color: rgba(239, 68, 68, 0.4);
       color: #fca5a5;
     }
-    .config-modal-body {
-      padding: 24px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
+    /* PRO CONFIG MODAL: 90vw x 85vh & COMPACT DUAL-TIER LAYOUT */
+    .config-modal-dialog-pro {
+      width: 90vw !important;
+      max-width: 1120px !important;
+      height: 85vh !important;
+      max-height: 85vh !important;
+      background: #0f1015 !important;
+      border: 1px solid rgba(255, 255, 255, 0.12) !important;
+      box-shadow: 0 30px 80px -15px rgba(0, 0, 0, 0.9), 0 0 30px rgba(99, 102, 241, 0.15) !important;
+      border-radius: 12px !important;
+      display: flex !important;
+      flex-direction: column !important;
+      overflow: hidden !important;
     }
-    .config-hub-hero {
-      background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(20, 20, 24, 0.7) 100%);
-      border: 1px solid rgba(99, 102, 241, 0.25);
-      border-radius: 10px;
-      padding: 16px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
+    .cfg-header-icon {
+      font-size: 16px;
+    }
+    .cfg-header-text {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: #fff;
     }
 
-    /* 1. Role Coverage Matrix */
-    .role-coverage-wrapper {
-      background: rgba(0, 0, 0, 0.25);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 8px;
+    /* Navigation Tabs Bar */
+    .config-nav-tabs {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 20px;
+      background: #14151b;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      flex-shrink: 0;
+    }
+    .cfg-nav-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
       padding: 12px 16px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .cfg-nav-tab:hover {
+      color: #e2e8f0;
+    }
+    .cfg-nav-tab.active {
+      color: #fff;
+      border-bottom-color: var(--accent);
+      background: rgba(99, 102, 241, 0.06);
+    }
+    .cfg-tab-counter {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 1px 7px;
+      font-size: 10.5px;
+      font-weight: 700;
+      color: #cbd5e1;
+    }
+    .cfg-nav-tabs-spacer {
+      flex: 1;
+    }
+    .cfg-router-status-pill {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      color: #34d399;
+    }
+
+    /* Modal Body Pro */
+    .config-modal-body-pro {
+      flex: 1 !important;
+      padding: 16px 20px !important;
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 14px !important;
+      overflow: hidden !important;
+      min-height: 0 !important;
+    }
+    .cfg-panel-content {
+      flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      min-height: 0;
+      gap: 14px;
     }
-    .coverage-header {
+
+    /* NỬA TRÊN: SQUAD PERSONNEL (CUỘN DỌC) */
+    .squad-section-top {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: rgba(20, 21, 27, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .section-micro-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      margin-bottom: 8px;
+      flex-shrink: 0;
     }
-    .coverage-title {
+    .section-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-title-label {
       font-size: 11px;
       font-weight: 700;
       letter-spacing: 0.6px;
-      color: var(--text-secondary);
+      color: #94a3b8;
     }
-    .coverage-grid {
+    .cfg-tag-subtle {
+      font-size: 10.5px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #94a3b8;
+    }
+    .role-coverage-pills {
       display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .role-cov-badge {
-      display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 6px 10px;
-      border-radius: 6px;
-      font-size: 11.5px;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .cov-mini-pill {
+      font-size: 10.5px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.07);
       color: var(--text-muted);
-      transition: all 0.2s ease;
     }
-    .role-cov-badge.assigned {
-      background: rgba(16, 185, 129, 0.12);
-      border-color: rgba(16, 185, 129, 0.35);
-      color: #6ee7b7;
-    }
-    .role-cov-badge.vacant {
-      background: rgba(239, 68, 68, 0.08);
-      border-color: rgba(239, 68, 68, 0.25);
-      color: #fca5a5;
-    }
-    .role-cov-fixed {
-      background: rgba(16, 185, 129, 0.08);
-      border-color: rgba(16, 185, 129, 0.2);
+    .cov-mini-pill.assigned {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: rgba(16, 185, 129, 0.3);
       color: #34d399;
     }
 
-    /* 2. Squad Personnel (Đội ngũ hiện tại) */
-    .squad-personnel-card {
-      border: 1px solid rgba(99, 102, 241, 0.3);
-      background: rgba(20, 20, 26, 0.85);
-    }
-    .squad-members-container {
+    /* Compact Horizontal Row (Cao ~56px) */
+    .squad-compact-list {
+      flex: 1;
+      overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      max-height: 280px;
-      overflow-y: auto;
+      gap: 6px;
       padding-right: 4px;
     }
-    .empty-squad-notice {
-      padding: 24px;
-      text-align: center;
-      font-size: 12px;
-      color: var(--text-muted);
+    .squad-compact-row {
+      height: 54px;
+      min-height: 54px;
       background: rgba(255, 255, 255, 0.02);
-      border: 1px dashed rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.06);
       border-radius: 6px;
-    }
-    .squad-member-row {
-      display: grid;
-      grid-template-columns: 1fr 180px 140px;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 14px;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 8px;
-      transition: all 0.15s ease;
-    }
-    .squad-member-row:hover {
-      background: rgba(255, 255, 255, 0.05);
-      border-color: rgba(99, 102, 241, 0.3);
-    }
-    .member-info {
+      padding: 0 12px;
       display: flex;
       align-items: center;
-      gap: 10px;
+      justify-content: space-between;
+      gap: 12px;
+      transition: all 0.15s ease;
+    }
+    .squad-compact-row:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(99, 102, 241, 0.25);
+    }
+    .compact-left {
+      flex: 1;
       min-width: 0;
-    }
-    .member-icon {
-      font-size: 20px;
-      flex-shrink: 0;
-    }
-    .member-text {
+      overflow: hidden;
       display: flex;
       flex-direction: column;
       gap: 2px;
+    }
+    .compact-title-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       min-width: 0;
     }
-    .member-name {
-      font-size: 13px;
+    .compact-model-name {
+      font-size: 12.5px;
       font-weight: 700;
-      color: #fff;
+      color: #f1f5f9;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .member-id-line {
+    .compact-model-id {
       font-size: 11px;
-      color: var(--text-muted);
+      color: #64748b;
       font-family: var(--font-mono);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .member-caps-row {
+    .compact-badges-row {
       display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* Trung tính, bỏ emoji, bỏ màu lòe loẹt */
+    .badge-neutral {
+      font-size: 9.5px;
+      font-weight: 500;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #94a3b8;
+    }
+
+    .compact-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .compact-role-select {
+      background: #121317;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 6px;
+      color: #e2e8f0;
+      font-size: 11.5px;
+      padding: 5px 8px;
+      cursor: pointer;
+      width: 175px;
+      outline: none;
+    }
+    .compact-role-select:focus {
+      border-color: var(--accent);
+    }
+    .btn-compact-test {
+      display: inline-flex;
       align-items: center;
       gap: 4px;
-      margin-top: 2px;
-    }
-    .member-role-select {
-      background: #0f1013;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 6px;
-      color: #f1f5f9;
-      font-size: 12px;
-      padding: 7px 10px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #cbd5e1;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 5px;
       cursor: pointer;
-      width: 100%;
-      outline: none;
-      transition: all 0.2s ease;
+      transition: all 0.15s ease;
     }
-    .member-role-select:focus {
+    .btn-compact-test:hover {
+      background: rgba(99, 102, 241, 0.2);
       border-color: var(--accent);
-      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+      color: #fff;
     }
-    .member-actions-col {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 8px;
-    }
-    .btn-member-remove {
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.25);
-      color: #fca5a5;
-      width: 28px;
-      height: 28px;
-      border-radius: 6px;
+    .btn-compact-remove {
+      width: 26px;
+      height: 26px;
       display: flex;
       align-items: center;
       justify-content: center;
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #64748b;
+      border-radius: 5px;
       cursor: pointer;
-      font-size: 12px;
+      font-size: 11px;
       transition: all 0.15s ease;
     }
-    .btn-member-remove:hover {
-      background: rgba(239, 68, 68, 0.25);
+    .btn-compact-remove:hover {
+      background: rgba(239, 68, 68, 0.15);
       border-color: #ef4444;
-      color: #fff;
-      transform: scale(1.05);
+      color: #fca5a5;
     }
 
-    /* 3. Model Pool Explorer */
-    .model-pool-card {
-      background: rgba(17, 18, 22, 0.7);
-    }
-    .pool-filter-tabs {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .btn-filter-pill {
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      color: var(--text-muted);
-      border-radius: 12px;
-      padding: 3px 10px;
-      font-size: 10.5px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-    .btn-filter-pill:hover, .btn-filter-pill.active {
-      background: rgba(99, 102, 241, 0.18);
-      border-color: var(--accent);
-      color: #c7d2fe;
-    }
-    .model-pool-search-row {
-      margin-top: 4px;
-    }
-    .model-pool-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 12px;
-      max-height: 280px;
-      overflow-y: auto;
-      padding: 4px;
-    }
-    .model-pool-card-item {
-      background: rgba(255, 255, 255, 0.02);
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      border-radius: 8px;
-      padding: 12px;
+    /* NỬA DƯỚI: KHO MODEL (HORIZONTAL SCROLL) */
+    .model-pool-section-bottom {
+      flex-shrink: 0;
+      height: 235px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 10px;
       display: flex;
       flex-direction: column;
       gap: 8px;
-      transition: all 0.2s ease;
     }
-    .model-pool-card-item:hover {
-      background: rgba(255, 255, 255, 0.04);
-      border-color: rgba(99, 102, 241, 0.35);
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    }
-    .card-item-header {
+    .pool-action-bar {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .pool-title-left {
+      display: flex;
+      align-items: center;
       gap: 8px;
     }
-    .card-item-title {
-      font-size: 12.5px;
-      font-weight: 700;
-      color: #e2e8f0;
-      line-height: 1.3;
+    .pool-controls-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
-    .card-item-id {
+    .pool-search-box {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .search-mini-icon {
+      position: absolute;
+      left: 8px;
+      font-size: 11px;
+      opacity: 0.5;
+      pointer-events: none;
+    }
+    /* Sửa lỗi input nền trắng: Nền tối hoàn toàn bg-zinc-900/80 */
+    .cfg-search-input {
+      background: #14151b !important;
+      border: 1px solid rgba(255, 255, 255, 0.12) !important;
+      border-radius: 6px !important;
+      color: #f1f5f9 !important;
+      font-size: 11.5px !important;
+      padding: 5px 10px 5px 26px !important;
+      width: 210px !important;
+      outline: none !important;
+      transition: all 0.2s ease !important;
+    }
+    .cfg-search-input:focus {
+      border-color: var(--accent) !important;
+      background: #181922 !important;
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25) !important;
+    }
+    .pool-filter-pills {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .cfg-filter-btn {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #94a3b8;
+      border-radius: 4px;
+      padding: 3px 8px;
       font-size: 10.5px;
-      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .cfg-filter-btn:hover, .cfg-filter-btn.active {
+      background: rgba(99, 102, 241, 0.2);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* Thanh ngang cuộn (Horizontal Scroll) */
+    .model-pool-horizontal-track {
+      flex: 1;
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-bottom: 6px;
+      scroll-snap-type: x mandatory;
+      scrollbar-width: thin;
+      scrollbar-color: #334155 #0f172a;
+    }
+    .model-pool-horizontal-track::-webkit-scrollbar {
+      height: 6px;
+    }
+    .model-pool-horizontal-track::-webkit-scrollbar-track {
+      background: #0f1015;
+      border-radius: 3px;
+    }
+    .model-pool-horizontal-track::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    .model-pool-horizontal-track::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    /* Card cố định 250px trong thanh cuộn ngang */
+    .pool-card-compact {
+      width: 245px;
+      min-width: 245px;
+      scroll-snap-align: start;
+      background: rgba(20, 21, 27, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .pool-card-compact:hover {
+      background: rgba(20, 21, 27, 0.9);
+      border-color: rgba(99, 102, 241, 0.35);
+      transform: translateY(-2px);
+    }
+    .pool-card-compact.in-squad {
+      opacity: 0.55;
+      border-color: rgba(16, 185, 129, 0.3);
+      background: rgba(16, 185, 129, 0.02);
+    }
+    .pool-card-top {
+      min-width: 0;
+      overflow: hidden;
+    }
+    .pool-card-name {
+      font-size: 12px;
+      font-weight: 700;
+      color: #f1f5f9;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .pool-card-id {
+      font-size: 10.5px;
+      color: #64748b;
       font-family: var(--font-mono);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      margin-top: 2px;
+      margin-top: 1px;
     }
-    .card-item-caps {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-    }
-    .card-item-footer {
+    .pool-card-badges {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      margin-top: auto;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .pool-card-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
       padding-top: 6px;
-      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      border-top: 1px solid rgba(255, 255, 255, 0.04);
     }
-    .btn-add-to-squad {
-      background: rgba(99, 102, 241, 0.15);
-      border: 1px solid rgba(99, 102, 241, 0.35);
-      color: #c7d2fe;
-      padding: 4px 10px;
-      border-radius: 6px;
-      font-size: 11px;
+    .btn-pool-test {
+      flex: 1;
+      padding: 4px 6px;
+      font-size: 10.5px;
       font-weight: 600;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      transition: all 0.15s ease;
-    }
-    .btn-add-to-squad:hover {
-      background: rgba(99, 102, 241, 0.3);
-      border-color: var(--accent);
-      color: #fff;
-      transform: translateY(-1px);
-    }
-    .btn-add-to-squad.added {
-      background: rgba(16, 185, 129, 0.15);
-      border-color: rgba(16, 185, 129, 0.35);
-      color: #6ee7b7;
-      cursor: default;
-    }
-
-    /* Shared Capability Tags */
-    .cap-tag {
-      font-size: 9.5px;
-      padding: 1px 5px;
-      border-radius: 4px;
-      font-weight: 600;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      color: var(--text-muted);
-    }
-    .cap-vision {
-      background: rgba(59, 130, 246, 0.12);
-      border-color: rgba(59, 130, 246, 0.3);
-      color: #93c5fd;
-    }
-    .cap-tools {
-      background: rgba(16, 185, 129, 0.12);
-      border-color: rgba(16, 185, 129, 0.3);
-      color: #6ee7b7;
-    }
-    .cap-reasoning {
-      background: rgba(168, 85, 247, 0.12);
-      border-color: rgba(168, 85, 247, 0.3);
-      color: #d8b4fe;
-    }
-
-    /* 9Router Test Button */
-    .btn-model-test {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      background: rgba(239, 68, 68, 0.12);
-      border: 1px solid rgba(239, 68, 68, 0.35);
-      color: #f87171;
-      padding: 4px 8px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 11px;
-      font-weight: 600;
-      transition: all 0.15s ease;
-      white-space: nowrap;
-    }
-    .btn-model-test:hover {
-      background: rgba(239, 68, 68, 0.25);
-      border-color: #ef4444;
-      color: #fca5a5;
-      box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
-    }
-    .test-result-badge {
-      font-size: 10px;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-family: var(--font-mono);
+      color: #94a3b8;
       background: rgba(255, 255, 255, 0.04);
       border: 1px solid rgba(255, 255, 255, 0.08);
-      color: var(--text-muted);
+      border-radius: 4px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      transition: all 0.15s ease;
+    }
+    .btn-pool-test:hover {
+      background: rgba(99, 102, 241, 0.15);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .btn-pool-add {
+      flex: 1.5;
+      padding: 4px 6px;
+      font-size: 10.5px;
+      font-weight: 600;
+      color: #fff;
+      background: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-pool-add:hover {
+      background: #4f46e5;
+    }
+    .btn-pool-added-badge {
+      flex: 1.5;
+      padding: 4px 6px;
+      font-size: 10px;
       text-align: center;
-      white-space: nowrap;
-    }
-    .test-result-badge.badge-done {
-      background: rgba(16, 185, 129, 0.15);
-      border-color: #10b981;
       color: #34d399;
-    }
-    .test-result-badge.badge-error {
-      background: rgba(239, 68, 68, 0.15);
-      border-color: #ef4444;
-      color: #f87171;
-    }
-    .test-result-badge.badge-running {
-      background: rgba(245, 158, 11, 0.15);
-      border-color: #f59e0b;
-      color: #fbbf24;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      border-radius: 4px;
     }
 
     /* Modal Footer */
     .config-modal-footer {
-      padding: 18px 24px;
+      padding: 14px 20px;
       background: #111216;
-      border-top: 1px solid var(--border);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
       display: flex;
       align-items: center;
       justify-content: space-between;
       flex-shrink: 0;
     }
-    .footer-status-msg {
+    .footer-btn-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .cfg-btn-footer {
+      padding: 7px 16px;
+      border-radius: 6px;
       font-size: 12px;
+      cursor: pointer;
+    }
+    .cfg-btn-save {
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+      font-weight: 600;
+    }
+
+    /* Project Config Panel Form */
+    .project-config-wrapper {
+      padding: 10px 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .project-info-hero {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .project-form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .form-label {
+      font-size: 11px;
       color: var(--text-muted);
+      font-weight: 600;
     }
       justify-content: space-between;
       flex-shrink: 0;

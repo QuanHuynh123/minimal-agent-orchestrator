@@ -237,13 +237,32 @@
     const spinSaveConfig = document.getElementById('spin-save-config');
     const cfgSaveStatusMsg = document.getElementById('cfg-save-status-msg');
 
-    const covBadges = {
-      router: document.getElementById('cov-router'),
-      writer: document.getElementById('cov-writer'),
-      designer: document.getElementById('cov-designer'),
-      debugger: document.getElementById('cov-debugger'),
-      reviewer: document.getElementById('cov-reviewer')
+    const covPills = {
+      router: document.getElementById('cov-pill-router'),
+      writer: document.getElementById('cov-pill-writer'),
+      designer: document.getElementById('cov-pill-designer'),
+      debugger: document.getElementById('cov-pill-debugger'),
+      reviewer: document.getElementById('cov-pill-reviewer')
     };
+    const squadTabCountBadge = document.getElementById('squad-tab-count-badge');
+
+    // Tab Navigation: team.yaml vs project.yaml
+    document.querySelectorAll('.cfg-nav-tab').forEach(tabBtn => {
+      tabBtn.addEventListener('click', () => {
+        document.querySelectorAll('.cfg-nav-tab').forEach(b => b.classList.remove('active'));
+        tabBtn.classList.add('active');
+        const target = tabBtn.dataset.tab;
+        const panelTeam = document.getElementById('cfg-panel-team');
+        const panelProj = document.getElementById('cfg-panel-project');
+        if (target === 'team') {
+          if (panelTeam) panelTeam.style.display = 'flex';
+          if (panelProj) panelProj.style.display = 'none';
+        } else {
+          if (panelTeam) panelTeam.style.display = 'none';
+          if (panelProj) panelProj.style.display = 'flex';
+        }
+      });
+    });
 
     async function load9RouterModels(force = false) {
       if (available9RouterModels.length > 0 && !force) {
@@ -251,7 +270,7 @@
         return;
       }
       if (spinRefreshModels) spinRefreshModels.style.display = 'inline-block';
-      if (cfgModelsCountText) cfgModelsCountText.textContent = 'Đang tải model...';
+      if (cfgModelsCountText) cfgModelsCountText.textContent = 'Đang tải...';
 
       try {
         const res = await fetch('/api/models');
@@ -269,10 +288,10 @@
         if (data.ok && Array.isArray(data.models)) {
           available9RouterModels = data.models;
           if (cfgModelsCountText) {
-            cfgModelsCountText.textContent = `${data.models.length} model sẵn sàng`;
+            cfgModelsCountText.textContent = `${data.models.length} Models`;
           }
           if (cfgRouterBadge) {
-            cfgRouterBadge.className = 'tag tag-low';
+            cfgRouterBadge.className = 'cfg-router-status-pill';
             cfgRouterBadge.textContent = `🟢 9Router :20128 (${data.models.length} models)`;
           }
           renderModelPool();
@@ -282,12 +301,14 @@
       } catch (err) {
         if (cfgModelsCountText) cfgModelsCountText.textContent = 'Lỗi kết nối';
         if (cfgRouterBadge) {
-          cfgRouterBadge.className = 'tag tag-error';
+          cfgRouterBadge.className = 'cfg-router-status-pill';
+          cfgRouterBadge.style.color = '#f87171';
+          cfgRouterBadge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
           cfgRouterBadge.textContent = '🔴 9Router: ' + err.message;
         }
         if (modelPoolGrid) {
           modelPoolGrid.innerHTML = `
-            <div style="grid-column: 1 / -1; padding: 20px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; font-size: 12px; color: #fca5a5;">
+            <div style="padding: 16px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 6px; font-size: 11.5px; color: #fca5a5;">
               <strong>⚠️ Chú ý:</strong> ${escapeHtml(err.message)}<br/>
               <span style="font-size: 11px; opacity: 0.8; margin-top: 4px; display: inline-block;">Gợi ý: Nếu bạn vừa cập nhật code, hãy bấm <code>Ctrl + C</code> trong terminal đang chạy Dashboard và chạy lại: <code>node agent-team/scripts/dashboard.mjs</code></span>
             </div>
@@ -319,7 +340,6 @@
         }
       }
 
-      // Default fallback nếu team.yaml chưa gán đủ
       if (initial.length === 0) {
         initial.push({ model: 'kr/claude-sonnet-4.5-thinking', name: 'Claude Sonnet 4.5 Thinking', role: 'router', latency_ms: null });
         initial.push({ model: 'Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017', name: 'DeepSeek V4.1 Flash', role: 'writer', latency_ms: null });
@@ -331,23 +351,23 @@
       renderModelPool();
     }
 
+    // Render Compact Horizontal Rows (Cao ~54px, chống tràn text)
     function renderSquadPersonnel() {
       if (!squadMembersList) return;
       squadMembersList.innerHTML = '';
 
-      if (squadCountBadge) {
-        squadCountBadge.textContent = `${squadMembers.length} Thành Viên`;
-      }
+      if (squadCountBadge) squadCountBadge.textContent = `${squadMembers.length} Thành Viên`;
+      if (squadTabCountBadge) squadTabCountBadge.textContent = `${squadMembers.length}`;
 
       if (squadMembers.length === 0) {
-        squadMembersList.innerHTML = '<div class="empty-squad-notice">Chưa có thành viên nào trong đội. Hãy chọn model từ danh sách 9Router bên dưới và bấm "➕ Thêm Vào Đội".</div>';
+        squadMembersList.innerHTML = '<div class="empty-squad-notice">Chưa có thành viên nào trong đội. Chọn model từ Kho 9Router bên dưới và bấm "+ Thêm Vào Đội".</div>';
         updateRoleCoverageMatrix();
         return;
       }
 
       squadMembers.forEach((member, idx) => {
         const row = document.createElement('div');
-        row.className = 'squad-member-row';
+        row.className = 'squad-compact-row';
 
         const matchedInPool = available9RouterModels.find(m => m.id === member.model);
         const caps = matchedInPool?.capabilities || {
@@ -356,14 +376,15 @@
           reasoning: member.model.includes('thinking') || member.model.includes('opus') || member.model.includes('sonnet')
         };
 
+        // Badges trung tính, không emoji lòe loẹt
         const capsHtml = `
-          ${caps.vision ? '<span class="cap-tag cap-vision">👁️ Vision</span>' : ''}
-          ${caps.tools ? '<span class="cap-tag cap-tools">⚙️ Tools</span>' : ''}
-          ${caps.reasoning ? '<span class="cap-tag cap-reasoning">🧠 Thinking</span>' : ''}
+          ${caps.vision ? '<span class="badge-neutral">Vision</span>' : ''}
+          ${caps.tools ? '<span class="badge-neutral">Tools</span>' : ''}
+          ${caps.reasoning ? '<span class="badge-neutral">Thinking</span>' : ''}
         `;
 
         const latencyBadgeHtml = member.testing
-          ? '<span class="test-result-badge badge-running">Đang ping...</span>'
+          ? '<span class="test-result-badge badge-running">...</span>'
           : (member.latency_ms !== null
               ? (member.error
                   ? `<span class="test-result-badge badge-error" title="${escapeHtml(member.error)}">✕ Lỗi</span>`
@@ -371,16 +392,15 @@
               : '<span class="test-result-badge">Chưa test</span>');
 
         row.innerHTML = `
-          <div class="member-info">
-            <span class="member-icon">🤖</span>
-            <div class="member-text">
-              <span class="member-name">${escapeHtml(member.name || member.model)}</span>
-              <span class="member-id-line">${escapeHtml(member.model)}</span>
-              <div class="member-caps-row">${capsHtml}</div>
+          <div class="compact-left">
+            <div class="compact-title-line">
+              <span class="compact-model-name">${escapeHtml(member.name || member.model)}</span>
+              <span class="compact-model-id">${escapeHtml(member.model)}</span>
             </div>
+            <div class="compact-badges-row">${capsHtml}</div>
           </div>
-          <div class="member-role-col">
-            <select class="member-role-select" data-idx="${idx}">
+          <div class="compact-right">
+            <select class="compact-role-select" data-idx="${idx}">
               <option value="standby" ${member.role === 'standby' ? 'selected' : ''}>💤 Dự Bị (Standby)</option>
               <option value="router" ${member.role === 'router' ? 'selected' : ''}>🧠 Router (Architect)</option>
               <option value="writer" ${member.role === 'writer' ? 'selected' : ''}>⚡ Writer (Single Writer)</option>
@@ -388,22 +408,19 @@
               <option value="debugger" ${member.role === 'debugger' ? 'selected' : ''}>🔍 Debugger (RCA Specialist)</option>
               <option value="reviewer" ${member.role === 'reviewer' ? 'selected' : ''}>🛡️ Reviewer (TechLead)</option>
             </select>
-          </div>
-          <div class="member-actions-col">
             ${latencyBadgeHtml}
-            <button class="btn-model-test btn-test-member" data-idx="${idx}" title="Kiểm tra ping thực tế">
-              <span class="test-icon">🧪</span>
-              <span>Test</span>
+            <button class="btn-compact-test btn-test-member" data-idx="${idx}" title="Đo độ trễ mạng thực tế">
+              <span>⚡ Test</span>
             </button>
-            <button class="btn-member-remove" data-idx="${idx}" title="Xóa khỏi đội ngũ">✕</button>
+            <button class="btn-compact-remove" data-idx="${idx}" title="Gỡ khỏi đội ngũ">✕</button>
           </div>
         `;
 
         squadMembersList.appendChild(row);
       });
 
-      // Gắn event listeners cho role select, test, và remove
-      squadMembersList.querySelectorAll('.member-role-select').forEach(sel => {
+      // Events
+      squadMembersList.querySelectorAll('.compact-role-select').forEach(sel => {
         sel.addEventListener('change', (e) => {
           const idx = parseInt(e.target.dataset.idx, 10);
           if (squadMembers[idx]) {
@@ -433,7 +450,7 @@
         });
       });
 
-      squadMembersList.querySelectorAll('.btn-member-remove').forEach(btn => {
+      squadMembersList.querySelectorAll('.btn-compact-remove').forEach(btn => {
         btn.addEventListener('click', () => {
           const idx = parseInt(btn.dataset.idx, 10);
           squadMembers.splice(idx, 1);
@@ -453,19 +470,20 @@
         }
       });
 
-      for (const [rKey, badgeEl] of Object.entries(covBadges)) {
-        if (!badgeEl) continue;
-        const valEl = badgeEl.querySelector('.cov-val');
+      for (const [rKey, pillEl] of Object.entries(covPills)) {
+        if (!pillEl) continue;
+        const roleName = rKey.charAt(0).toUpperCase() + rKey.slice(1);
         if (assignedMap[rKey]) {
-          badgeEl.className = 'role-cov-badge assigned';
-          if (valEl) valEl.textContent = assignedMap[rKey];
+          pillEl.className = 'cov-mini-pill assigned';
+          pillEl.innerHTML = `${roleName}: <strong>${escapeHtml(assignedMap[rKey])}</strong>`;
         } else {
-          badgeEl.className = 'role-cov-badge vacant';
-          if (valEl) valEl.textContent = 'Khuyết vai trò';
+          pillEl.className = 'cov-mini-pill';
+          pillEl.innerHTML = `${roleName}: <strong>Khuyết</strong>`;
         }
       }
     }
 
+    // Render Kho Model 9Router (Horizontal Scroll Track)
     function renderModelPool() {
       if (!modelPoolGrid) return;
       modelPoolGrid.innerHTML = '';
@@ -487,7 +505,7 @@
 
       if (filtered.length === 0) {
         modelPoolGrid.innerHTML = `
-          <div style="grid-column: 1 / -1; padding: 24px; text-align: center; color: var(--text-muted); font-size: 12px;">
+          <div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 11.5px; white-space: nowrap;">
             Không tìm thấy model nào khớp với từ khóa "${escapeHtml(kw)}".
           </div>
         `;
@@ -496,32 +514,30 @@
 
       filtered.forEach(m => {
         const card = document.createElement('div');
-        card.className = 'model-pool-card-item';
         const isAdded = existingModelSet.has(m.id);
+        card.className = 'pool-card-compact' + (isAdded ? ' in-squad' : '');
 
         const capsHtml = `
-          ${m.capabilities?.vision ? '<span class="cap-tag cap-vision">👁️ Vision</span>' : ''}
-          ${m.capabilities?.tools ? '<span class="cap-tag cap-tools">⚙️ Tools</span>' : ''}
-          ${m.capabilities?.reasoning ? '<span class="cap-tag cap-reasoning">🧠 Thinking</span>' : ''}
+          ${m.capabilities?.vision ? '<span class="badge-neutral">Vision</span>' : ''}
+          ${m.capabilities?.tools ? '<span class="badge-neutral">Tools</span>' : ''}
+          ${m.capabilities?.reasoning ? '<span class="badge-neutral">Thinking</span>' : ''}
         `;
 
         card.innerHTML = `
-          <div class="card-item-header">
-            <div>
-              <div class="card-item-title">${escapeHtml(m.name)}</div>
-              <div class="card-item-id">${escapeHtml(m.id)}</div>
-            </div>
-            <span class="tag tag-quick" style="font-size: 9.5px; text-transform: uppercase;">${escapeHtml(m.owned_by || '9router')}</span>
+          <div class="pool-card-top">
+            <div class="pool-card-name">${escapeHtml(m.name)}</div>
+            <div class="pool-card-id">${escapeHtml(m.id)}</div>
+            <div class="pool-card-badges">${capsHtml}</div>
           </div>
-          <div class="card-item-caps">${capsHtml}</div>
-          <div class="card-item-footer">
-            <button class="btn-model-test btn-pool-test" data-model="${escapeHtml(m.id)}">
-              <span class="test-icon">🧪</span>
-              <span class="pool-test-lbl">Test</span>
+          <div class="pool-card-actions">
+            <button class="btn-pool-test" data-model="${escapeHtml(m.id)}">
+              <span>⚡ Test</span>
+              <span class="pool-test-lbl"></span>
             </button>
-            <button class="btn-add-to-squad ${isAdded ? 'added' : ''}" data-model="${escapeHtml(m.id)}" data-name="${escapeHtml(m.name)}" ${isAdded ? 'disabled' : ''}>
-              ${isAdded ? '✓ Đã trong đội' : '➕ Thêm Vào Đội'}
-            </button>
+            ${isAdded
+              ? '<span class="btn-pool-added-badge">✓ Đã trong đội</span>'
+              : `<button class="btn-pool-add" data-model="${escapeHtml(m.id)}" data-name="${escapeHtml(m.name)}">+ Thêm Vào Đội</button>`
+            }
           </div>
         `;
 
@@ -529,7 +545,7 @@
       });
 
       // Events for pool buttons
-      modelPoolGrid.querySelectorAll('.btn-add-to-squad:not(.added)').forEach(btn => {
+      modelPoolGrid.querySelectorAll('.btn-pool-add').forEach(btn => {
         btn.addEventListener('click', () => {
           const modelId = btn.dataset.model;
           const modelName = btn.dataset.name;
@@ -558,6 +574,10 @@
           }
           btn.style.opacity = '1';
           btn.style.borderColor = res.ok ? '#10b981' : '#ef4444';
+          btn.style.color = res.ok ? '#34d399' : '#f87171';
+        });
+      });
+    }
           btn.style.color = res.ok ? '#34d399' : '#f87171';
         });
       });

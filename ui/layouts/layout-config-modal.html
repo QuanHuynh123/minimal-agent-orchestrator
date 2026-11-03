@@ -1,99 +1,120 @@
-<!-- MODAL CONFIG OVERLAY (Bản thiết kế Model-First & Dynamic Role Assignment) -->
+<!-- MODAL CONFIG OVERLAY (Kiến trúc v3.1: Compact Horizontal Rows & Horizontal Scroll Model Pool) -->
 <div id="modal-config-overlay" class="config-modal-backdrop" style="display: none;">
-  <div class="config-modal-dialog">
+  <div class="config-modal-dialog config-modal-dialog-pro">
     <!-- Header -->
     <div class="config-modal-header">
       <div class="config-modal-title">
-        <span>⚙️ Cài Đặt Đội Ngũ AI &amp; Dự Án (Config Hub)</span>
-        <span class="tag tag-quick" style="background: rgba(99, 102, 241, 0.15); border-color: var(--accent); color: #c7d2fe;">team.yaml &bull; project.yaml</span>
+        <span class="cfg-header-icon">⚙️</span>
+        <span class="cfg-header-text">Cài Đặt Hệ Thống &amp; Tác Tử (Config Hub)</span>
       </div>
       <button id="btn-close-config-modal" class="btn-modal-close" title="Đóng cài đặt (Esc)">✕</button>
     </div>
 
-    <!-- Body -->
-    <div class="config-modal-body">
-      <!-- 1. Hero Summary & 9Router Live Status -->
-      <div class="config-hub-hero">
-        <div class="config-hub-title-row">
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <span class="cockpit-title">🎯 Quản Lý Đội Ngũ Tác Tử &amp; Gán Vai Trò (Model-First)</span>
-            <span id="cfg-router-badge" class="tag tag-low">🟢 9Router :20128 (Đang kiểm tra...)</span>
+    <!-- Navigation Tabs Bar (Chuyển đổi giữa team.yaml và project.yaml) -->
+    <div class="config-nav-tabs">
+      <button class="cfg-nav-tab active" data-tab="team">
+        <span class="tab-icon">🤖</span>
+        <span>Đội Ngũ AI (team.yaml)</span>
+        <span id="squad-tab-count-badge" class="cfg-tab-counter">0</span>
+      </button>
+      <button class="cfg-nav-tab" data-tab="project">
+        <span class="tab-icon">📁</span>
+        <span>Cấu Hình Dự Án (project.yaml)</span>
+      </button>
+      <div class="cfg-nav-tabs-spacer"></div>
+      <div id="cfg-router-badge" class="cfg-router-status-pill">🟢 9Router :20128</div>
+    </div>
+
+    <!-- Body Container (Flex Column) -->
+    <div class="config-modal-body config-modal-body-pro">
+      <!-- PANEL 1: TEAM.YAML (ĐỘI NGŨ AI) -->
+      <div id="cfg-panel-team" class="cfg-panel-content active">
+        <!-- NỬA TRÊN: ĐỘI NGŨ HIỆN TẠI (SQUAD PERSONNEL - CUỘN DỌC) -->
+        <div class="squad-section-top">
+          <div class="section-micro-header">
+            <div class="section-title-group">
+              <span class="section-title-label">ĐỘI NGŨ AI HIỆN TẠI (SQUAD PERSONNEL)</span>
+              <span id="squad-count-badge" class="cfg-tag-subtle">0 Thành Viên</span>
+            </div>
+            <!-- Role Coverage Summary Mini -->
+            <div class="role-coverage-pills" id="role-coverage-pills">
+              <span class="cov-mini-pill" id="cov-pill-router">Router: <strong>Khuyết</strong></span>
+              <span class="cov-mini-pill" id="cov-pill-writer">Writer: <strong>Khuyết</strong></span>
+              <span class="cov-mini-pill" id="cov-pill-designer">Designer: <strong>Khuyết</strong></span>
+              <span class="cov-mini-pill" id="cov-pill-debugger">Debugger: <strong>Khuyết</strong></span>
+              <span class="cov-mini-pill" id="cov-pill-reviewer">Reviewer: <strong>Khuyết</strong></span>
+            </div>
           </div>
-          <button id="btn-refresh-models" class="btn-action-ghost" style="padding: 4px 10px; font-size: 11px;">
-            <span id="spin-refresh-models" class="spinner" style="display: none; width: 10px; height: 10px;"></span>
-            ↺ Tải Lại Models
-          </button>
+
+          <div id="squad-members-list" class="squad-compact-list">
+            <!-- Render dynamically by JS (56px compact horizontal rows) -->
+          </div>
         </div>
-        <p class="cockpit-desc">Thêm bất kỳ model nào từ 9Router vào đội ngũ, sau đó linh hoạt chọn vai trò (Router, Writer, Designer, Debugger, Reviewer hoặc Dự bị). Có thể bổ sung không giới hạn thành viên.</p>
+
+        <!-- NỬA DƯỚI: KHO MODEL 9ROUTER (CUỘN NGANG - HORIZONTAL SCROLL) -->
+        <div class="model-pool-section-bottom">
+          <div class="pool-action-bar">
+            <div class="pool-title-left">
+              <span class="section-title-label">KHO MODEL 9ROUTER (DISCOVERY POOL)</span>
+              <span id="cfg-models-count-text" class="cfg-tag-subtle">54 Models</span>
+            </div>
+            
+            <div class="pool-controls-right">
+              <div class="pool-search-box">
+                <span class="search-mini-icon">🔍</span>
+                <input type="text" id="cfg-search-models" class="cfg-search-input" placeholder="Lọc model (claude, deepseek...)" autocomplete="off" />
+              </div>
+              <div class="pool-filter-pills">
+                <button class="cfg-filter-btn active" data-filter="all">Tất cả</button>
+                <button class="cfg-filter-btn" data-filter="vision">Vision</button>
+                <button class="cfg-filter-btn" data-filter="thinking">Thinking</button>
+                <button class="cfg-filter-btn" data-filter="tools">Tools</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Horizontal Scroll Container -->
+          <div class="model-pool-horizontal-track" id="model-pool-grid">
+            <!-- Render dynamically by JS (250px compact cards) -->
+          </div>
+        </div>
       </div>
 
-      <!-- 2. Role Coverage Matrix (Trạng Thái Phủ Vai Trò Tóm Tắt) -->
-      <div class="role-coverage-wrapper">
-        <div class="coverage-header">
-          <span class="coverage-title">📊 TRẠNG THÁI PHỦ VAI TRÒ SQUAD (ROLE COVERAGE)</span>
-          <span class="text-muted" style="font-size: 10.5px;">Bắt buộc Router &amp; Writer để vận hành tự động</span>
-        </div>
-        <div class="coverage-grid" id="coverage-badges-grid">
-          <div class="role-cov-badge" id="cov-router"><span class="cov-icon">🧠</span> Router: <strong class="cov-val">Chưa gán</strong></div>
-          <div class="role-cov-badge" id="cov-writer"><span class="cov-icon">⚡</span> Writer: <strong class="cov-val">Chưa gán</strong></div>
-          <div class="role-cov-badge" id="cov-designer"><span class="cov-icon">🎨</span> Designer: <strong class="cov-val">Chưa gán</strong></div>
-          <div class="role-cov-badge" id="cov-debugger"><span class="cov-icon">🔍</span> Debugger: <strong class="cov-val">Chưa gán</strong></div>
-          <div class="role-cov-badge" id="cov-reviewer"><span class="cov-icon">🛡️</span> Reviewer: <strong class="cov-val">Chưa gán</strong></div>
-          <div class="role-cov-badge role-cov-fixed"><span class="cov-icon">⚖️</span> Validator: <strong class="cov-val">0-Token Native</strong></div>
-        </div>
-      </div>
-
-      <!-- 3. Current Squad Personnel (Đội Ngũ AI Hiện Tại) -->
-      <div class="bento-card squad-personnel-card">
-        <div class="card-header" style="justify-content: space-between;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="card-title">👥 THÀNH VIÊN ĐỘI NGŨ HIỆN TẠI (SQUAD PERSONNEL)</span>
-            <span id="squad-count-badge" class="tag tag-quick">0 Thành Viên</span>
+      <!-- PANEL 2: PROJECT.YAML (CẤU HÌNH DỰ ÁN) -->
+      <div id="cfg-panel-project" class="cfg-panel-content" style="display: none;">
+        <div class="project-config-wrapper">
+          <div class="project-info-hero">
+            <h4 style="margin: 0 0 6px 0; font-size: 14px; color: #fff;">📁 Cấu Hình Dự Án &amp; Phạm Vi Quét Mã Nguồn</h4>
+            <p class="text-muted" style="margin: 0; font-size: 11.5px;">Quản lý đường dẫn gốc repository, chính sách kiểm định tự động, và cấm chỉnh sửa các tệp nhạy cảm.</p>
           </div>
-          <span class="text-muted" style="font-size: 11px;">Mỗi model có thể giữ 1 vai trò hoặc ở trạng thái Dự Bị</span>
-        </div>
-        
-        <div id="squad-members-list" class="squad-members-container">
-          <!-- Render dynamically by JS -->
-          <div class="empty-squad-notice">Chưa có thành viên nào trong đội. Hãy chọn model từ danh sách 9Router bên dưới và bấm "➕ Thêm Vào Đội".</div>
-        </div>
-      </div>
-
-      <!-- 4. Model Pool Explorer (Khám Phá & Chọn Model Từ 9Router) -->
-      <div class="bento-card model-pool-card">
-        <div class="card-header" style="justify-content: space-between;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="card-title">🔍 KHO MODEL 9ROUTER (DISCOVERY POOL)</span>
-            <span id="cfg-models-count-text" class="tag tag-low">Đang tải...</span>
+          <div class="project-form-grid">
+            <div class="form-row">
+              <label class="form-label">Tên Dự Án (Project Name)</label>
+              <input type="text" id="cfg-proj-name" class="cfg-search-input" value="tool-download" readonly />
+            </div>
+            <div class="form-row">
+              <label class="form-label">Thư Mục Gốc (Root Directory)</label>
+              <input type="text" id="cfg-proj-dir" class="cfg-search-input" value="d:\tool-download" readonly />
+            </div>
+            <div class="form-row">
+              <label class="form-label">Quy Tắc Thụt Lề Bắt Buộc</label>
+              <input type="text" class="cfg-search-input" value="100% TAB (\t) Indentation for Python" readonly />
+            </div>
+            <div class="form-row">
+              <label class="form-label">Chế Độ Bảo Vệ Scope (Git Guard)</label>
+              <input type="text" class="cfg-search-input" value="Strict Scoped Files Only &bull; Anti-Drift" readonly />
+            </div>
           </div>
-          <div class="pool-filter-tabs">
-            <button class="btn-filter-pill active" data-filter="all">Tất cả</button>
-            <button class="btn-filter-pill" data-filter="vision">👁️ Vision</button>
-            <button class="btn-filter-pill" data-filter="thinking">🧠 Thinking</button>
-            <button class="btn-filter-pill" data-filter="tools">⚙️ Tools</button>
-          </div>
-        </div>
-
-        <div class="model-pool-search-row">
-          <div class="search-input-wrapper" style="flex: 1;">
-            <span class="search-icon">🔍</span>
-            <input type="text" id="cfg-search-models" class="cockpit-input model-search-input" placeholder="Tìm theo tên hoặc ID (vd: claude, deepseek, gemini, opus, flash...)" />
-          </div>
-        </div>
-
-        <!-- Scrollable Model Cards Grid -->
-        <div class="model-pool-grid" id="model-pool-grid">
-          <!-- Render dynamically by JS -->
         </div>
       </div>
     </div>
 
-    <!-- Footer Actions -->
+    <!-- Footer Actions (Padding 20px, hoàn toàn thoáng đạt, không dính đáy) -->
     <div class="config-modal-footer">
       <div class="footer-status-msg" id="cfg-save-status-msg"></div>
-      <div style="display: flex; align-items: center; gap: 12px;">
-        <button id="btn-cancel-config" class="btn-action-ghost" style="padding: 8px 16px;">Đóng</button>
-        <button id="btn-save-team-config" class="btn-action-primary" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); padding: 8px 20px; font-weight: 600;">
+      <div class="footer-btn-group">
+        <button id="btn-cancel-config" class="btn-action-ghost cfg-btn-footer">Đóng</button>
+        <button id="btn-save-team-config" class="btn-action-primary cfg-btn-footer cfg-btn-save">
           <span id="spin-save-config" class="spinner" style="display: none;"></span>
           💾 Lưu Cấu Hình Vào team.yaml
         </button>
