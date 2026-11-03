@@ -55,7 +55,7 @@ export function loadRoleConfig(roleName = 'designer', customTeamCfg = null) {
     defaultTools = ['read_file', 'list_files', 'search_code', 'apply_patch', 'run_validator', 'run_command'];
     fallbackDefaultModel = writerCfg.model || 'deepseek-ai/deepseek-v4.1-flash-1017';
   } else if (roleName === 'designer') {
-    defaultTools = ['read_file', 'list_files', 'search_code', 'apply_patch', 'run_validator', 'run_command'];
+    defaultTools = ['read_file', 'list_files', 'search_code', 'run_command'];
     fallbackDefaultModel = roles.router?.model || writerCfg.model || 'kr/claude-sonnet-4.5-thinking';
   } else if (roleName === 'reviewer') {
     defaultTools = ['read_file', 'search_code'];
