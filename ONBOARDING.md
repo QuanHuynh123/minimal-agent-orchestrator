@@ -1,133 +1,146 @@
-# 🧭 Hướng Dẫn Khởi Tạo & Vận Hành Chuẩn (CLI-First Onboarding)
-> **Nguyên tắc Cốt lõi:** **`IDE Chat = Read / Plan / Draft`** $\cdot$ **`CLI Runner = Execute / Validate / Commit`** $\cdot$ **`Applier = Safe Write`**
+# 🧭 Sổ Tay Khởi Tạo & Vận Hành Chuẩn (Onboarding Standard v3.0)
+
+> **Câu chốt Kiến trúc Cốt lõi (Golden Rule):**  
+> *"Agent Runtime có thể sửa file qua Applier trong scope được cấp; Orchestrator là một workflow tự động dùng runtime để chạy task theo quy trình."*
+
+Tài liệu này được tách bạch thành **2 Phần độc lập**:
+- **[Phần 1: Hướng Dẫn Nhanh Dành Cho Kỹ Sư / Con Người (Human Quickstart)](#phần-1-hướng-dẫn-nhanh-dành-cho-kỹ-sư--con-người)**
+- **[Phần 2: Phụ Lục Chỉ Thị Dành Cho AI IDE Agent (AI Planner & Intake Protocol)](#phần-2-phụ-lục-chỉ-thị-dành-cho-ai-ide-agent)**
 
 ---
 
-## 1. Kiến trúc Phân quyền Bắt buộc (Role & Permission Boundary)
+# Phần 1: Hướng Dẫn Nhanh Dành Cho Kỹ Sư / Con Người
 
-Hệ thống này cưỡng chế sự tách biệt tuyệt đối giữa **Môi trường Chat (Tư vấn/Lập kế hoạch)** và **Môi trường Thực thi (Ghi file/Kiểm thử)**:
+Dành cho nhà phát triển mới clone thư mục `agent-team` vào dự án của mình và muốn bắt đầu làm việc ngay trong vòng 2 phút.
 
-| Thành phần | Quyền hạn Được phép (Allowed) | Hành vi Bị cấm Tuyệt đối (Forbidden) |
-| :--- | :--- | :--- |
-| **1. IDE Chat Agent**<br>*(Cline, Antigravity, Cursor, Claude...)* | - **Read-only mặc định** đối với mã nguồn dự án.<br>- Khảo sát cấu trúc thư mục, đọc code, phân tích lỗi.<br>- **Soạn thảo (Draft)** nội dung cấu hình (`project.yaml`, `team.yaml`) và soạn file Task Contract (`tasks/active/*.yaml`) để Human duyệt. | ❌ **CẤM** trực tiếp sửa mã nguồn dự án trong phiên chat.<br>❌ **CẤM** tự ý ghi đè các file hệ thống trong `protected_files` (`agent-team/config/**`, `agent-team/scripts/**`, `agent-team/runtime/**`, `.env*`). |
-| **2. Human Operator**<br>*(Kỹ sư vận hành)* | - Giao yêu cầu bằng ngôn ngữ tự nhiên trong khung Chat.<br>- Duyệt cấu hình đề xuất, duyệt `scope_hash` cho các task `high-risk`.<br>- Kích hoạt lệnh chạy từ **CLI Terminal** (`npm start`, `npm test`). | Không cần tự gõ tay toàn bộ nội dung file task YAML từ đầu (do IDE Chat Agent đã hỗ trợ soạn bản nháp). |
-| **3. CLI Runner & Applier**<br>*(`orchestrator.mjs`, `applier.mjs`, `validator.mjs`)* | - Cổng **duy nhất** được phép ghi mã nguồn xuống ổ cứng thông qua pipeline 8 bước của `applier.mjs`.<br>- Chạy kiểm thử tự động 0-token (`validator.mjs`).<br>- Tự động rollback khi test fail và commit theo đúng `scope`. | Không bao giờ ghi file nằm ngoài `task.scope` hoặc ngoài `project.allowed_dirs`. |
+## 1. Cài đặt & Kiểm thử 0-Token (30 giây)
 
-> **Châm ngôn vận hành:**  
-> - *"IDE Chat is read-only by default."*  
-> - *"If you want repo mutation, run the Orchestrator from CLI."*  
-> - *"AI may assist in drafting config and tasks, but actual code writes must go through the controlled pipeline (`orchestrator.mjs` $\rightarrow$ `applier.mjs`)."*
-
----
-
-## 2. Quy trình Onboarding 3 Bước (Khi mới Clone về máy)
-
-### Bước 1: Cài đặt & Chạy Tự Kiểm từ CLI Terminal
-Mở Terminal tại thư mục gốc dự án của bạn và chạy:
+Mở Terminal tại thư mục `agent-team` và chạy:
 ```bash
 git clone https://github.com/QuanHuynh123/minimal-agent-orchestrator.git agent-team
 cd agent-team
 npm install
 npm test
 ```
+*(Nếu cả 3 bài test Applier, Runtime v3 và Cockpit đều báo PASS 100% $\rightarrow$ Hệ thống sẵn sàng mà không tiêu tốn bất kỳ token LLM nào!)*
 
-### Bước 2: Dùng IDE Chat Agent ở chế độ Read-Only để khảo sát & soạn Cấu hình
-Bạn vẫn có thể giao việc bằng ngôn ngữ tự nhiên, nhưng **IDE Chat chỉ dùng để đọc, đề xuất cấu hình và tạo bản nháp Task**. Hãy gửi chỉ thị sau vào khung chat IDE:
+---
 
-```text
-Hãy đọc file agent-team/ONBOARDING.md. Ở chế độ Read-Only (tuyệt đối không tự ý sửa code dự án hay ghi đè protected_files), hãy khảo sát cấu trúc dự án hiện tại của tôi và xuất bản nháp cấu hình cho agent-team/config/project.yaml cùng agent-team/config/team.yaml để tôi duyệt.
+## 2. Cấu hình Tối thiểu 1 Model (1-Model Minimal Setup)
+
+Bạn chỉ cần chỉnh sửa đúng 2 file cấu hình đơn giản:
+
+### A. Cổng kết nối LLM (`config/team.yaml`)
+Hỗ trợ mọi nhà cung cấp chuẩn OpenAI-compatible (9Router, OpenRouter, DeepSeek, Ollama, vLLM):
+```yaml
+providers:
+  local_gateway:
+    base_url: "http://127.0.0.1:20128/v1"
+    api_key_env: "LLM_API_KEY"  # Hoặc đặt biến môi trường LLM_API_KEY
+roles:
+  writer:
+    model: "deepseek-ai/deepseek-v4.1-flash-1017" # Model chính của bạn
 ```
+> **💡 Cơ chế Kế thừa 1-Model:** Bạn **chỉ cần cấu hình duy nhất model cho `writer`**. Các role khác (`router`, `reviewer`) sẽ tự động kế thừa model này nếu bạn chưa cần chia tách nhiều model khác nhau.
 
-### Bước 3: Duyệt Cấu hình & Kích hoạt Runner từ CLI
-Sau khi xem và áp dụng cấu hình `config/project.yaml` phù hợp với dự án của bạn, hãy mở **CLI Terminal** và chạy kiểm định:
-```bash
-# Chạy từ CLI Terminal (trong thư mục agent-team/)
-node scripts/test-applier-v2.1.mjs
-node scripts/validator.mjs fast
+### B. Ranh giới Dự án (`config/project.yaml`)
+Chỉ định thư mục nào AI được phép sửa và lệnh kiểm thử tự động của dự án bạn:
+```yaml
+allowed_dirs:
+  - "src"
+  - "tests"
+protected_files:
+  - "agent-team/config/**"
+  - ".env*"
+validation:
+  fast_checks:
+    - name: "fast-unit-test"
+      command: "npm test" # Hoặc: pytest tests/, go test ./...
 ```
 
 ---
 
-## 3. Chỉ thị Hệ thống dành cho IDE Chat Agent (Planner & Coordinator Protocol)
+## 3. Chọn Lối Vào Phù Hợp Với Nhu Cầu
 
-> **CHỈ THỊ BẮT BUỘC CHO AI AGENT ĐỌC FILE NÀY:**  
-> Bạn đang đóng vai **Read-Only Planner & Task Drafter**, KHÔNG PHẢI **Direct Code Editor**. Bạn phải tuân thủ nghiêm ngặt 3 quy tắc sau:
+Hệ thống cung cấp **2 Lối Vào Kiến Trúc** dùng chung 100% cấu hình:
 
-### Quy tắc 1: Không tự ý sửa mã nguồn dự án hay `protected_files`
-- Danh sách `agent-team/config/**`, `agent-team/scripts/**`, `agent-team/runtime/**`, `package.json`, `requirements.txt`, `.env*` nằm trong vùng bảo vệ (`protected_files`).
-- Khi hỗ trợ người dùng Onboarding, bạn chỉ **đọc** cấu trúc thư mục dự án (`../`) để xác định ngôn ngữ, thư mục nguồn (`allowed_dirs`), lệnh chạy test (`validation`), sau đó **xuất nội dung cấu hình đề xuất** ra khung chat (hoặc file nháp được phép) để Human kiểm tra và áp dụng.
+| Tiêu chí | Lối vào 1: Standalone Agent Runtime | Lối vào 2: Autonomous Squad Orchestrator |
+| :--- | :--- | :--- |
+| **Bản chất** | **Agent đơn lẻ tương tác (Interactive Single Agent)** | **Quy trình thác nước tự động theo lô (Batch Workflow)** |
+| **Lệnh chạy** | `npm run agent -- --role writer --prompt "..."` | `npm run dashboard` (Web) hoặc `npm start` (CLI) |
+| **Giao diện** | CLI Terminal | Bàn điều khiển Web Cockpit (`http://127.0.0.1:4310`) |
+| **Quyền ghi mã nguồn** | Ghi file qua `applier` **chỉ trong `scope` được bạn cấp**. | Ghi file qua `applier` kèm **tự động kiểm thử, sửa lỗi retry và commit Git**. |
+| **Phù hợp nhất khi** | Cần hỏi đáp về repo, chẩn đoán bug, hoặc sửa 1 file cục bộ. | Cần giao một tính năng hoàn chỉnh từ ý tưởng đến kiểm thử tự động. |
 
-### Quy tắc 1.5: Cổng Thu thập Thông tin Bắt buộc (Mandatory Intake Gate — Thiếu là Hỏi hoặc Fail, Cấm Tự Đoán)
-Khi khởi tạo dự án mới hoặc nhận một bài toán lớn từ người dùng, nếu bất kỳ thông tin cốt lõi nào dưới đây chưa rõ hoặc chưa có trong `config/team.yaml`, `config/project.yaml`, bạn **BẮT BUỘC phải dừng lại hỏi người dùng (hoặc báo thiếu để fail-fast)** — **TUYỆT ĐỐI KHÔNG tự bịa tên model hay đoán bừa**:
-1. **Đội hình & Nhân sự AI (`config/team.yaml`):**
-   - Team có bao nhiêu thành viên (roles)? Gồm những vị trí nào (`router` lập kế hoạch, `writer` viết code, `reviewer` duyệt diff, `validator` chạy script 0-token)?
-   - Cổng kết nối LLM (`base_url`, biến môi trường chứa API key `api_key_env` — *lưu ý: chỉ lưu tên biến môi trường trong YAML, không dán key thật*)?
-   - Tên model chính xác (`model` ID trên 9Router/provider) cho từng vị trí là gì? Role nào cần cấu hình `max_thinking_tokens`?
-   - **Cơ chế Co giãn Đội hình (Graceful Scaling — Không sợ thiếu người hay hết Quota):**
-     - **Chế độ Tối thiểu (1 Model duy nhất):** Chỉ cần bật `writer.enabled: true` và đặt `router.enabled: false`, `reviewer.enabled: false`. Thác nước vẫn chạy trọn vẹn (`Writer` $\rightarrow$ `Applier` $\rightarrow$ `Validator` $\rightarrow$ `Git Guard`) mà không bị thủng bất kỳ mắt xích nào.
-     - **Chế độ Đầy đủ (Multi-Model Squad):** Bật thêm `router` (cho task `draft` chưa có `scope`) và `reviewer` (chỉ tự động kích hoạt khi `risk_level >= high`). Nếu một model phụ hết quota giữa chừng, chỉ cần chuyển `enabled: false` hoặc cấu hình `fallback_model` sang model của `writer`.
-2. **Đầu ra Phần mềm & Ranh giới Dự án (`config/project.yaml`):**
-   - Mô tả dự án, ngôn ngữ/stack, thư mục nào được phép sửa (`allowed_dirs`), file nào cấm đụng (`protected_files`)?
-   - Lệnh kiểm thử nhanh (`fast_checks`) và kiểm thử toàn bộ (`suite_checks`) để xác nhận đầu ra phần mềm đạt chuẩn là gì?
-3. **Mục tiêu & Nghiệm thu Task (`tasks/active/*.yaml`):**
-   - Nếu người dùng chỉ nêu `goal` chung chung mà chưa rõ đầu ra mong đợi hoặc tiêu chí nghiệm thu (`acceptance_criteria`), bạn phải hỏi lại để chốt trước khi tạo file task `status: "ready"`.
-
-### Quy tắc 2: Chuyển hóa Yêu cầu của Người dùng thành Task Contract (`.yaml`)
-Khi người dùng mô tả một tính năng hoặc lỗi cần sửa trong khung chat:
-1. Bạn đọc các file liên quan trong dự án để hiểu ngữ cảnh (**Read-Only**).
-2. Bạn soạn thảo **Task Contract** theo đúng khuôn mẫu [`agent-team/tasks/task-template.yaml`](tasks/task-template.yaml) (cho mục tiêu `agent-team/tasks/active/T-YYYY-MM-DD-XXX.yaml`), chỉ cần điền **6 trường bắt buộc** (các trường nội bộ như `retries`, `error_history`, `last_report` do Orchestrator tự quản lý):
-   ```yaml
-   # 1. CÁC TRƯỜNG BẮT BUỘC (REQUIRED)
-   task_id: "T-2026-11-02-001"
-   title: "Tiêu đề ngắn gọn của tác vụ (< 80 ký tự)"
-   status: "ready" # "ready" khi đã có scope rõ ràng
-   goal: "Mô tả chính xác hàm/lớp cần thêm hoặc sửa (< 150 dòng thay đổi mỗi task)"
-   scope:
-     - "src/module_a.py"
-     - "tests/test_module_a.py"
-   acceptance_criteria:
-     - "Tiêu chí nghiệm thu cụ thể 1"
-     - "Toàn bộ unit tests trong scope và validator fast PASS 100%"
-
-   # 2. CÁC TRƯỜNG TÙY CHỌN (OPTIONAL — CÓ MẶC ĐỊNH AN TOÀN)
-   mode: "quick" # "quick" (<=3 files, low/medium risk) | "standard" (bật Reviewer gate khi risk >= high)
-   risk_level: "low" # "low" | "medium" | "high" | "critical"
-   constraints:
-     - "Giữ nguyên chuẩn thụt lề (indentation) của file gốc trong dự án"
-     - "Không sửa ngoài danh sách scope"
-   ```
-3. Nếu tác vụ chạm vào vùng nhạy cảm (`auth`, `keyring`, `secret`, `migration`, `infra`), bạn phải đặt `risk_level: "high"` và thông báo mã `scope_hash` để Human cấp quyền `approval` trước khi chạy.
-
-### Quy tắc 2.5: Chia nhỏ Task theo Độ phức tạp & Giới hạn của `SEARCH/REPLACE`
-- **Giới hạn độ phức tạp mỗi Task (< 150 dòng code sinh mới/sửa đổi):** Dù một task chỉ chạm 1–2 file, nếu tổng lượng code + unit test vượt quá ~150 dòng (hoặc vừa viết thuật toán lõi vừa viết wiring + bộ test lớn), hãy **tách thành chuỗi tuần tự** (`T-...-001A`, `T-...-001B`) để tránh bị cắt cụt (`finish_reason: "length"`).
-- **Tránh đổi tên symbol xuyên nhiều file (Cross-file Rename):** Cơ chế `<<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE` rất mạnh khi thêm/sửa hàm cục bộ, nhưng dễ sót điểm gọi khi đổi tên một hàm/biến xuất hiện ở hàng chục vị trí. Chỉ đổi tên symbol trong phạm vi `task.scope` đã nạp đầy đủ.
-- **Chẩn đoán & Chạy lại khi Task bị `blocked`:**
-  - Mọi đầu ra thô của Writer cho từng lần thử đều được lưu tại `agent-team/state/runs/<TASK-ID>/attempt-<N>.txt`.
-  - Các task có `status: "blocked"` trong `agent-team/tasks/active/` sẽ tự động được bỏ qua ở các lượt chạy sau để không đốt token lặp lại. Sau khi điều chỉnh `goal` hoặc chia nhỏ task, đổi lại `status: "ready"` để chạy tiếp.
-
-### Quy tắc 3: Chuyển giao Thực thi cho CLI Runner (`orchestrator.mjs` & `runtime/index.mjs`)
-Hệ thống cung cấp **2 Chế độ Thực thi dùng chung 100% cấu hình (`team.yaml` & `project.yaml` — Zero Extra Config)**:
-
-#### A. Chế độ Chạy Lô Tự Động (Batch Waterfall Mode — `npm start`)
-Sau khi Task Contract đã được xác nhận và đặt trong `agent-team/tasks/active/`, hướng dẫn Human chạy từ **CLI Terminal**:
+### Cách dùng Lối vào 1: Standalone Agent Runtime
+Gọi trực tiếp 1 Agent có công cụ tìm kiếm, đọc file, chạy lệnh shell và sửa file an toàn:
 ```bash
-cd agent-team
+# Hỏi đáp / khảo sát code
+npm run agent -- --role router --prompt "Giải thích luồng đăng nhập trong src/auth.py"
+
+# Nhờ Agent sửa một file trong scope chỉ định
+npm run agent -- --role writer --scope "src/auth.py" --prompt "Bổ sung kiểm tra độ dài mật khẩu tối thiểu 8 ký tự"
+```
+
+### Cách dùng Lối vào 2: Autonomous Cockpit & Orchestrator
+#### Cách A: Dùng Web Cockpit (Khuyến nghị cho người mới)
+```bash
+npm run dashboard
+```
+1. Mở trình duyệt tại `http://127.0.0.1:4310`.
+2. Chuyển sang Tab **`0. 🚀 Goal Studio & Cockpit`**.
+3. Nhập mục tiêu tính năng bằng ngôn ngữ tự nhiên $\rightarrow$ Bấm **`[Decompose Goal to Tasks]`**.
+4. AI Planner sẽ đọc codebase và tạo các task nháp ở trạng thái `draft_review`.
+5. Bạn kiểm tra lại các file trong `scope` $\rightarrow$ Bấm **`[Approve & Run Queue]`**. Tiến trình sẽ tự động chạy ngầm, kiểm thử và thông báo kết quả.
+
+#### Cách B: Dùng CLI
+```bash
+# Bước 1: Bóc tách Goal thành Task YAML
+npm run plan -- "Tích hợp tính năng xuất báo cáo PDF cho module billing"
+
+# Bước 2: Kiểm tra file trong tasks/active/ rồi chạy
 npm start
 ```
-Toàn bộ quá trình:
-1. Kiểm tra sức khỏe cổng LLM (`Pre-flight Healthcheck HR-6`)
-2. Nạp ngữ cảnh thông minh (`Context-Aware File Loader`)
-3. Gọi `Writer` sinh khối `<<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE`
-4. Kiểm tra 8 bước an toàn và ghi đĩa Atomic qua `applier.mjs`
-5. Chạy kiểm thử 0-token qua `validator.mjs` (và `Reviewer` nếu ở chế độ `standard`)
-6. Tự động Rollback nếu lỗi hoặc Scoped Commit nếu thành công
 
-...sẽ do **CLI Runner (`scripts/orchestrator.mjs`)** đảm nhiệm độc lập và xuất báo cáo vào `agent-team/state/morning-report.md`.
+---
 
-#### B. Chế độ Tác Tử Độc Lập Có Tay Chân, Mắt & Trí Nhớ (Interactive Agent Runtime — `npm run agent`)
-Khi cần gọi trực tiếp 1 Agent (`designer`, `writer`, `router`, `reviewer`) kèm **đính kèm ảnh Vision (`--image`)**, **đính kèm file (`--file`)**, **trí nhớ dài hạn (`--session`)** và **5 công cụ cục bộ (`list_files`, `search_code`, `read_file`, `apply_patch`, `run_validator`)**:
-```bash
-cd agent-team
-npm run agent -- --role designer --session ui_v1 --image ui/mockup.png --file UI_DASHBOARD_SPEC.md --prompt "Phân tích bố cục và đề xuất cải tiến"
+# Phần 2: Phụ Lục Chỉ Thị Dành Cho AI IDE Agent
+
+*(Dành riêng cho các trợ lý AI Chat trong IDE như Antigravity, Cursor, Cline, Claude Desktop... khi tham gia hỗ trợ lập kế hoạch).*
+
+> **CHỈ THỊ HỆ THỐNG:**  
+> Bạn đang đóng vai trò **Planner & Task Drafter** trong môi trường Chat. Khi người dùng yêu cầu bạn phân tích dự án hoặc soạn task, bạn phải tuân thủ nghiêm ngặt 3 quy tắc sau:
+
+### Quy tắc 1: Cổng Thu Thập Thông Tin Bắt Buộc (Intake Gate)
+Khi người dùng giao một bài toán lớn hoặc khởi tạo dự án mới, nếu thiếu bất kỳ thông tin cốt lõi nào dưới đây, bạn **BẮT BUỘC phải dừng lại hỏi người dùng** — **TUYỆT ĐỐI KHÔNG tự bịa tên model hay đoán bừa**:
+1. **Đội ngũ AI (`config/team.yaml`):** Cổng kết nối (`base_url`), model chính xác cho `writer`.
+2. **Ranh giới Dự án (`config/project.yaml`):** Thư mục nguồn (`allowed_dirs`), file cấm đụng (`protected_files`), lệnh chạy test tự động (`validation`).
+3. **Mục tiêu & Nghiệm thu Task:** Nếu người dùng chỉ nói mục tiêu chung chung, bạn phải làm rõ đầu ra cụ thể và tiêu chí nghiệm thu (`acceptance_criteria`) trước khi tạo file task `status: "ready"`.
+
+### Quy tắc 2: Khuôn Mẫu Task Contract YAML 6 Trường
+Khi soạn thảo task vào thư mục `agent-team/tasks/active/<TASK-ID>.yaml`, chỉ cần điền **6 trường bắt buộc**:
+```yaml
+# 1. CÁC TRƯỜNG BẮT BUỘC (REQUIRED)
+task_id: "T-YYYY-MM-DD-001"
+title: "Tiêu đề ngắn gọn của tác vụ (< 80 ký tự)"
+status: "ready" # Dùng "ready" khi đã có scope rõ ràng, hoặc "draft_review" để chờ duyệt
+goal: "Mô tả chính xác hàm/lớp cần thêm hoặc sửa (< 150 dòng code mỗi task)"
+scope:
+  - "src/module_a.py"
+  - "tests/test_module_a.py"
+acceptance_criteria:
+  - "Mô tả tiêu chí đạt yêu cầu chức năng"
+  - "Toàn bộ unit test liên quan và validator fast PASS 100%"
+
+# 2. CÁC TRƯỜNG TÙY CHỌN (OPTIONAL)
+mode: "quick" # "quick" (<=3 files, low/medium risk) | "standard" (bật Reviewer gate khi risk >= high)
+risk_level: "low" # "low" | "medium" | "high"
+constraints:
+  - "Tuân thủ quy tắc thụt lề (indentation) của file gốc trong dự án"
+  - "Không chỉnh sửa ngoài danh sách scope"
 ```
-- **Tự động kế thừa 1-Model:** Nếu người mới chỉ cấu hình 1 model duy nhất tại `roles.writer.model` trong `config/team.yaml`, mọi role trong `runtime/` sẽ tự động kế thừa model và `base_url` đó mà không cần cấu hình thêm.
+
+### Quy tắc 3: Nguyên Tắc Tách Nhỏ Task (< 150 Dòng) & Safe Refactoring
+- **Quy tắc < 150 dòng:** Dù một task chỉ chạm 1–2 file, nếu tổng lượng code sinh mới hoặc sửa đổi vượt quá ~150 dòng, hãy chia thành chuỗi task tuần tự (`T-...-001A`, `T-...-001B`) để tránh bị cắt cụt token (`finish_reason: length`).
+- **Tránh Cross-file Rename:** Hạn chế đổi tên hàm/biến xuất hiện ở nhiều file ngoài `scope`. Chỉ refactor trong phạm vi các file đã được khai báo tường minh trong `scope`.
+- **Cơ chế Block & Retry:** Nếu một task thất bại quá số lần quy định, Orchestrator sẽ đổi sang `status: "blocked"`. Hãy đọc file `state/runs/<TASK-ID>/attempt-<N>.txt` để chẩn đoán nguyên nhân, tinh chỉnh lại `goal`/`scope` rồi chuyển lại `status: "ready"`.

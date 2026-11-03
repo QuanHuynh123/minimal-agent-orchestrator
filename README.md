@@ -1,271 +1,143 @@
-# 🤖 Minimal Agent Orchestration Standard (v2.1 Architecture)
+# 🤖 Minimal Agent Orchestration & Runtime Standard (v3.0)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node: >=18](https://img.shields.io/badge/Node->=18.0.0-green.svg)](https://nodejs.org/)
-[![Architecture: Mode--Based](https://img.shields.io/badge/Architecture-Mode--Based%20Squad-orange.svg)](#)
-[![Zero--Token: Applier%20&%20Validator](https://img.shields.io/badge/Tools-0--Token%20Deterministic-brightgreen.svg)](#)
-[![Runtime: Enforced](https://img.shields.io/badge/Runtime-v2.1%20Enforced-purple.svg)](#)
+[![Version: 3.0.0](https://img.shields.io/badge/Version-3.0.0-brightgreen.svg)](#)
+[![Architecture: Dual--Entry](https://img.shields.io/badge/Architecture-Runtime%20%2B%20Orchestrator-orange.svg)](#)
+[![Zero--Token: Applier%20&%20Validator](https://img.shields.io/badge/Tools-0--Token%20Deterministic-purple.svg)](#)
 
-> **Bộ khung điều phối Đa Tác Tử (Multi-Agent Orchestration Framework) theo kiến trúc Mode-Based & Plug-and-Play dành cho các dự án phần mềm.**  
-> Kết hợp linh hoạt giữa làm việc tương tác trên IDE (Direct/Quick Mode) và chạy tự động theo lô (Unattended Batch Mode) — cưỡng chế ranh giới phạm vi (Scope Isolation), kiểm thử 0-token, tự động hoàn nguyên khi lỗi và bảo vệ ngân sách token.
-
----
-
-## 👋 Mới tải về? Quy trình Onboarding Chuẩn (`Chat = Read/Plan`, `CLI Runner = Write`)
-
-> **Nguyên tắc kiến trúc cốt lõi:**
-> - **IDE Chat là Read-Only mặc định** đối với mã nguồn dự án (chỉ đọc hiểu repo, đề xuất cấu hình và soạn thảo Task Contract `.yaml`).
-> - **Mọi thao tác ghi mã nguồn vào dự án phải đi qua CLI Runner (`orchestrator.mjs` $\rightarrow$ `applier.mjs`)** để được kiểm soát `scope` và `protected_files`.
-
-1. **Tại CLI Terminal:** Clone `agent-team` vào dự án của bạn và chạy tự kiểm:
-   ```bash
-   git clone https://github.com/QuanHuynh123/minimal-agent-orchestrator.git agent-team
-   cd agent-team && npm install && npm test
-   ```
-2. **Tại IDE Chat (Cline, Antigravity, Cursor, Claude Code...):** Nhờ AI khảo sát và soạn bản nháp cấu hình/task bằng câu lệnh:
-   ```text
-   Hãy đọc file agent-team/ONBOARDING.md. Ở chế độ Read-Only (không trực tiếp sửa code dự án hay ghi đè protected_files), hãy khảo sát cấu trúc dự án hiện tại của tôi và đề xuất cấu hình config/project.yaml cùng Task Contract mẫu để tôi duyệt.
-   ```
-3. **Tại CLI Terminal:** Sau khi duyệt cấu hình và đặt task vào `tasks/active/`, chạy `npm start` từ CLI để hệ thống thực thi, kiểm thử và commit an toàn. Xem chi tiết tại **[`ONBOARDING.md`](ONBOARDING.md)**.
+> **Bộ khung Đa Tác Tử (Multi-Agent Squad) & Môi Trường Tác Tử Độc Lập (Standalone Agent Runtime v3.0) dành cho các dự án phần mềm.**  
+> Tích hợp 2 lối vào linh hoạt: Gọi một Agent trực tiếp có Đôi Tay (Tools), Đôi Mắt (Vision Base64), Đôi Chân (CLI Sandbox), Trí Nhớ (Sessions) HOẶC chạy cả quy trình Waterfall tự động theo Task Contract qua Web Cockpit / Terminal.
 
 ---
 
-## 📖 Mục Lục
-- [0. Hướng Dẫn Khởi Tạo Tự Động Cho AI Agent (`ONBOARDING.md`)](ONBOARDING.md)
-- [1. Triết Lý Thiết Kế & Nguyên Tắc Vận Hành](PHILOSOPHY.md)
-- [2. Vấn Đề & Giải Pháp](#1-vấn-đề--giải-pháp)
-- [3. Kiến Trúc Phân Làn (Mode-Based Architecture)](#2-kiến-trúc-phân-làn-mode-based-architecture)
-- [4. Cấu Trúc Thư Mục](#3-cấu-trúc-thư-mục)
-- [5. Phân Vai Đội Ngũ (Model-Agnostic)](#4-phân-vai-đội-ngũ-model-agnostic-architecture)
-- [6. Hướng Dẫn Sử Dụng Nhanh (Quickstart)](#5-hướng-dẫn-sử-dụng-nhanh-quickstart)
-- [7. Cấu Hình & Chính Sách Bảo Vệ](#6-cấu-hình-dự-án)
-- [8. Đặc Tả Kỹ Thuật (v2.1 Addendum)](OPERATIONAL_SPEC_V2.1.md)
-- [9. Giấy Phép (License)](#8-giấy-phép-license)
+## ⚡ Quickstart 30 Giây (Dành cho Người Mới)
+
+### 1. Cài đặt & Chạy tự kiểm định
+Clone vào dự án phần mềm của bạn và chạy bộ test tự kiểm 0-token:
+```bash
+git clone https://github.com/QuanHuynh123/minimal-agent-orchestrator.git agent-team
+cd agent-team
+npm install
+npm test
+```
+*(Nếu cả 3 bộ test Applier, Runtime v3 và Cockpit đều báo PASS 100% $\rightarrow$ Hệ thống đã sẵn sàng!)*
+
+### 2. Cấu hình tối thiểu 1 Model (1-Model Minimal Setup)
+Mở file [`config/team.yaml`](config/team.yaml) và điền endpoint cổng LLM (hỗ trợ mọi nhà cung cấp chuẩn OpenAI-compatible như 9Router, OpenRouter, DeepSeek, Ollama, vLLM):
+```yaml
+providers:
+  local_9router:
+    base_url: "http://127.0.0.1:20128/v1"
+    api_key_env: "NINE_ROUTER_API_KEY"  # Hoặc đặt biến môi trường NINE_ROUTER_API_KEY
+roles:
+  writer:
+    model: "deepseek-ai/deepseek-v4.1-flash-1017" # Điền model của bạn
+```
+*(Chỉ cần cấu hình duy nhất model cho `writer`, các role khác sẽ tự động kế thừa nếu bạn chưa bật multi-model).*
 
 ---
 
-## 1. Vấn Đề & Giải Pháp
+## 🚪 Hai Lối Vào Kiến Trúc (Dual-Entry Architecture)
 
-| Vấn đề khi dùng AI code truyền thống | Giải pháp của Minimal Agent Framework (v2.1) |
-| :--- | :--- |
-| **Đốt token hai lần:** Dùng LLM chỉ để đọc code của LLM khác rồi viết lại ra file. | **Zero LLM Pass-Through:** Writer chỉ sinh khối diff `SEARCH/REPLACE`, công cụ Node.js (`applier.mjs`) kiểm tra an toàn và ghi thẳng xuống đĩa. |
-| **Writer bị mù ngữ cảnh hoặc tràn token với file lớn:** Cắt file cứng nhắc làm mất đoạn code cần sửa. | **Context-Aware File Loader:** Tự động nạp nguyên file theo ngân sách token hoặc cắt cửa sổ ngữ cảnh ($\pm 80$ dòng) quanh các hàm/symbol mục tiêu. |
-| **Code lười biếng (`// ... existing code ...`):** AI viết tắt làm mất logic cũ. | **Anti-Lazy Regex Guard & Single-Match Check:** Phát hiện chuỗi viết tắt và bắt buộc khối `SEARCH` khớp duy nhất 1 lần trong bộ nhớ trước khi chạm ổ cứng. |
-| **Kẹt vòng lặp sửa lỗi vô tận:** AI lặp lại cùng 1 lỗi hoặc treo kết nối mạng. | **Normalized SHA-1 Error Hash & HR-1..7 Guardrails:** Chuẩn hóa chuỗi lỗi trước khi băm SHA-1; ngắt ngay nếu lặp lỗi $\ge 2$ lần; ép timeout cho mọi lệnh mạng và tiến trình con. |
-| **Làm bẩn Git Working Tree:** Commit nhầm file đang sửa dở bên ngoài task. | **Scoped Git Hygiene:** Chỉ kiểm tra, rollback và commit đúng danh sách file thuộc phạm vi (`scope` + `scope_expansions`) của task. |
-
----
-
-## 2. Kiến Trúc Phân Làn (Mode-Based Architecture)
-
-Hệ thống phân tầng thực thi dựa trên độ phức tạp và mức độ rủi ro của tác vụ thay vì áp đặt một quy trình nặng nề duy nhất:
-
-- **Làn `direct` (Read-Only / Trivial Inspection):** Dành cho tra cứu, chẩn đoán lỗi, đọc hiểu kiến trúc và soạn thảo Task Contract trên IDE Chat mà không tự ý sửa mã nguồn dự án.
-- **Làn `quick` (Small Write — Mặc định khi $\le 3$ files, rủi ro `low`):** Thực thi qua CLI Runner (`orchestrator.mjs`), bỏ qua bước lập kế hoạch/review trung gian; chạy thẳng **Context Loader $\rightarrow$ Writer $\rightarrow$ 8-Step Applier $\rightarrow$ 0-Token Validator $\rightarrow$ Scoped Commit**.
-- **Làn `standard` (Complex / Cross-Scope / High-Risk):** Thực thi qua CLI Runner với đầy đủ **Router Planner $\rightarrow$ Approval Gate (`scope_hash`) $\rightarrow$ Writer $\rightarrow$ Applier $\rightarrow$ Validator $\rightarrow$ LLM Reviewer Rubric**.
+> **Quy tắc phân định cốt lõi:**  
+> **"Runtime có thể sửa file qua applier trong scope được cấp; Orchestrator là một workflow dùng runtime để chạy task theo quy trình."**
 
 ```mermaid
 flowchart TD
-    PreFlight["Pre-Flight Healthcheck (HR-6 ≤15s)\nKiểm tra kết nối cổng LLM trước khi mở phiên"] --> Task["Active Task (.yaml)"]
-    Task --> ModeCheck{"Phân làn Mode & Risk\n(quick vs standard)"}
-    ModeCheck -- "Draft (chưa có scope)" --> Router["Router Agent\nKhởi tạo Plan & Khoanh vùng Scope"]
-    Router --> Gate["0-Token Fail-Fast Gate\nKiểm tra Allowed Dirs, Protected Files & Approval Hash"]
-    ModeCheck -- "Ready (đã có scope)" --> Gate
-    Gate --> Context["Context-Aware File Loader\nNạp file theo Token Budget / Smart Symbol Window"]
-    Context --> Writer["Writer Agent\nSinh khối SEARCH / REPLACE chuẩn xác"]
-    Writer --> Applier["8-Step Applier (0-Token)\nIn-Memory Simulation & Atomic Disk Write"]
-    Applier --> Validator["Fast & Suite Validator (0-Token)\nLinter, Self-Test & Unit Tests (Bounded Timeout)"]
-    Validator -- "FAIL" --> Rollback["Scoped Git Rollback\nHoàn nguyên các file trong Scope & Thử lại"]
-    Rollback --> Writer
-    Validator -- "PASS (mode: quick)" --> Commit["Scoped Git Commit\n[AI-Task] Chỉ commit file thuộc Scope"]
-    Validator -- "PASS (mode: standard)" --> Reviewer["Reviewer Agent\nChấm điểm Git Diff theo 4 tiêu chí Rubric"]
-    Reviewer -- "REJECT" --> Rollback
-    Reviewer -- "PASS" --> Commit
-    Commit --> Archive["Lưu trữ vào tasks/archive/ & Xuất Morning Report"]
+    User["Người dùng / Nhà phát triển"] --> Choice{"Chọn phương thức sử dụng"}
+    
+    %% Lối vào 1
+    Choice -- "Cần 1 Agent tương tác nhanh\n(Hỏi đáp, Debug, Sửa file đơn lẻ)" --> Runtime["Lối vào 1: Standalone Agent Runtime\n(node runtime/index.mjs)"]
+    Runtime --> Tools["5 Local Tools + CLI Shell\nread_file, search_code, apply_patch, run_command"]
+    Tools --> SafeApply["Applier Scope Guard (chỉ sửa trong scope được cấp)"]
+    
+    %% Lối vào 2
+    Choice -- "Cần làm Feature lớn tự động\n(Goal -> Tasks -> Code -> Test -> Git)" --> Cockpit["Lối vào 2: Autonomous Studio Cockpit\n(npm run dashboard / localhost:4310)"]
+    Cockpit --> Decompose["Router Planner (Claude Sonnet 4.5)\nBóc tách Goal thành Task YAML (draft_review)"]
+    Decompose --> HumanGate{"Chốt duyệt con người\n[Approve & Run]"}
+    HumanGate --> Orchestrator["Orchestrator Waterfall Pipeline\nWriter (DeepSeek) -> Applier -> Validator -> Reviewer -> Git Guard"]
 ```
+
+| Tiêu chí | Lối vào 1: Standalone Agent Runtime | Lối vào 2: Autonomous Squad Orchestrator |
+| :--- | :--- | :--- |
+| **Lệnh chạy** | `npm run agent -- --role writer --prompt "..."` | `npm run dashboard` (Web) hoặc `npm start` (CLI) |
+| **Bản chất** | **Agent đơn lẻ tương tác (Interactive Single Agent)** | **Quy trình thác nước tự động theo lô (Batch Workflow)** |
+| **Giao diện** | CLI Terminal hoặc nhúng API (`import { runAgent }`) | Bàn điều khiển Web Cockpit (`http://127.0.0.1:4310`) |
+| **Năng lực** | Có Đôi Mắt (Vision Base64), Đôi Tay (Tools), Chân CLI, Trí Nhớ Session. | Điều phối cả đội ngũ AI (Router $\rightarrow$ Writer $\rightarrow$ Validator $\rightarrow$ Reviewer). |
+| **Quyền ghi mã nguồn** | Sửa file qua `applier` **chỉ trong `scope` được chỉ định**. | Sửa file qua `applier` kèm **tự động kiểm thử, tự sửa lỗi retry và commit Git**. |
+| **Khi nào nên dùng?** | Khi muốn chat/hỏi nhanh về repo, chẩn đoán bug, hoặc cho Agent sửa 1 file cụ thể. | Khi cần giao một tính năng lớn, muốn AI tự lập kế hoạch và tự động hoàn thành 100%. |
 
 ---
 
-## 3. Cấu Trúc Thư Mục
+## 🛠️ Các Lệnh Vận Hành Cốt Lõi (`package.json`)
+
+| Lệnh | File thực thi | Mô tả chức năng |
+| :--- | :--- | :--- |
+| `npm run dashboard` | `scripts/dashboard.mjs` | **Mở Web Cockpit Studio tại `http://127.0.0.1:4310`**. Bàn điều khiển AI một chạm (gõ ý tưởng $\rightarrow$ xem kế hoạch $\rightarrow$ bấm duyệt chạy ngầm), bảo mật Zero-Trust CSRF. |
+| `npm run plan -- "<goal>"` | `scripts/goal-planner.mjs` | **AI Architect Decomposer:** Dùng Router Agent đọc cấu trúc code thật, bóc tách Goal thành 1–3 file Task Contract YAML (`status: draft_review`). |
+| `npm run agent` | `runtime/index.mjs` | **Chạy Standalone Agent:** Chạy 1 Agent độc lập với vòng lặp Bounded Tool Loop ($\le 4$ turns), hỗ trợ đính kèm ảnh `--image` và file `--file`. |
+| `npm start` | `scripts/orchestrator.mjs` | **Chạy Orchestrator Pipeline:** Quét và thực thi toàn bộ các task có `status: "ready"` trong `tasks/active/`. |
+| `npm test` | Test runner tổng hợp | **Chạy toàn bộ Unit Tests:** Kiểm tra Applier v2.1, Runtime v3.0 và Web Cockpit CSRF Security. |
+| `npm run validate` | `scripts/validator.mjs` | **Chạy 0-Token Validator:** Kiểm tra chuẩn thụt lề TAB và bộ test của dự án. |
+
+---
+
+## 📁 Cấu Trúc Thư Mục Chuẩn v3.0
 
 ```text
 agent-team/
-├── ONBOARDING.md              # Playbook khởi tạo & vận hành tự động dành cho AI Agent đọc
-├── .gitattributes             # Chuẩn hóa EOL (LF) chống diff ảo đa nền tảng
-├── .gitignore                 # Bỏ qua node_modules và file lock
-├── package.json               # Script vận hành và phụ thuộc tối giản (yaml)
-├── README.md                  # Tài liệu tổng quan và hướng dẫn sử dụng
-├── PHILOSOPHY.md              # Triết lý thiết kế và nguyên tắc cốt lõi
-├── BLUEPRINT.md               # Bản đặc tả kiến trúc chuẩn
-├── OPERATIONAL_SPEC_V2.1.md   # Phụ lục đặc tả kỹ thuật và quy tắc an toàn v2.1
+├── ONBOARDING.md              # Cẩm nang khởi tạo tối thiểu và chỉ thị cho AI Agent
+├── package.json               # Các lệnh vận hành (dashboard, plan, agent, start, test)
+├── README.md                  # Tài liệu kiến trúc và hướng dẫn sử dụng
+├── PHILOSOPHY.md              # Triết lý thiết kế 0-token và bảo vệ working tree
+├── BLUEPRINT.md               # Đặc tả chi tiết cơ chế bảo vệ và luồng dữ liệu
 ├── config/
-│   ├── team.yaml              # Khai báo Provider (OpenAI-compatible / 9Router), Role và Model
-│   ├── project.yaml           # Cấu hình repo_root động, allowed_dirs, protected_files và lệnh test
-│   └── policy.yaml            # Cấu hình Mode-Based Policy, trần token/retry và Execution Guardrails
+│   ├── team.yaml              # Cấu hình Provider (9Router/OpenAI), Role và Model
+│   ├── project.yaml           # Ranh giới dự án (allowed_dirs, protected_files, test commands)
+│   └── policy.yaml            # Chính sách bảo vệ, trần token/retry và Risk Gates
 ├── roles/
-│   ├── router.md              # System prompt và JSON contract cho Router
+│   ├── router.md              # System prompt và JSON contract cho Router Agent
 │   ├── writer.md              # System prompt ép chuẩn SEARCH/REPLACE cho Writer
 │   └── reviewer.md            # System prompt và 4 tiêu chí Rubric cho Reviewer
+├── runtime/                   # Agent Runtime Core v3.0 (Độc lập, có Tools & Trí nhớ)
+│   ├── index.mjs              # CLI & Programmatic API (runAgent)
+│   ├── provider-gateway.mjs   # Capability Matrix, HTTP Gateway & Dual Tool Parser
+│   ├── context-adapter.mjs    # Đôi Mắt: Mã hóa ảnh Vision Multimodal & File text
+│   ├── tool-runtime.mjs       # Đôi Tay: 5 Local Tools + CLI Shell Sandbox (Windows PowerShell)
+│   └── session-store.mjs      # Trí Nhớ: Persistent Sessions & Token Diet Compaction
 ├── state/
-│   ├── task-state.schema.json # JSON Schema chuẩn hóa trạng thái task (v2.1)
 │   ├── task-state.json        # Trạng thái vận hành ghi atomic (.tmp + rename)
 │   ├── morning-report.md      # Báo cáo tổng hợp tự động sau mỗi phiên chạy
-│   └── sessions/              # Lưu trữ Persistent Session Memory & Tool Receipts (v3.0)
-├── runtime/                   # Agent Runtime Core v3.0 (Tay chân, Mắt Vision & Trí nhớ cho Model)
-│   ├── index.mjs              # CLI & API chạy Agent độc lập (Bounded Tool Loop ≤ 4 turns)
-│   ├── provider-gateway.mjs   # Capability Matrix & Dual Tool Call Parser (Native + <tool_call> XML)
-│   ├── context-adapter.mjs    # Bộ đóng gói Multimodal Vision (Base64 Image) & File Text
-│   ├── tool-runtime.mjs       # 5 Local Tools (list_files, search_code, read_file, apply_patch, run_validator)
-│   └── session-store.mjs      # Persistent Session Memory & Context Compaction
+│   └── sessions/              # Lưu trữ lịch sử đối thoại và tool receipts (.json)
 ├── tasks/
-│   ├── task-template.yaml     # Mẫu khởi tạo task chuẩn v2.1
-│   ├── active/                # Hàng đợi các task đang chờ thực thi
-│   └── archive/               # Lưu trữ các task đã hoàn tất (done / blocked / failed)
+│   ├── task-template.yaml     # Mẫu khởi tạo task YAML chuẩn
+│   ├── active/                # Hàng đợi các task đang chờ duyệt (draft_review) hoặc sẵn sàng (ready)
+│   └── archive/               # Lưu trữ các task đã hoàn thành (done / blocked / failed)
+├── ui/
+│   └── index.html             # Giao diện Web Cockpit Studio v3.0 (Tailwind + Bento Grid)
 └── scripts/
-    ├── applier.mjs            # 8-Step Deterministic Applier, In-Memory Simulation & Atomic Write
-    ├── git-guard.mjs          # Quản lý Scoped Snapshot, Diff, Rollback và Commit
-    ├── validator.mjs          # 0-Token Test Runner, Process-Tree Kill, Normalized Hash & Scope Audit
-    ├── orchestrator.mjs       # Bộ điều phối trung tâm (Mode-Based Engine, Healthcheck, Stale Lock Recovery)
-    ├── dashboard.mjs          # Máy chủ Live Monitor UI v3.0 (http://127.0.0.1:4310)
-    ├── test-applier-v2.1.mjs  # Bộ unit test tự kiểm định cơ chế bảo vệ v2.1
-    └── test-runtime-v3.mjs    # Bộ unit test tự kiểm định Agent Runtime v3.0
+    ├── goal-planner.mjs       # Bộ bóc tách Goal tự nhiên thành Task YAML nguyên tử
+    ├── dashboard.mjs          # Máy chủ Web Cockpit (:4310) bảo mật CSRF & Lock Guard
+    ├── orchestrator.mjs       # Bộ điều phối trung tâm (Waterfall Mode-Based Engine)
+    ├── applier.mjs            # Bộ áp bản vá an toàn 8 bước (In-Memory Simulation)
+    ├── git-guard.mjs          # Quản lý Scoped Snapshot, Diff, Rollback và Scoped Commit
+    ├── validator.mjs          # Bộ chạy kiểm thử 0-token, diệt cây tiến trình treo
+    ├── test-applier-v2.1.mjs  # Unit test kiểm định Applier & Orchestrator
+    ├── test-runtime-v3.mjs    # Unit test kiểm định Agent Runtime v3.0
+    └── test-cockpit.mjs       # Unit test kiểm định Cockpit API & CSRF Security
 ```
 
 ---
 
-## 4. Phân Vai Đội Ngũ (Model-Agnostic Architecture)
+## 🔒 4 Rào Chắn An Toàn Bất Biến (Security Invariants)
 
-Bộ khung tương thích với mọi cổng LLM chuẩn OpenAI-compatible (`9Router`, `OpenRouter`, `LiteLLM`, `Ollama`, `vLLM`):
-
-1. **Reviewer & Architecture Gatekeeper (Tier-1 Reasoning Engine)**
-   - *Model khuyến nghị:* Claude Opus / Claude Sonnet / GPT-4o
-   - *Nhiệm vụ:* Thẩm định bản `git diff` thực tế ở chế độ `standard` theo 4 tiêu chí nhị phân (`correctness`, `safety`, `scope_adherence`, `testability`).
-2. **Router & Task Planner (Context & Triage Engine)**
-   - *Model khuyến nghị:* Claude Sonnet / Gemini Pro
-   - *Nhiệm vụ:* Phân tích yêu cầu ở trạng thái `draft`, chia nhỏ kế hoạch thực thi và khoanh vùng `task.scope`.
-3. **Core Code Writer (High-Throughput Coding Engine)**
-   - *Model khuyến nghị:* DeepSeek V3/V4 / Qwen 2.5 Coder / Claude Sonnet
-   - *Nhiệm vụ:* Sinh bản vá theo định dạng `<<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE` khớp chính xác với ngữ cảnh file.
-4. **Deterministic Gatekeeper (0-Token System Runner)**
-   - *Thành phần:* `applier.mjs`, `validator.mjs`, `git-guard.mjs`
-   - *Nhiệm vụ:* Cưỡng chế ranh giới thư mục, chặn sửa file nhạy cảm, kiểm tra thụt lề/unit test và quản lý Git an toàn không tốn token.
+1. **Zero-Token Guardrails:** Việc áp mã nguồn (`applier.mjs`), chạy test (`validator.mjs`), và commit Git (`git-guard.mjs`) hoàn toàn do mã Node.js tất định thực thi — không tốn thêm bất kỳ 1 token LLM nào.
+2. **Strict Scope Isolation:** Cả Runtime lẫn Orchestrator đều bị chặn cứng: Tuyệt đối không được đọc hoặc ghi file nằm ngoài danh sách `scope` và ngoài `project.allowed_dirs`.
+3. **Anti-Hallucination & Anti-Lazy Code:** Chặn đứng các câu viết tắt kiểu `// ... existing code ...`; bắt buộc đoạn `SEARCH` phải khớp duy nhất 1 lần trong file trước khi chạm ổ cứng.
+4. **Zero-Trust Localhost:** Cổng Dashboard `:4310` được bảo vệ bằng CSRF Token ngẫu nhiên và Origin Guard, ngăn chặn 100% các cuộc tấn công ngầm từ website bên ngoài.
 
 ---
 
-## 5. Hướng Dẫn Sử Dụng Nhanh (Quickstart — CLI-First Workflow)
-
-### Bước 1: Cài đặt & Dùng IDE Chat để Soạn thảo Cấu hình (Read-Only)
-1. Clone `agent-team` vào thư mục gốc dự án của bạn và chạy bộ tự kiểm từ **CLI Terminal**:
-   ```bash
-   git clone https://github.com/QuanHuynh123/minimal-agent-orchestrator.git agent-team
-   cd agent-team && npm install && npm test
-   ```
-2. Bạn vẫn có thể giao việc bằng ngôn ngữ tự nhiên trên **IDE Chat (Cline / Antigravity / Cursor)**, nhưng **write vào repo phải thông qua `orchestrator` / `applier`**; chế độ Chat chỉ dùng để đọc, phân tích, đề xuất cấu hình và tạo Task Contract (xem **[`ONBOARDING.md`](ONBOARDING.md)**).
-
-### Bước 2: Cập nhật `config/project.yaml`
-Khai báo đường dẫn gốc dự án (`repo_root`), danh sách thư mục cho phép và lệnh kiểm thử 0-token:
-```yaml
-project:
-  id: "my-application"
-  language: "python"
-  repo_root: "../"
-  allowed_dirs:
-    - "src/"
-    - "tests/"
-  protected_files:
-    - "**/.env*"
-    - "package.json"
-    - "requirements.txt"
-    - "agent-team/scripts/**"
-    - "agent-team/runtime/**"
-    - "agent-team/config/**"
-  validation:
-    fast_checks:
-      - name: "syntax_and_lint"
-        run: "python -m unittest discover -s tests -p test_smoke.py"
-        timeout_sec: 15
-    suite_checks:
-      - name: "unit_test_suite"
-        run: "python -m unittest discover -s tests -v"
-        timeout_sec: 60
-```
-
-### Bước 3: Tạo Task trong `tasks/active/`
-Tạo file `tasks/active/T-2026-10-31-001.yaml` theo mẫu chuẩn:
-```yaml
-task_id: "T-2026-10-31-001"
-project_id: "my-application"
-title: "Bổ sung API kiểm tra sức khỏe hệ thống"
-mode: "quick" # "direct" | "quick" | "standard"
-status: "ready"
-owner: "writer"
-goal: "Thêm hàm check_health() trả về dict {'status': 'ok'} trong src/health.py"
-scope:
-  - "src/health.py"
-  - "tests/test_health.py"
-risk_level: "low"
-allow_scope_expansion: false
-acceptance_criteria:
-  - "Hàm check_health() trả về {'status': 'ok'}"
-  - "Unit test trong tests/test_health.py chạy PASS 100%"
-```
-
-### Bước 4: Thực thi & Kiểm định từ CLI Terminal
-- **Chạy kiểm định cấu hình & phạm vi từ CLI:**
-  ```bash
-  npm test
-  node scripts/validator.mjs fast --scope src/health.py,tests/test_health.py
-  ```
-- **Chế độ 1 — Chạy hàng đợi Task tự động qua Orchestrator Runner (`scripts/orchestrator.mjs`):**
-  ```bash
-  npm start
-  ```
-- **Chế độ 2 — Gọi trực tiếp Agent có Vision, File, Tool & Trí nhớ (`runtime/index.mjs` — Zero Extra Config):**
-  ```bash
-  npm run agent -- --role designer --session ui_s1 --image ui/mockup.png --file UI_DASHBOARD_SPEC.md --prompt "Review giao diện"
-  ```
-- **Mở giao diện quan sát trực tiếp (9Router AI Live Topology & Runtime Inspector tại `http://127.0.0.1:4310`):**
-  ```bash
-  npm run dashboard
-  ```
-
----
-
-## 6. Cấu Hình Dự Án (`config/policy.yaml`)
-
-```yaml
-policy:
-  scope_control:
-    max_files_per_task: 5
-    max_scope_increase: 1
-    allow_new_files: true
-    new_files_only_in_scope: true
-    strict_scope_enforcement: true
-  task_modes:
-    quick:
-      max_files: 1
-      max_runtime_sec: 30
-      skip_router_and_reviewer: true
-    standard:
-      max_runtime_sec: 300
-      skip_router_and_reviewer: false
-  retry_and_escalation:
-    max_retries_per_task: 3
-    abort_on_identical_error_count: 2
-    token_budget_per_task: 150000
-    night_token_budget_total: 3000000
-```
-
----
-
-## 7. Tài Liệu Kiến Trúc Chi Tiết
-
-- [Triết Lý Thiết Kế & Nguyên Tắc Vận Hành (`PHILOSOPHY.md`)](PHILOSOPHY.md)
-- [Đặc Tả Kiến Trúc Nền Tảng (`BLUEPRINT.md`)](BLUEPRINT.md)
-- [Đặc Tả Vận Hành & Chốt Chặn An Toàn v2.1 (`OPERATIONAL_SPEC_V2.1.md`)](OPERATIONAL_SPEC_V2.1.md)
-
----
-
-## 8. Giấy Phép (License)
-
-Dự án được phát hành theo giấy phép [MIT License](LICENSE).
+## 📄 Giấy Phép (License)
+Phát hành theo giấy phép [MIT License](LICENSE).
