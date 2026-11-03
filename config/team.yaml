@@ -38,7 +38,7 @@ roles:
     provider: "local_9router"
     display_name: "DeepSeek V4.1 Flash"
     model: "Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017"
-    fallback_model: "kr/deepseek-3.2-agentic"
+    fallback_model: null
     temperature: 0.1
     max_thinking_tokens: 200
     output_format: "search_replace_blocks"

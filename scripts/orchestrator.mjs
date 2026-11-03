@@ -430,8 +430,9 @@ export function buildScopedFilesContext(scope = [], repoRoot = REPO_ROOT, task =
     || policyConfig.policy?.scope_control?.max_files_per_task
     || 5;
 
-  // Allocate ~45% of token budget to file context (~3.2 chars/token), clamped between 120KB and 320KB
-  const totalContextBudgetBytes = Math.min(Math.max(Math.floor(tokenBudget * 3.2 * 0.45), 120 * 1024), 320 * 1024);
+  // Token Diet: Clamp file context budget between 24KB and 64KB (~6k - 16k tokens)
+  // Since Agent Runtime v3.0 has read_file and search_code tools, massive in-prompt dumps are unnecessary.
+  const totalContextBudgetBytes = Math.min(Math.max(Math.floor(tokenBudget * 3.2 * 0.12), 24 * 1024), 64 * 1024);
   const expandedFiles = [];
   for (const rawFile of scope) {
     try {
@@ -443,9 +444,9 @@ export function buildScopedFilesContext(scope = [], repoRoot = REPO_ROOT, task =
     }
   }
 
-  const perFileBudgetBytes = Math.max(
-    96 * 1024,
-    Math.floor(totalContextBudgetBytes / Math.max(1, expandedFiles.length))
+  const perFileBudgetBytes = Math.min(
+    28 * 1024,
+    Math.max(14 * 1024, Math.floor(totalContextBudgetBytes / Math.max(1, expandedFiles.length)))
   );
   const keywords = extractTaskKeywords(task);
   const sections = [];

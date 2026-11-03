@@ -147,6 +147,30 @@ export function compactMessagesForContext(messages = [], maxFullTurns = 2) {
       continue;
     }
 
+    // Compact older user messages that carried massive scoped file dumps
+    if (msg.role === 'user' && typeof msg.content === 'string') {
+      let content = msg.content;
+      if (content.includes('CURRENT SCOPED FILE CONTENTS:')) {
+        const parts = content.split('CURRENT SCOPED FILE CONTENTS:');
+        const header = parts[0].trim();
+        const tail = parts[1] || '';
+        let errorTail = '';
+        const errIdx = tail.indexOf('PREVIOUS ATTEMPT FAILED');
+        if (errIdx !== -1) {
+          errorTail = '\n\n' + tail.slice(errIdx).trim();
+        }
+        content = `${header}\n\nCURRENT SCOPED FILE CONTENTS:\n[... Scoped file contents omitted from earlier attempts to save tokens. Use read_file tool to inspect specific lines ...]${errorTail}`;
+      } else if (content.length > 2000) {
+        content = content.slice(0, 1000) + '\n[... Compacted earlier prompt context ...]';
+      }
+
+      compacted.push({
+        ...msg,
+        content
+      });
+      continue;
+    }
+
     compacted.push(msg);
   }
 
