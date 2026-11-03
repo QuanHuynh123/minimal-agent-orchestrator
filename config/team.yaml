@@ -10,7 +10,7 @@ providers:
     api_key_env: "NINE_ROUTER_API_KEY"
     default_key: "sk-default"
 
-# Cấu hình chuẩn 5 Vai Trò Tác Tử khớp 1:1 với thư mục agent-team/roles/
+# Cấu hình chuẩn Vai Trò Tác Tử khớp 1:1 với thư mục agent-team/roles/
 roles:
   router:
     enabled: true
@@ -27,14 +27,27 @@ roles:
   writer:
     enabled: true
     provider: "local_9router"
-    display_name: "Gemini 3.8 Flash"
-    model: "ag/gemini-3.8-flash-medium"
-    fallback_model: "Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017"
+    display_name: "DeepSeek V4.1 Flash (Dev BE)"
+    model: "deepseek-ai/deepseek-v4.1-flash-1017"
+    fallback_model: null
     temperature: 0.1
     max_thinking_tokens: 200
     output_format: "search_replace_blocks"
     spec_file: "roles/writer.md"
-    allowed_actions: ["backend_write", "frontend_write", "ui_ux_implementation", "read_scoped_files", "propose_patch"]
+    allowed_actions: ["backend_write", "read_scoped_files", "propose_patch"]
+    forbidden_actions: ["out_of_scope_edit", "unapproved_dependency"]
+
+  writer_frontend:
+    enabled: true
+    provider: "local_9router"
+    display_name: "Gemini 3.8 Flash (Dev FE)"
+    model: "ag/gemini-3.8-flash-medium"
+    fallback_model: "deepseek-ai/deepseek-v4.1-flash-1017"
+    temperature: 0.1
+    max_thinking_tokens: 200
+    output_format: "search_replace_blocks"
+    spec_file: "roles/writer_frontend.md"
+    allowed_actions: ["frontend_write", "ui_ux_implementation", "read_scoped_files", "propose_patch"]
     forbidden_actions: ["out_of_scope_edit", "unapproved_dependency"]
 
   designer:

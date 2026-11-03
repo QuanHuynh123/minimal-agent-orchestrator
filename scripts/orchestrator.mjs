@@ -1326,14 +1326,23 @@ async function runOrchestrator() {
         task.status = 'writing';
 
         // Step A: Prepare Writer Prompt WITH Context-Aware Scoped File Contents
-        const writerRole = teamConfig.roles?.writer || {};
-        const writerModel = writerRole.model || 'deepseek-ai/deepseek-v4.1-flash-1017';
+        const isFrontendTask = task.owner === 'writer_frontend' || (
+          Array.isArray(task.scope) &&
+          task.scope.length > 0 &&
+          task.scope.every(f => f.startsWith('ui_web/') || f.startsWith('agent-team/ui/'))
+        );
+        const activeWriterKey = (isFrontendTask && teamConfig.roles?.writer_frontend?.enabled) ? 'writer_frontend' : 'writer';
+        const writerRole = teamConfig.roles?.[activeWriterKey] || teamConfig.roles?.writer || {};
+        const writerModel = writerRole.model || (isFrontendTask ? 'ag/gemini-3.8-flash-medium' : 'deepseek-ai/deepseek-v4.1-flash-1017');
         const writerFallback = writerRole.fallback_model || null;
         const writerTemp = writerRole.temperature ?? 0.1;
         const writerMaxThinking = writerRole.max_thinking_tokens;
-        const writerSystemRole = fs.existsSync(path.resolve(TEAM_DIR, 'roles', 'writer.md'))
-          ? fs.readFileSync(path.resolve(TEAM_DIR, 'roles', 'writer.md'), 'utf8')
-          : 'You are the backend code writer. Return changes in <<<<<<< SEARCH / ======= / >>>>>>> REPLACE blocks.';
+        const writerSpecFile = writerRole.spec_file || (isFrontendTask ? 'roles/writer_frontend.md' : 'roles/writer.md');
+        const writerSystemRole = fs.existsSync(path.resolve(TEAM_DIR, writerSpecFile))
+          ? fs.readFileSync(path.resolve(TEAM_DIR, writerSpecFile), 'utf8')
+          : (isFrontendTask
+              ? 'You are the frontend UI/UX code writer. Return changes in <<<<<<< SEARCH / ======= / >>>>>>> REPLACE blocks.'
+              : 'You are the backend code writer. Return changes in <<<<<<< SEARCH / ======= / >>>>>>> REPLACE blocks.');
 
         updateLiveStatus({
           current_stage: 'writer',

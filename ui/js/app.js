@@ -240,6 +240,7 @@
     const covPills = {
       router: document.getElementById('cov-pill-router'),
       writer: document.getElementById('cov-pill-writer'),
+      writer_frontend: document.getElementById('cov-pill-writer_frontend'),
       designer: document.getElementById('cov-pill-designer'),
       reviewer: document.getElementById('cov-pill-reviewer')
     };
@@ -402,8 +403,9 @@
             <select class="compact-role-select" data-idx="${idx}">
               <option value="standby" ${member.role === 'standby' ? 'selected' : ''}>💤 Dự Bị (Standby)</option>
               <option value="router" ${member.role === 'router' ? 'selected' : ''}>🧠 Router (Architect)</option>
-              <option value="writer" ${member.role === 'writer' ? 'selected' : ''}>⚡ Writer (Single Writer)</option>
-              <option value="designer" ${member.role === 'designer' ? 'selected' : ''}>🎨 Designer (Visual Auditor)</option>
+              <option value="writer" ${member.role === 'writer' ? 'selected' : ''}>⚡ Dev BE (DeepSeek / Core)</option>
+              <option value="writer_frontend" ${member.role === 'writer_frontend' ? 'selected' : ''}>🎨 Dev FE (Gemini / UI)</option>
+              <option value="designer" ${member.role === 'designer' ? 'selected' : ''}>👁️ Designer (Visual Auditor)</option>
               <option value="reviewer" ${member.role === 'reviewer' ? 'selected' : ''}>🛡️ Reviewer (TechLead)</option>
             </select>
             ${latencyBadgeHtml}
@@ -468,9 +470,17 @@
         }
       });
 
+      const roleDisplayNames = {
+        router: 'Router',
+        writer: 'Dev BE',
+        writer_frontend: 'Dev FE',
+        designer: 'Designer',
+        reviewer: 'Reviewer'
+      };
+
       for (const [rKey, pillEl] of Object.entries(covPills)) {
         if (!pillEl) continue;
-        const roleName = rKey.charAt(0).toUpperCase() + rKey.slice(1);
+        const roleName = roleDisplayNames[rKey] || (rKey.charAt(0).toUpperCase() + rKey.slice(1));
         if (assignedMap[rKey]) {
           pillEl.className = 'cov-mini-pill assigned';
           pillEl.innerHTML = `${roleName}: <strong>${escapeHtml(assignedMap[rKey])}</strong>`;
