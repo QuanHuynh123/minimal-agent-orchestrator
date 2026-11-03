@@ -1,0 +1,77 @@
+<!-- MODAL CONFIG OVERLAY (Đè phủ toàn bộ màn hình khi bấm nút Cấu Hình) -->
+  <div id="modal-config-overlay" class="config-modal-backdrop" style="display: none;">
+    <div class="config-modal-dialog">
+      <div class="config-modal-header">
+        <div class="config-modal-title">
+          <span>⚙️ Cài Đặt Đội Ngũ AI &amp; Dự Án (Config Hub)</span>
+          <span class="tag tag-quick" style="background: rgba(99, 102, 241, 0.15); border-color: var(--accent); color: #c7d2fe;">team.yaml &bull; project.yaml</span>
+        </div>
+        <button id="btn-close-config-modal" class="btn-modal-close" title="Đóng cài đặt (Esc)">✕</button>
+      </div>
+      <div class="config-modal-body">
+        <div class="config-hub-hero">
+          <div class="config-hub-title-row">
+            <span class="cockpit-title">🎯 Quản Lý Cấu Hình Tập Trung</span>
+            <span class="tag tag-quick">OpenAI-Compatible &bull; 9Router</span>
+          </div>
+          <p class="cockpit-desc">Trung tâm giám sát và cấu hình các vai trò trong Agent Squad. Mọi thay đổi đều được bảo vệ bởi cơ chế an toàn và kiểm định tự động 0-token.</p>
+        </div>
+
+        <div class="config-cards-grid">
+          <!-- Team Matrix Card -->
+          <div class="bento-card config-preview-card">
+            <div class="card-header">
+              <span class="card-title">🤖 Đội Ngũ AI &amp; Vai Trò (team.yaml)</span>
+              <span class="tag tag-low">Active Squad</span>
+            </div>
+            <div class="config-table-wrapper">
+              <table class="config-table">
+                <thead>
+                  <tr>
+                    <th>Vai Trò (Role)</th>
+                    <th>Model Phụ Trách</th>
+                    <th>Cổng Kết Nối</th>
+                    <th>Quyền Hạn &amp; Nhiệm Vụ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong style="color: var(--color-router);">🧠 Router</strong></td>
+                    <td><code>kr/claude-sonnet-4.5-thinking</code></td>
+                    <td>9Router (:20128)</td>
+                    <td>AI Architect &bull; Phân rã Goal thành Task YAML (Read-only)</td>
+                  </tr>
+                  <tr>
+                    <td><strong style="color: var(--color-writer);">⚡ Writer</strong></td>
+                    <td><code>DeepSeek V4.1 Flash</code></td>
+                    <td>9Router (:20128)</td>
+                    <td>Lập trình viên lõi &bull; Độc quyền ghi mã nguồn (apply_patch)</td>
+                  </tr>
+                  <tr>
+                    <td><strong style="color: #ec4899;">🎨 Designer</strong></td>
+                    <td><code>kr/claude-sonnet-4.5-thinking</code></td>
+                    <td>9Router (:20128)</td>
+                    <td>Visual Auditor &bull; Thẩm định thị giác &amp; UX Spec (Read-only + Vision)</td>
+                  </tr>
+                  <tr>
+                    <td><strong style="color: #eab308;">🔍 Debugger</strong></td>
+                    <td><code>kr/claude-sonnet-4.5-thinking</code></td>
+                    <td>9Router (:20128)</td>
+                    <td>Chẩn đoán lỗi &bull; Truy vết log &amp; Báo cáo RCA (No write)</td>
+                  </tr>
+                  <tr>
+                    <td><strong style="color: var(--color-reviewer);">🛡️ Reviewer</strong></td>
+                    <td><code>ag/claude-opus-5-5-high</code></td>
+                    <td>9Router (:20128)</td>
+                    <td>TechLead Review &bull; Duyệt diff &amp; an toàn bảo mật (Read-only)</td>
+                  </tr>
+                  <tr>
+                    <td><strong style="color: #10b981;">⚖️ Validator</strong></td>
+                    <td><code>Node.js Script</code></td>
+                    <td>Cục Bộ (0-Token)</td>
+                    <td>Kiểm định tự động &bull; Fast checks &amp; TAB Indentation</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>

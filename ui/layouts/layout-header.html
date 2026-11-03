@@ -1,0 +1,96 @@
+<header class="top-bar">
+    <div class="top-left">
+      <div class="brand-logo">
+        <span>⚡ 9Router Orchestrator</span>
+        <span class="brand-badge">v3.0 Neural Graph</span>
+      </div>
+      <div class="pill pill-project" id="pill-project">
+        <span>Project: <strong id="txt-project">my-workspace</strong></span>
+      </div>
+    </div>
+    <div class="top-right">
+      <div class="pill pill-stage" id="pill-stage">
+        <span class="dot" id="dot-stage"></span>
+        <span id="txt-stage">Stage: IDLE</span>
+      </div>
+      <div class="pill" id="pill-router">
+        <span class="dot" id="dot-router"></span>
+        <span id="txt-router">9Router :20128</span>
+      </div>
+      <div class="pill" id="pill-orchestrator">
+        <span class="dot" id="dot-orchestrator"></span>
+        <span id="txt-orchestrator">IDLE</span>
+      </div>
+      <div class="pill" id="pill-tokens">
+        <span>Tokens In: <strong id="tok-in">0</strong> | Out: <strong id="tok-out">0</strong></span>
+      </div>
+      <div class="pill" id="pill-polling">
+        <span class="dot online"></span>
+        <span id="txt-polling">1s Polling</span>
+      </div>
+      <button id="btn-header-config" class="btn-header-config" title="Cài đặt Cấu hình & Đội ngũ AI (team.yaml & project.yaml)">
+        <span>⚙️</span>
+        <span>Cấu Hình</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 2. WATERFALL PIPELINE BAR (Thác Nước Cơ Khí + Vòng lặp Retry + Skip Logic) -->
+  <nav class="pipeline-strip">
+    <button id="btn-toggle-sidebar" class="btn-sidebar-toggle collapsed" title="Mở bảng điều khiển chi tiết bên trái">
+      <span id="sidebar-toggle-icon">◧</span>
+      <span>Bảng Bên</span>
+    </button>
+    <div class="pipeline-divider"></div>
+    <div class="stage-item" id="step-preflight">
+      <span class="step-icon">○</span>
+      <span>0. Pre-Flight</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+    </div>
+    <span class="stage-connector">➔</span>
+    <div class="stage-item" id="step-router">
+      <span class="step-icon">○</span>
+      <span id="txt-step-router">1. Router</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+    </div>
+    <span class="stage-connector">➔</span>
+    <div class="stage-item" id="step-writer">
+      <span class="step-icon">○</span>
+      <span>2. Writer</span>
+      <span class="stage-attempt-badge" id="writer-attempt-badge" style="display: none;">Att 1</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+    </div>
+    <span class="stage-connector">➔</span>
+    <div class="stage-item" id="step-applier">
+      <span class="step-icon">○</span>
+      <span>3. Applier</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+    </div>
+    <span class="stage-connector">➔</span>
+    <div class="stage-item" id="step-validator">
+      <span class="step-icon">○</span>
+      <span>4. Validator</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+    </div>
+    <span class="stage-connector">➔</span>
+    <div class="stage-item" id="step-reviewer">
+      <span class="step-icon">○</span>
+      <span id="txt-step-reviewer">4b. Review</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+    </div>
+    <span class="stage-connector">➔</span>
+    <div class="stage-item" id="step-git">
+      <span class="step-icon">○</span>
+      <span>5. Git</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+    </div>
+    <span class="stage-connector">➔</span>
+    <div class="stage-item" id="step-done">
+      <span class="step-icon">○</span>
+      <span>6. Done</span>
+      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+    </div>
+    <div class="retry-loop-indicator" id="retry-loop-pill" style="display: none;">
+      <span>↻ Auto-Retry Loop (Attempt <strong id="retry-num">1</strong>)</span>
+    </div>
+  </nav>

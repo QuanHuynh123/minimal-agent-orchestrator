@@ -1,0 +1,110 @@
+<section class="left-col">
+
+      <!-- Active / Last Completed Task Card -->
+      <div class="bento-card">
+        <div class="card-header">
+          <span class="card-title" id="task-card-title">Active Task</span>
+          <span class="tag tag-attempt" id="task-attempt">Attempt 0 / 3</span>
+        </div>
+        <div>
+          <div class="task-id-badge" id="task-id">No active task</div>
+        </div>
+        <div class="task-meta-row">
+          <span class="tag tag-quick" id="task-mode">MODE: IDLE</span>
+          <span class="tag tag-low" id="task-risk">RISK: LOW</span>
+          <span class="tag tag-commit" id="task-commit-tag" style="display: none;">[commit]</span>
+          <span class="tag tag-timer" id="task-timer-tag" style="display: none;">Task: ⏱ 0s</span>
+        </div>
+        <div class="task-goal-text" id="task-goal">Waiting for orchestrator task...</div>
+      </div>
+
+      <!-- Standard Workflow Personnel Card (Chỉ thuần khiết Model thực tế) -->
+      <div class="bento-card">
+        <div class="card-header">
+          <span class="card-title">Standard Workflow Models</span>
+        </div>
+        <div class="roles-container">
+          <!-- 1. Claude Sonnet 4.5 Thinking -->
+          <div class="role-row">
+            <div class="role-name">
+              <span class="role-name-title">🧠 Claude Sonnet 4.5 Thinking</span>
+              <span class="role-model" id="squad-model-router">kr/claude-sonnet-4.5-thinking • Spec &amp; Plan</span>
+            </div>
+            <span class="status-badge badge-idle" id="squad-status-router">IDLE</span>
+          </div>
+
+          <!-- 2. Gemini 3.8 Flash (Frontend Writer / IDE) -->
+          <div class="role-row">
+            <div class="role-name">
+              <span class="role-name-title">⚡ Gemini 3.8 Flash</span>
+              <span class="role-model" id="squad-model-frontend">Frontend Writer / IDE Assistant</span>
+            </div>
+            <span class="status-badge badge-done" id="squad-status-frontend">ONLINE</span>
+          </div>
+
+          <!-- 3. DeepSeek V4.1 Flash (Backend Writer) -->
+          <div class="role-row">
+            <div class="role-name">
+              <span class="role-name-title">✍️ DeepSeek V4.1 Flash</span>
+              <span class="role-model" id="squad-model-writer">deepseek-ai/deepseek-v4.1-flash-1017 • Backend Writer</span>
+            </div>
+            <span class="status-badge badge-idle" id="squad-status-writer">IDLE</span>
+          </div>
+
+          <!-- 4. Validator Guard -->
+          <div class="role-row">
+            <div class="role-name">
+              <span class="role-name-title">🛡️ Validator Guard</span>
+              <span class="role-model" id="squad-model-validator">validator.mjs • Feedback Loop Gate</span>
+            </div>
+            <span class="status-badge badge-idle" id="squad-status-validator">IDLE</span>
+          </div>
+
+          <!-- 5. Claude Opus 5.5 High (Tech Lead Reviewer) -->
+          <div class="role-row">
+            <div class="role-name">
+              <span class="role-name-title">🔍 Claude Opus 5.5 High</span>
+              <span class="role-model" id="squad-model-reviewer">ag/claude-opus-5-5-high • Tech Lead Reviewer</span>
+            </div>
+            <span class="status-badge badge-skipped" id="squad-status-reviewer">SKIPPED</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scoped Files Card -->
+      <div class="bento-card">
+        <div class="card-header">
+          <span class="card-title">Locked Scope Files</span>
+          <span class="tag tag-attempt" id="scope-count">0 files</span>
+        </div>
+        <ul class="file-list" id="scope-files-list">
+          <li class="file-item"><span class="file-path">No scope locked</span></li>
+        </ul>
+      </div>
+
+      <!-- Task Queue Card -->
+      <div class="bento-card">
+        <div class="card-header">
+          <span class="card-title">Task Queue &amp; History</span>
+        </div>
+        <div class="queue-stats-row">
+          <div class="queue-stat-box">
+            <div class="queue-stat-num" id="cnt-active" style="color: #60a5fa;">0</div>
+            <div class="queue-stat-label">Active</div>
+          </div>
+          <div class="queue-stat-box">
+            <div class="queue-stat-num" id="cnt-done" style="color: #34d399;">0</div>
+            <div class="queue-stat-label">Done</div>
+          </div>
+          <div class="queue-stat-box">
+            <div class="queue-stat-num" id="cnt-blocked" style="color: #f87171;">0</div>
+            <div class="queue-stat-label">Blocked</div>
+          </div>
+        </div>
+        <div class="queue-sub-header" style="font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-top: 4px;">Recent Completed &amp; Queue List</div>
+        <div class="queue-list-container" id="queue-items-list">
+          <!-- Populated securely via DOM nodes -->
+        </div>
+      </div>
+
+    </section>
