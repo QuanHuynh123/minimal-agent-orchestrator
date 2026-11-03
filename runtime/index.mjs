@@ -60,6 +60,9 @@ export function loadRoleConfig(roleName = 'designer', customTeamCfg = null) {
   } else if (roleName === 'reviewer') {
     defaultTools = ['read_file', 'search_code'];
     fallbackDefaultModel = writerCfg.model || 'ag/claude-opus-5-5-high';
+  } else if (roleName === 'debugger') {
+    defaultTools = ['read_file', 'list_files', 'search_code', 'run_command'];
+    fallbackDefaultModel = roles.router?.model || writerCfg.model || 'kr/claude-sonnet-4.5-thinking';
   }
 
   const resolvedModel = (roleCfg.enabled !== false && roleCfg.model)
