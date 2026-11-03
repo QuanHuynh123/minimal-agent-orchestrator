@@ -578,10 +578,6 @@
         });
       });
     }
-          btn.style.color = res.ok ? '#34d399' : '#f87171';
-        });
-      });
-    }
 
     async function pingModelTest(model) {
       const start = Date.now();
