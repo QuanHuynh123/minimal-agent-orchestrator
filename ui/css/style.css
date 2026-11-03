@@ -424,130 +424,307 @@
       color: #fca5a5;
     }
     .config-modal-body {
-      padding: 20px;
+      padding: 24px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 20px;
     }
     .config-hub-hero {
-      background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(20, 20, 24, 0.6) 100%);
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(20, 20, 24, 0.7) 100%);
       border: 1px solid rgba(99, 102, 241, 0.25);
-      border-radius: 8px;
+      border-radius: 10px;
       padding: 16px 20px;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 8px;
     }
-    .model-search-bar-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-top: 4px;
-    }
-    .search-input-wrapper {
-      position: relative;
-      flex: 1;
-      display: flex;
-      align-items: center;
-    }
-    .search-icon {
-      position: absolute;
-      left: 10px;
-      font-size: 13px;
-      opacity: 0.6;
-      pointer-events: none;
-    }
-    .model-search-input {
-      padding-left: 32px !important;
-      font-size: 12px;
-      width: 100%;
-    }
-    .config-roles-card {
-      padding: 16px;
-    }
-    .roles-config-list {
+
+    /* 1. Role Coverage Matrix */
+    .role-coverage-wrapper {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 12px 16px;
       display: flex;
       flex-direction: column;
       gap: 10px;
-      margin-top: 6px;
     }
-    .role-config-item {
-      display: grid;
-      grid-template-columns: 240px 1fr 140px;
+    .coverage-header {
+      display: flex;
       align-items: center;
-      gap: 14px;
-      padding: 10px 12px;
+      justify-content: space-between;
+    }
+    .coverage-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      color: var(--text-secondary);
+    }
+    .coverage-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .role-cov-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+      transition: all 0.2s ease;
+    }
+    .role-cov-badge.assigned {
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.35);
+      color: #6ee7b7;
+    }
+    .role-cov-badge.vacant {
+      background: rgba(239, 68, 68, 0.08);
+      border-color: rgba(239, 68, 68, 0.25);
+      color: #fca5a5;
+    }
+    .role-cov-fixed {
+      background: rgba(16, 185, 129, 0.08);
+      border-color: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+    }
+
+    /* 2. Squad Personnel (Đội ngũ hiện tại) */
+    .squad-personnel-card {
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      background: rgba(20, 20, 26, 0.85);
+    }
+    .squad-members-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 280px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .empty-squad-notice {
+      padding: 24px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
       background: rgba(255, 255, 255, 0.02);
-      border: 1px solid rgba(255, 255, 255, 0.06);
+      border: 1px dashed rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+    }
+    .squad-member-row {
+      display: grid;
+      grid-template-columns: 1fr 180px 140px;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 8px;
       transition: all 0.15s ease;
     }
-    .role-config-item:hover {
-      background: rgba(255, 255, 255, 0.04);
-      border-color: rgba(99, 102, 241, 0.25);
+    .squad-member-row:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(99, 102, 241, 0.3);
     }
-    .role-config-fixed {
-      background: rgba(16, 185, 129, 0.02);
-      border-color: rgba(16, 185, 129, 0.12);
+    .member-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
     }
-    .role-info-col {
+    .member-icon {
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+    .member-text {
       display: flex;
       flex-direction: column;
-      gap: 3px;
+      gap: 2px;
+      min-width: 0;
     }
-    .role-title-line {
+    .member-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .member-id-line {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .member-caps-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 2px;
+    }
+    .member-role-select {
+      background: #0f1013;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 6px;
+      color: #f1f5f9;
+      font-size: 12px;
+      padding: 7px 10px;
+      cursor: pointer;
+      width: 100%;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+    .member-role-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+    }
+    .member-actions-col {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .btn-member-remove {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      color: #fca5a5;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.15s ease;
+    }
+    .btn-member-remove:hover {
+      background: rgba(239, 68, 68, 0.25);
+      border-color: #ef4444;
+      color: #fff;
+      transform: scale(1.05);
+    }
+
+    /* 3. Model Pool Explorer */
+    .model-pool-card {
+      background: rgba(17, 18, 22, 0.7);
+    }
+    .pool-filter-tabs {
       display: flex;
       align-items: center;
       gap: 6px;
     }
-    .role-icon {
-      font-size: 15px;
-    }
-    .role-name {
-      font-size: 12.5px;
-      font-weight: 700;
-    }
-    .role-desc-line {
-      font-size: 10.5px;
+    .btn-filter-pill {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       color: var(--text-muted);
-      line-height: 1.3;
+      border-radius: 12px;
+      padding: 3px 10px;
+      font-size: 10.5px;
+      cursor: pointer;
+      transition: all 0.15s ease;
     }
-    .role-model-col {
-      display: flex;
-      align-items: center;
-      min-width: 0;
+    .btn-filter-pill:hover, .btn-filter-pill.active {
+      background: rgba(99, 102, 241, 0.18);
+      border-color: var(--accent);
+      color: #c7d2fe;
     }
-    .model-picker-wrapper {
+    .model-pool-search-row {
+      margin-top: 4px;
+    }
+    .model-pool-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+      max-height: 280px;
+      overflow-y: auto;
+      padding: 4px;
+    }
+    .model-pool-card-item {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 8px;
+      padding: 12px;
       display: flex;
       flex-direction: column;
-      gap: 4px;
-      width: 100%;
-      min-width: 0;
-    }
-    .model-picker-input {
-      background: #0f1013;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 6px;
-      color: #e2e8f0;
-      font-family: var(--font-mono);
-      font-size: 11.5px;
-      padding: 7px 10px;
-      width: 100%;
+      gap: 8px;
       transition: all 0.2s ease;
     }
-    .model-picker-input:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
-      background: #14151b;
+    .model-pool-card-item:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(99, 102, 241, 0.35);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     }
-    .model-meta-tags {
+    .card-item-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .card-item-title {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: #e2e8f0;
+      line-height: 1.3;
+    }
+    .card-item-id {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+    .card-item-caps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .card-item-footer {
       display: flex;
       align-items: center;
-      gap: 5px;
-      flex-wrap: wrap;
+      justify-content: space-between;
+      margin-top: auto;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
     }
+    .btn-add-to-squad {
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      color: #c7d2fe;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+    .btn-add-to-squad:hover {
+      background: rgba(99, 102, 241, 0.3);
+      border-color: var(--accent);
+      color: #fff;
+      transform: translateY(-1px);
+    }
+    .btn-add-to-squad.added {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.35);
+      color: #6ee7b7;
+      cursor: default;
+    }
+
+    /* Shared Capability Tags */
     .cap-tag {
       font-size: 9.5px;
       padding: 1px 5px;
@@ -572,21 +749,8 @@
       border-color: rgba(168, 85, 247, 0.3);
       color: #d8b4fe;
     }
-    .model-fixed-badge {
-      background: rgba(16, 185, 129, 0.08);
-      border: 1px dashed rgba(16, 185, 129, 0.3);
-      border-radius: 6px;
-      padding: 7px 10px;
-      font-size: 11.5px;
-      color: #6ee7b7;
-    }
-    .role-test-col {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 8px;
-    }
-    /* 9Router-inspired Test Button (Red/Coral Flask Icon) */
+
+    /* 9Router Test Button */
     .btn-model-test {
       display: inline-flex;
       align-items: center;
@@ -594,10 +758,10 @@
       background: rgba(239, 68, 68, 0.12);
       border: 1px solid rgba(239, 68, 68, 0.35);
       color: #f87171;
-      padding: 5px 10px;
+      padding: 4px 8px;
       border-radius: 6px;
       cursor: pointer;
-      font-size: 11.5px;
+      font-size: 11px;
       font-weight: 600;
       transition: all 0.15s ease;
       white-space: nowrap;
@@ -607,18 +771,10 @@
       border-color: #ef4444;
       color: #fca5a5;
       box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
-      transform: translateY(-1px);
-    }
-    .btn-model-test:active {
-      transform: translateY(0);
-    }
-    .btn-model-test .test-icon {
-      font-size: 12px;
-      filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.5));
     }
     .test-result-badge {
       font-size: 10px;
-      padding: 3px 6px;
+      padding: 2px 6px;
       border-radius: 4px;
       font-family: var(--font-mono);
       background: rgba(255, 255, 255, 0.04);
@@ -642,12 +798,21 @@
       border-color: #f59e0b;
       color: #fbbf24;
     }
+
+    /* Modal Footer */
     .config-modal-footer {
-      padding: 14px 20px;
-      background: var(--bg-surface);
+      padding: 18px 24px;
+      background: #111216;
       border-top: 1px solid var(--border);
       display: flex;
       align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .footer-status-msg {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
       justify-content: space-between;
       flex-shrink: 0;
     }

@@ -1,6 +1,7 @@
-<!-- MODAL CONFIG OVERLAY (Đè phủ toàn bộ màn hình khi bấm nút Cấu Hình) -->
+<!-- MODAL CONFIG OVERLAY (Bản thiết kế Model-First & Dynamic Role Assignment) -->
 <div id="modal-config-overlay" class="config-modal-backdrop" style="display: none;">
   <div class="config-modal-dialog">
+    <!-- Header -->
     <div class="config-modal-header">
       <div class="config-modal-title">
         <span>⚙️ Cài Đặt Đội Ngũ AI &amp; Dự Án (Config Hub)</span>
@@ -9,214 +10,90 @@
       <button id="btn-close-config-modal" class="btn-modal-close" title="Đóng cài đặt (Esc)">✕</button>
     </div>
 
+    <!-- Body -->
     <div class="config-modal-body">
-      <!-- 9Router Status & Model Fetcher Strip -->
+      <!-- 1. Hero Summary & 9Router Live Status -->
       <div class="config-hub-hero">
         <div class="config-hub-title-row">
           <div style="display: flex; align-items: center; gap: 10px;">
-            <span class="cockpit-title">🎯 Quản Lý Cấu Hình &amp; Gán Model Đội Ngũ</span>
-            <span id="cfg-router-badge" class="tag tag-low">🟢 9Router :20128 (Đang nạp...)</span>
+            <span class="cockpit-title">🎯 Quản Lý Đội Ngũ Tác Tử &amp; Gán Vai Trò (Model-First)</span>
+            <span id="cfg-router-badge" class="tag tag-low">🟢 9Router :20128 (Đang kiểm tra...)</span>
           </div>
           <button id="btn-refresh-models" class="btn-action-ghost" style="padding: 4px 10px; font-size: 11px;">
             <span id="spin-refresh-models" class="spinner" style="display: none; width: 10px; height: 10px;"></span>
             ↺ Tải Lại Models
           </button>
         </div>
-        <p class="cockpit-desc">Chọn model trực tiếp từ 9Router cho từng vai trò trong Agent Squad. Bấm nút <strong>[ 🧪 Test ]</strong> cạnh mỗi role để đo ping độ trễ trước khi lưu vào <code>team.yaml</code>.</p>
-        
-        <!-- Search & Filter Bar -->
-        <div class="model-search-bar-row">
-          <div class="search-input-wrapper">
-            <span class="search-icon">🔍</span>
-            <input type="text" id="cfg-search-models" class="cockpit-input model-search-input" placeholder="Lọc model trong 9Router (vd: claude, deepseek, gemini, opus...)" />
-          </div>
-          <span id="cfg-models-count-text" class="text-muted" style="font-size: 11px;">Đang kết nối 9Router...</span>
+        <p class="cockpit-desc">Thêm bất kỳ model nào từ 9Router vào đội ngũ, sau đó linh hoạt chọn vai trò (Router, Writer, Designer, Debugger, Reviewer hoặc Dự bị). Có thể bổ sung không giới hạn thành viên.</p>
+      </div>
+
+      <!-- 2. Role Coverage Matrix (Trạng Thái Phủ Vai Trò Tóm Tắt) -->
+      <div class="role-coverage-wrapper">
+        <div class="coverage-header">
+          <span class="coverage-title">📊 TRẠNG THÁI PHỦ VAI TRÒ SQUAD (ROLE COVERAGE)</span>
+          <span class="text-muted" style="font-size: 10.5px;">Bắt buộc Router &amp; Writer để vận hành tự động</span>
+        </div>
+        <div class="coverage-grid" id="coverage-badges-grid">
+          <div class="role-cov-badge" id="cov-router"><span class="cov-icon">🧠</span> Router: <strong class="cov-val">Chưa gán</strong></div>
+          <div class="role-cov-badge" id="cov-writer"><span class="cov-icon">⚡</span> Writer: <strong class="cov-val">Chưa gán</strong></div>
+          <div class="role-cov-badge" id="cov-designer"><span class="cov-icon">🎨</span> Designer: <strong class="cov-val">Chưa gán</strong></div>
+          <div class="role-cov-badge" id="cov-debugger"><span class="cov-icon">🔍</span> Debugger: <strong class="cov-val">Chưa gán</strong></div>
+          <div class="role-cov-badge" id="cov-reviewer"><span class="cov-icon">🛡️</span> Reviewer: <strong class="cov-val">Chưa gán</strong></div>
+          <div class="role-cov-badge role-cov-fixed"><span class="cov-icon">⚖️</span> Validator: <strong class="cov-val">0-Token Native</strong></div>
         </div>
       </div>
 
-      <!-- Datalist chứa toàn bộ model từ 9Router -->
-      <datalist id="datalist-9router-models"></datalist>
-
-      <!-- Roles Configuration Matrix -->
-      <div class="bento-card config-roles-card">
+      <!-- 3. Current Squad Personnel (Đội Ngũ AI Hiện Tại) -->
+      <div class="bento-card squad-personnel-card">
         <div class="card-header" style="justify-content: space-between;">
           <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="card-title">🤖 Đội Ngũ AI &amp; Gán Model Cho Từng Vai Trò</span>
-            <span class="tag tag-low">Single Writer Lock Enforced</span>
+            <span class="card-title">👥 THÀNH VIÊN ĐỘI NGŨ HIỆN TẠI (SQUAD PERSONNEL)</span>
+            <span id="squad-count-badge" class="tag tag-quick">0 Thành Viên</span>
           </div>
-          <span class="text-muted" style="font-size: 11px;">Quyền ghi mã nguồn chỉ thuộc về <strong>Writer</strong></span>
+          <span class="text-muted" style="font-size: 11px;">Mỗi model có thể giữ 1 vai trò hoặc ở trạng thái Dự Bị</span>
+        </div>
+        
+        <div id="squad-members-list" class="squad-members-container">
+          <!-- Render dynamically by JS -->
+          <div class="empty-squad-notice">Chưa có thành viên nào trong đội. Hãy chọn model từ danh sách 9Router bên dưới và bấm "➕ Thêm Vào Đội".</div>
+        </div>
+      </div>
+
+      <!-- 4. Model Pool Explorer (Khám Phá & Chọn Model Từ 9Router) -->
+      <div class="bento-card model-pool-card">
+        <div class="card-header" style="justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="card-title">🔍 KHO MODEL 9ROUTER (DISCOVERY POOL)</span>
+            <span id="cfg-models-count-text" class="tag tag-low">Đang tải...</span>
+          </div>
+          <div class="pool-filter-tabs">
+            <button class="btn-filter-pill active" data-filter="all">Tất cả</button>
+            <button class="btn-filter-pill" data-filter="vision">👁️ Vision</button>
+            <button class="btn-filter-pill" data-filter="thinking">🧠 Thinking</button>
+            <button class="btn-filter-pill" data-filter="tools">⚙️ Tools</button>
+          </div>
         </div>
 
-        <div class="roles-config-list">
-          <!-- 1. Router Role -->
-          <div class="role-config-item" data-role="router">
-            <div class="role-info-col">
-              <div class="role-title-line">
-                <span class="role-icon">🧠</span>
-                <strong class="role-name" style="color: var(--color-router);">Router Agent</strong>
-                <span class="tag tag-quick" style="font-size: 10px;">Architect</span>
-              </div>
-              <div class="role-desc-line">AI Architect &bull; Phân tích Goal &amp; bóc tách Task YAML (Read-only)</div>
-            </div>
-            <div class="role-model-col">
-              <div class="model-picker-wrapper">
-                <input type="text" id="cfg-model-router" class="model-picker-input" list="datalist-9router-models" placeholder="Chọn hoặc nhập ID model..." />
-                <div class="model-meta-tags" id="caps-router">
-                  <span class="cap-tag cap-reasoning" title="Hỗ trợ Reasoning / Thinking">🧠 Thinking</span>
-                </div>
-              </div>
-            </div>
-            <div class="role-test-col">
-              <button class="btn-model-test" data-role="router" title="Kiểm tra kết nối và đo độ trễ tới model này">
-                <span class="test-icon">🧪</span>
-                <span class="test-label">Test</span>
-                <span class="spinner test-spinner" style="display: none;"></span>
-              </button>
-              <div class="test-result-badge" id="test-res-router">Chưa test</div>
-            </div>
+        <div class="model-pool-search-row">
+          <div class="search-input-wrapper" style="flex: 1;">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="cfg-search-models" class="cockpit-input model-search-input" placeholder="Tìm theo tên hoặc ID (vd: claude, deepseek, gemini, opus, flash...)" />
           </div>
+        </div>
 
-          <!-- 2. Writer Role -->
-          <div class="role-config-item" data-role="writer">
-            <div class="role-info-col">
-              <div class="role-title-line">
-                <span class="role-icon">⚡</span>
-                <strong class="role-name" style="color: var(--color-writer);">Writer Agent</strong>
-                <span class="tag tag-low" style="font-size: 10px;">Single Writer</span>
-              </div>
-              <div class="role-desc-line">Lập trình viên lõi &bull; Độc quyền sinh SEARCH/REPLACE diff (apply_patch)</div>
-            </div>
-            <div class="role-model-col">
-              <div class="model-picker-wrapper">
-                <input type="text" id="cfg-model-writer" class="model-picker-input" list="datalist-9router-models" placeholder="Chọn hoặc nhập ID model..." />
-                <div class="model-meta-tags" id="caps-writer">
-                  <span class="cap-tag cap-tools" title="Hỗ trợ Tools">⚙️ Tools</span>
-                </div>
-              </div>
-            </div>
-            <div class="role-test-col">
-              <button class="btn-model-test" data-role="writer" title="Kiểm tra kết nối và đo độ trễ tới model này">
-                <span class="test-icon">🧪</span>
-                <span class="test-label">Test</span>
-                <span class="spinner test-spinner" style="display: none;"></span>
-              </button>
-              <div class="test-result-badge" id="test-res-writer">Chưa test</div>
-            </div>
-          </div>
-
-          <!-- 3. Designer Role -->
-          <div class="role-config-item" data-role="designer">
-            <div class="role-info-col">
-              <div class="role-title-line">
-                <span class="role-icon">🎨</span>
-                <strong class="role-name" style="color: #ec4899;">Designer Agent</strong>
-                <span class="tag tag-quick" style="font-size: 10px; border-color: #ec4899; color: #f472b6;">Visual Auditor</span>
-              </div>
-              <div class="role-desc-line">Thẩm định thị giác &amp; UX Spec, nhận diện ảnh bố cục (Read-only + Vision)</div>
-            </div>
-            <div class="role-model-col">
-              <div class="model-picker-wrapper">
-                <input type="text" id="cfg-model-designer" class="model-picker-input" list="datalist-9router-models" placeholder="Chọn hoặc nhập ID model..." />
-                <div class="model-meta-tags" id="caps-designer">
-                  <span class="cap-tag cap-vision" title="Hỗ trợ Vision">👁️ Vision</span>
-                </div>
-              </div>
-            </div>
-            <div class="role-test-col">
-              <button class="btn-model-test" data-role="designer" title="Kiểm tra kết nối và đo độ trễ tới model này">
-                <span class="test-icon">🧪</span>
-                <span class="test-label">Test</span>
-                <span class="spinner test-spinner" style="display: none;"></span>
-              </button>
-              <div class="test-result-badge" id="test-res-designer">Chưa test</div>
-            </div>
-          </div>
-
-          <!-- 4. Debugger Role -->
-          <div class="role-config-item" data-role="debugger">
-            <div class="role-info-col">
-              <div class="role-title-line">
-                <span class="role-icon">🔍</span>
-                <strong class="role-name" style="color: #eab308;">Debugger Agent</strong>
-                <span class="tag tag-quick" style="font-size: 10px; border-color: #eab308; color: #fde047;">RCA Specialist</span>
-              </div>
-              <div class="role-desc-line">Chẩn đoán lỗi hẹp, phân tích Root Cause &amp; truy vết log (No write)</div>
-            </div>
-            <div class="role-model-col">
-              <div class="model-picker-wrapper">
-                <input type="text" id="cfg-model-debugger" class="model-picker-input" list="datalist-9router-models" placeholder="Chọn hoặc nhập ID model..." />
-                <div class="model-meta-tags" id="caps-debugger">
-                  <span class="cap-tag cap-reasoning" title="Hỗ trợ Reasoning / Thinking">🧠 Thinking</span>
-                </div>
-              </div>
-            </div>
-            <div class="role-test-col">
-              <button class="btn-model-test" data-role="debugger" title="Kiểm tra kết nối và đo độ trễ tới model này">
-                <span class="test-icon">🧪</span>
-                <span class="test-label">Test</span>
-                <span class="spinner test-spinner" style="display: none;"></span>
-              </button>
-              <div class="test-result-badge" id="test-res-debugger">Chưa test</div>
-            </div>
-          </div>
-
-          <!-- 5. Reviewer Role -->
-          <div class="role-config-item" data-role="reviewer">
-            <div class="role-info-col">
-              <div class="role-title-line">
-                <span class="role-icon">🛡️</span>
-                <strong class="role-name" style="color: var(--color-reviewer);">Reviewer Agent</strong>
-                <span class="tag tag-quick" style="font-size: 10px;">TechLead</span>
-              </div>
-              <div class="role-desc-line">TechLead Review &bull; Duyệt diff, bảo mật &amp; an toàn mã nguồn (Read-only)</div>
-            </div>
-            <div class="role-model-col">
-              <div class="model-picker-wrapper">
-                <input type="text" id="cfg-model-reviewer" class="model-picker-input" list="datalist-9router-models" placeholder="Chọn hoặc nhập ID model..." />
-                <div class="model-meta-tags" id="caps-reviewer">
-                  <span class="cap-tag cap-reasoning" title="Hỗ trợ Reasoning / Thinking">🧠 Thinking</span>
-                </div>
-              </div>
-            </div>
-            <div class="role-test-col">
-              <button class="btn-model-test" data-role="reviewer" title="Kiểm tra kết nối và đo độ trễ tới model này">
-                <span class="test-icon">🧪</span>
-                <span class="test-label">Test</span>
-                <span class="spinner test-spinner" style="display: none;"></span>
-              </button>
-              <div class="test-result-badge" id="test-res-reviewer">Chưa test</div>
-            </div>
-          </div>
-
-          <!-- 6. Validator Guard (Deterministic script - fixed) -->
-          <div class="role-config-item role-config-fixed" data-role="validator">
-            <div class="role-info-col">
-              <div class="role-title-line">
-                <span class="role-icon">⚖️</span>
-                <strong class="role-name" style="color: #10b981;">Validator Guard</strong>
-                <span class="tag tag-low" style="font-size: 10px; background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #6ee7b7;">0-Token Native</span>
-              </div>
-              <div class="role-desc-line">Kiểm định tự động cục bộ &bull; Fast checks, TAB Indentation &amp; Test suite</div>
-            </div>
-            <div class="role-model-col">
-              <div class="model-fixed-badge">
-                <code>node agent-team/scripts/validator.mjs</code>
-              </div>
-            </div>
-            <div class="role-test-col">
-              <div class="test-result-badge badge-done" style="width: auto; padding: 4px 8px;">✓ Tự Động</div>
-            </div>
-          </div>
+        <!-- Scrollable Model Cards Grid -->
+        <div class="model-pool-grid" id="model-pool-grid">
+          <!-- Render dynamically by JS -->
         </div>
       </div>
     </div>
 
-    <!-- Modal Footer Actions -->
+    <!-- Footer Actions -->
     <div class="config-modal-footer">
       <div class="footer-status-msg" id="cfg-save-status-msg"></div>
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <button id="btn-cancel-config" class="btn-action-ghost">Đóng</button>
-        <button id="btn-save-team-config" class="btn-action-primary" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <button id="btn-cancel-config" class="btn-action-ghost" style="padding: 8px 16px;">Đóng</button>
+        <button id="btn-save-team-config" class="btn-action-primary" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); padding: 8px 20px; font-weight: 600;">
           <span id="spin-save-config" class="spinner" style="display: none;"></span>
           💾 Lưu Cấu Hình Vào team.yaml
         </button>

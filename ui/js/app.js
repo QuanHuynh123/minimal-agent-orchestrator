@@ -184,7 +184,7 @@
     function openConfigModal() {
       if (modalConfigOverlay) {
         modalConfigOverlay.style.display = 'flex';
-        syncInputsWithCurrentConfig();
+        initSquadFromConfig();
         load9RouterModels();
       }
     }
@@ -207,253 +207,419 @@
     });
 
     // =========================================================
-    // CONFIG HUB: INTERACTIVE SQUAD CONFIGURATOR & MODEL TESTER
+    // CONFIG HUB: MODEL-FIRST SQUAD PERSONNEL & ROLE ASSIGNMENT
     // =========================================================
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
     let available9RouterModels = [];
     let currentSquadRolesConfig = {};
+    let squadMembers = []; // [{ model, name, role, latency_ms, status }]
+    let activeFilter = 'all';
 
     const cfgRouterBadge = document.getElementById('cfg-router-badge');
     const btnRefreshModels = document.getElementById('btn-refresh-models');
     const spinRefreshModels = document.getElementById('spin-refresh-models');
     const cfgSearchModels = document.getElementById('cfg-search-models');
     const cfgModelsCountText = document.getElementById('cfg-models-count-text');
-    const datalist9RouterModels = document.getElementById('datalist-9router-models');
+    const squadMembersList = document.getElementById('squad-members-list');
+    const squadCountBadge = document.getElementById('squad-count-badge');
+    const modelPoolGrid = document.getElementById('model-pool-grid');
     const btnCancelConfig = document.getElementById('btn-cancel-config');
     const btnSaveTeamConfig = document.getElementById('btn-save-team-config');
     const spinSaveConfig = document.getElementById('spin-save-config');
     const cfgSaveStatusMsg = document.getElementById('cfg-save-status-msg');
 
-    const roleInputs = {
-      router: document.getElementById('cfg-model-router'),
-      writer: document.getElementById('cfg-model-writer'),
-      designer: document.getElementById('cfg-model-designer'),
-      debugger: document.getElementById('cfg-model-debugger'),
-      reviewer: document.getElementById('cfg-model-reviewer')
-    };
-
-    const roleCaps = {
-      router: document.getElementById('caps-router'),
-      writer: document.getElementById('caps-writer'),
-      designer: document.getElementById('caps-designer'),
-      debugger: document.getElementById('caps-debugger'),
-      reviewer: document.getElementById('caps-reviewer')
-    };
-
-    const roleBadges = {
-      router: document.getElementById('test-res-router'),
-      writer: document.getElementById('test-res-writer'),
-      designer: document.getElementById('test-res-designer'),
-      debugger: document.getElementById('test-res-debugger'),
-      reviewer: document.getElementById('test-res-reviewer')
+    const covBadges = {
+      router: document.getElementById('cov-router'),
+      writer: document.getElementById('cov-writer'),
+      designer: document.getElementById('cov-designer'),
+      debugger: document.getElementById('cov-debugger'),
+      reviewer: document.getElementById('cov-reviewer')
     };
 
     async function load9RouterModels(force = false) {
-      if (available9RouterModels.length > 0 && !force) return;
+      if (available9RouterModels.length > 0 && !force) {
+        renderModelPool();
+        return;
+      }
       if (spinRefreshModels) spinRefreshModels.style.display = 'inline-block';
-      if (cfgModelsCountText) cfgModelsCountText.textContent = 'Đang tải danh sách model từ 9Router...';
+      if (cfgModelsCountText) cfgModelsCountText.textContent = 'Đang tải model...';
 
       try {
         const res = await fetch('/api/models');
-        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: Máy chủ cần khởi động lại để kích hoạt API mới.`);
+        }
+        const text = await res.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error('API /api/models chưa sẵn sàng. Hãy tắt và chạy lại: node agent-team/scripts/dashboard.mjs');
+        }
+
         if (data.ok && Array.isArray(data.models)) {
           available9RouterModels = data.models;
-          renderModelDatalist(available9RouterModels);
           if (cfgModelsCountText) {
-            cfgModelsCountText.textContent = `Đã tìm thấy ${data.models.length} model khả dụng (${data.latency_ms}ms)`;
+            cfgModelsCountText.textContent = `${data.models.length} model sẵn sàng`;
           }
           if (cfgRouterBadge) {
             cfgRouterBadge.className = 'tag tag-low';
             cfgRouterBadge.textContent = `🟢 9Router :20128 (${data.models.length} models)`;
           }
+          renderModelPool();
         } else {
-          if (cfgModelsCountText) cfgModelsCountText.textContent = 'Không lấy được model từ 9Router';
-          if (cfgRouterBadge) {
-            cfgRouterBadge.className = 'tag tag-error';
-            cfgRouterBadge.textContent = '🔴 9Router Ngoại Tuyến';
-          }
+          throw new Error(data.error || 'Dữ liệu model rỗng');
         }
       } catch (err) {
-        if (cfgModelsCountText) cfgModelsCountText.textContent = `Lỗi kết nối: ${err.message}`;
+        if (cfgModelsCountText) cfgModelsCountText.textContent = 'Lỗi kết nối';
         if (cfgRouterBadge) {
           cfgRouterBadge.className = 'tag tag-error';
-          cfgRouterBadge.textContent = '🔴 9Router Ngoại Tuyến';
+          cfgRouterBadge.textContent = '🔴 9Router: ' + err.message;
+        }
+        if (modelPoolGrid) {
+          modelPoolGrid.innerHTML = `
+            <div style="grid-column: 1 / -1; padding: 20px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; font-size: 12px; color: #fca5a5;">
+              <strong>⚠️ Chú ý:</strong> ${escapeHtml(err.message)}<br/>
+              <span style="font-size: 11px; opacity: 0.8; margin-top: 4px; display: inline-block;">Gợi ý: Nếu bạn vừa cập nhật code, hãy bấm <code>Ctrl + C</code> trong terminal đang chạy Dashboard và chạy lại: <code>node agent-team/scripts/dashboard.mjs</code></span>
+            </div>
+          `;
         }
       } finally {
         if (spinRefreshModels) spinRefreshModels.style.display = 'none';
       }
     }
 
-    function renderModelDatalist(models, filterKeyword = '') {
-      if (!datalist9RouterModels) return;
-      datalist9RouterModels.innerHTML = '';
-      const kw = filterKeyword.toLowerCase().trim();
-      const filtered = kw ? models.filter(m => m.id.toLowerCase().includes(kw) || m.name.toLowerCase().includes(kw)) : models;
+    // Khởi tạo squadMembers từ snapshot config hiện có
+    function initSquadFromConfig() {
+      if (squadMembers.length > 0) {
+        renderSquadPersonnel();
+        return;
+      }
+      const initial = [];
+      const roles = currentSquadRolesConfig || {};
+
+      for (const [rKey, rSpec] of Object.entries(roles)) {
+        if (rSpec && rSpec.model) {
+          initial.push({
+            model: rSpec.model,
+            name: rSpec.display_name || rSpec.model.split('/').pop() || rSpec.model,
+            role: rKey,
+            latency_ms: null,
+            status: 'ready'
+          });
+        }
+      }
+
+      // Default fallback nếu team.yaml chưa gán đủ
+      if (initial.length === 0) {
+        initial.push({ model: 'kr/claude-sonnet-4.5-thinking', name: 'Claude Sonnet 4.5 Thinking', role: 'router', latency_ms: null });
+        initial.push({ model: 'Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017', name: 'DeepSeek V4.1 Flash', role: 'writer', latency_ms: null });
+        initial.push({ model: 'ag/claude-opus-5-5-high', name: 'Claude Opus 5.5 High', role: 'reviewer', latency_ms: null });
+      }
+
+      squadMembers = initial;
+      renderSquadPersonnel();
+      renderModelPool();
+    }
+
+    function renderSquadPersonnel() {
+      if (!squadMembersList) return;
+      squadMembersList.innerHTML = '';
+
+      if (squadCountBadge) {
+        squadCountBadge.textContent = `${squadMembers.length} Thành Viên`;
+      }
+
+      if (squadMembers.length === 0) {
+        squadMembersList.innerHTML = '<div class="empty-squad-notice">Chưa có thành viên nào trong đội. Hãy chọn model từ danh sách 9Router bên dưới và bấm "➕ Thêm Vào Đội".</div>';
+        updateRoleCoverageMatrix();
+        return;
+      }
+
+      squadMembers.forEach((member, idx) => {
+        const row = document.createElement('div');
+        row.className = 'squad-member-row';
+
+        const matchedInPool = available9RouterModels.find(m => m.id === member.model);
+        const caps = matchedInPool?.capabilities || {
+          vision: member.model.includes('gemini') || member.model.includes('claude'),
+          tools: true,
+          reasoning: member.model.includes('thinking') || member.model.includes('opus') || member.model.includes('sonnet')
+        };
+
+        const capsHtml = `
+          ${caps.vision ? '<span class="cap-tag cap-vision">👁️ Vision</span>' : ''}
+          ${caps.tools ? '<span class="cap-tag cap-tools">⚙️ Tools</span>' : ''}
+          ${caps.reasoning ? '<span class="cap-tag cap-reasoning">🧠 Thinking</span>' : ''}
+        `;
+
+        const latencyBadgeHtml = member.testing
+          ? '<span class="test-result-badge badge-running">Đang ping...</span>'
+          : (member.latency_ms !== null
+              ? (member.error
+                  ? `<span class="test-result-badge badge-error" title="${escapeHtml(member.error)}">✕ Lỗi</span>`
+                  : `<span class="test-result-badge badge-done">✓ ${member.latency_ms}ms</span>`)
+              : '<span class="test-result-badge">Chưa test</span>');
+
+        row.innerHTML = `
+          <div class="member-info">
+            <span class="member-icon">🤖</span>
+            <div class="member-text">
+              <span class="member-name">${escapeHtml(member.name || member.model)}</span>
+              <span class="member-id-line">${escapeHtml(member.model)}</span>
+              <div class="member-caps-row">${capsHtml}</div>
+            </div>
+          </div>
+          <div class="member-role-col">
+            <select class="member-role-select" data-idx="${idx}">
+              <option value="standby" ${member.role === 'standby' ? 'selected' : ''}>💤 Dự Bị (Standby)</option>
+              <option value="router" ${member.role === 'router' ? 'selected' : ''}>🧠 Router (Architect)</option>
+              <option value="writer" ${member.role === 'writer' ? 'selected' : ''}>⚡ Writer (Single Writer)</option>
+              <option value="designer" ${member.role === 'designer' ? 'selected' : ''}>🎨 Designer (Visual Auditor)</option>
+              <option value="debugger" ${member.role === 'debugger' ? 'selected' : ''}>🔍 Debugger (RCA Specialist)</option>
+              <option value="reviewer" ${member.role === 'reviewer' ? 'selected' : ''}>🛡️ Reviewer (TechLead)</option>
+            </select>
+          </div>
+          <div class="member-actions-col">
+            ${latencyBadgeHtml}
+            <button class="btn-model-test btn-test-member" data-idx="${idx}" title="Kiểm tra ping thực tế">
+              <span class="test-icon">🧪</span>
+              <span>Test</span>
+            </button>
+            <button class="btn-member-remove" data-idx="${idx}" title="Xóa khỏi đội ngũ">✕</button>
+          </div>
+        `;
+
+        squadMembersList.appendChild(row);
+      });
+
+      // Gắn event listeners cho role select, test, và remove
+      squadMembersList.querySelectorAll('.member-role-select').forEach(sel => {
+        sel.addEventListener('change', (e) => {
+          const idx = parseInt(e.target.dataset.idx, 10);
+          if (squadMembers[idx]) {
+            squadMembers[idx].role = e.target.value;
+            updateRoleCoverageMatrix();
+          }
+        });
+      });
+
+      squadMembersList.querySelectorAll('.btn-test-member').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const idx = parseInt(btn.dataset.idx, 10);
+          const member = squadMembers[idx];
+          if (!member) return;
+
+          member.testing = true;
+          member.error = null;
+          renderSquadPersonnel();
+
+          const result = await pingModelTest(member.model);
+          member.testing = false;
+          member.latency_ms = result.latency_ms;
+          if (!result.ok) {
+            member.error = result.error;
+          }
+          renderSquadPersonnel();
+        });
+      });
+
+      squadMembersList.querySelectorAll('.btn-member-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.dataset.idx, 10);
+          squadMembers.splice(idx, 1);
+          renderSquadPersonnel();
+          renderModelPool();
+        });
+      });
+
+      updateRoleCoverageMatrix();
+    }
+
+    function updateRoleCoverageMatrix() {
+      const assignedMap = {};
+      squadMembers.forEach(m => {
+        if (m.role && m.role !== 'standby') {
+          assignedMap[m.role] = m.name || m.model.split('/').pop();
+        }
+      });
+
+      for (const [rKey, badgeEl] of Object.entries(covBadges)) {
+        if (!badgeEl) continue;
+        const valEl = badgeEl.querySelector('.cov-val');
+        if (assignedMap[rKey]) {
+          badgeEl.className = 'role-cov-badge assigned';
+          if (valEl) valEl.textContent = assignedMap[rKey];
+        } else {
+          badgeEl.className = 'role-cov-badge vacant';
+          if (valEl) valEl.textContent = 'Khuyết vai trò';
+        }
+      }
+    }
+
+    function renderModelPool() {
+      if (!modelPoolGrid) return;
+      modelPoolGrid.innerHTML = '';
+
+      const kw = (cfgSearchModels ? cfgSearchModels.value : '').toLowerCase().trim();
+      const existingModelSet = new Set(squadMembers.map(m => m.model));
+
+      let filtered = available9RouterModels;
+      if (kw) {
+        filtered = filtered.filter(m => m.id.toLowerCase().includes(kw) || m.name.toLowerCase().includes(kw) || (m.owned_by || '').toLowerCase().includes(kw));
+      }
+      if (activeFilter === 'vision') {
+        filtered = filtered.filter(m => m.capabilities?.vision);
+      } else if (activeFilter === 'thinking') {
+        filtered = filtered.filter(m => m.capabilities?.reasoning);
+      } else if (activeFilter === 'tools') {
+        filtered = filtered.filter(m => m.capabilities?.tools);
+      }
+
+      if (filtered.length === 0) {
+        modelPoolGrid.innerHTML = `
+          <div style="grid-column: 1 / -1; padding: 24px; text-align: center; color: var(--text-muted); font-size: 12px;">
+            Không tìm thấy model nào khớp với từ khóa "${escapeHtml(kw)}".
+          </div>
+        `;
+        return;
+      }
 
       filtered.forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = m.id;
-        const capParts = [];
-        if (m.capabilities?.vision) capParts.push('👁️ Vision');
-        if (m.capabilities?.tools) capParts.push('⚙️ Tools');
-        if (m.capabilities?.reasoning) capParts.push('🧠 Thinking');
-        const capsStr = capParts.length > 0 ? ` [${capParts.join(', ')}]` : '';
-        opt.label = `${m.name} (${m.owned_by || '9router'})${capsStr}`;
-        datalist9RouterModels.appendChild(opt);
+        const card = document.createElement('div');
+        card.className = 'model-pool-card-item';
+        const isAdded = existingModelSet.has(m.id);
+
+        const capsHtml = `
+          ${m.capabilities?.vision ? '<span class="cap-tag cap-vision">👁️ Vision</span>' : ''}
+          ${m.capabilities?.tools ? '<span class="cap-tag cap-tools">⚙️ Tools</span>' : ''}
+          ${m.capabilities?.reasoning ? '<span class="cap-tag cap-reasoning">🧠 Thinking</span>' : ''}
+        `;
+
+        card.innerHTML = `
+          <div class="card-item-header">
+            <div>
+              <div class="card-item-title">${escapeHtml(m.name)}</div>
+              <div class="card-item-id">${escapeHtml(m.id)}</div>
+            </div>
+            <span class="tag tag-quick" style="font-size: 9.5px; text-transform: uppercase;">${escapeHtml(m.owned_by || '9router')}</span>
+          </div>
+          <div class="card-item-caps">${capsHtml}</div>
+          <div class="card-item-footer">
+            <button class="btn-model-test btn-pool-test" data-model="${escapeHtml(m.id)}">
+              <span class="test-icon">🧪</span>
+              <span class="pool-test-lbl">Test</span>
+            </button>
+            <button class="btn-add-to-squad ${isAdded ? 'added' : ''}" data-model="${escapeHtml(m.id)}" data-name="${escapeHtml(m.name)}" ${isAdded ? 'disabled' : ''}>
+              ${isAdded ? '✓ Đã trong đội' : '➕ Thêm Vào Đội'}
+            </button>
+          </div>
+        `;
+
+        modelPoolGrid.appendChild(card);
+      });
+
+      // Events for pool buttons
+      modelPoolGrid.querySelectorAll('.btn-add-to-squad:not(.added)').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const modelId = btn.dataset.model;
+          const modelName = btn.dataset.name;
+          squadMembers.push({
+            model: modelId,
+            name: modelName,
+            role: 'standby',
+            latency_ms: null,
+            status: 'ready'
+          });
+          renderSquadPersonnel();
+          renderModelPool();
+        });
+      });
+
+      modelPoolGrid.querySelectorAll('.btn-pool-test').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const modelId = btn.dataset.model;
+          const lbl = btn.querySelector('.pool-test-lbl');
+          if (lbl) lbl.textContent = '...';
+          btn.style.opacity = '0.7';
+
+          const res = await pingModelTest(modelId);
+          if (lbl) {
+            lbl.textContent = res.ok ? `${res.latency_ms}ms` : 'Lỗi';
+          }
+          btn.style.opacity = '1';
+          btn.style.borderColor = res.ok ? '#10b981' : '#ef4444';
+          btn.style.color = res.ok ? '#34d399' : '#f87171';
+        });
       });
     }
 
-    function updateCapsDisplay(roleKey, modelId) {
-      const container = roleCaps[roleKey];
-      if (!container) return;
-      container.innerHTML = '';
-      if (!modelId) return;
-
-      const matched = available9RouterModels.find(m => m.id === modelId);
-      const isVision = matched ? matched.capabilities.vision : (modelId.includes('gemini') || modelId.includes('claude'));
-      const isTools = matched ? matched.capabilities.tools : true;
-      const isReasoning = matched ? matched.capabilities.reasoning : (modelId.includes('thinking') || modelId.includes('opus') || modelId.includes('sonnet'));
-
-      if (isVision) {
-        const s = document.createElement('span');
-        s.className = 'cap-tag cap-vision';
-        s.textContent = '👁️ Vision';
-        s.title = 'Hỗ trợ Vision / Multimodal';
-        container.appendChild(s);
-      }
-      if (isTools) {
-        const s = document.createElement('span');
-        s.className = 'cap-tag cap-tools';
-        s.textContent = '⚙️ Tools';
-        s.title = 'Hỗ trợ Tool Calling';
-        container.appendChild(s);
-      }
-      if (isReasoning) {
-        const s = document.createElement('span');
-        s.className = 'cap-tag cap-reasoning';
-        s.textContent = '🧠 Thinking';
-        s.title = 'Hỗ trợ Reasoning / Thinking Process';
-        container.appendChild(s);
-      }
-    }
-
-    function syncInputsWithCurrentConfig() {
-      for (const [rKey, inputEl] of Object.entries(roleInputs)) {
-        if (!inputEl) continue;
-        const currentModel = currentSquadRolesConfig[rKey]?.model || '';
-        if (currentModel && !inputEl.value) {
-          inputEl.value = currentModel;
+    async function pingModelTest(model) {
+      const start = Date.now();
+      try {
+        const res = await fetch('/api/test-model', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Dashboard-Token': csrfToken || ''
+          },
+          body: JSON.stringify({ model })
+        });
+        if (!res.ok) {
+          return { ok: false, latency_ms: Date.now() - start, error: `HTTP ${res.status}` };
         }
-        updateCapsDisplay(rKey, inputEl.value);
+        const data = await res.json();
+        return data;
+      } catch (err) {
+        return { ok: false, latency_ms: Date.now() - start, error: err.message };
       }
     }
+
+    // Filter pill events
+    document.querySelectorAll('.btn-filter-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        document.querySelectorAll('.btn-filter-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        activeFilter = pill.dataset.filter || 'all';
+        renderModelPool();
+      });
+    });
 
     if (cfgSearchModels) {
-      cfgSearchModels.addEventListener('input', (e) => {
-        const kw = e.target.value;
-        renderModelDatalist(available9RouterModels, kw);
-      });
+      cfgSearchModels.addEventListener('input', () => renderModelPool());
     }
 
     if (btnRefreshModels) {
       btnRefreshModels.addEventListener('click', () => load9RouterModels(true));
     }
 
-    // Gắn event input cho từng role để cập nhật capabilities badge khi chọn model
-    for (const [rKey, inputEl] of Object.entries(roleInputs)) {
-      if (!inputEl) continue;
-      inputEl.addEventListener('input', () => {
-        updateCapsDisplay(rKey, inputEl.value.trim());
-        const badge = roleBadges[rKey];
-        if (badge) {
-          badge.className = 'test-result-badge';
-          badge.textContent = 'Chưa test';
-        }
-      });
-    }
-
-    // Setup Test Buttons (Ống nghiệm đỏ phong cách 9Router)
-    document.querySelectorAll('.btn-model-test').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const role = btn.dataset.role;
-        const inputEl = roleInputs[role];
-        const badgeEl = roleBadges[role];
-        const spinner = btn.querySelector('.test-spinner');
-        const icon = btn.querySelector('.test-icon');
-        const label = btn.querySelector('.test-label');
-        const model = inputEl ? inputEl.value.trim() : '';
-
-        if (!model) {
-          if (badgeEl) {
-            badgeEl.className = 'test-result-badge badge-error';
-            badgeEl.textContent = 'Thiếu Model';
-          }
-          return;
-        }
-
-        if (spinner) spinner.style.display = 'inline-block';
-        if (icon) icon.style.display = 'none';
-        if (badgeEl) {
-          badgeEl.className = 'test-result-badge badge-running';
-          badgeEl.textContent = 'Đang ping...';
-        }
-
-        try {
-          const res = await fetch('/api/test-model', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Dashboard-Token': csrfToken || ''
-            },
-            body: JSON.stringify({ model })
-          });
-          const data = await res.json();
-          if (data.ok) {
-            if (badgeEl) {
-              badgeEl.className = 'test-result-badge badge-done';
-              badgeEl.textContent = `✓ ${data.latency_ms}ms`;
-              badgeEl.title = `Ping thành công! Phản hồi từ 9Router: "${data.reply_preview || 'OK'}"`;
-            }
-          } else {
-            if (badgeEl) {
-              badgeEl.className = 'test-result-badge badge-error';
-              const shortErr = (data.error || 'Lỗi').slice(0, 16);
-              badgeEl.textContent = `✕ ${shortErr}`;
-              badgeEl.title = `Lỗi: ${data.error || 'Không kết nối được model'}`;
-            }
-          }
-        } catch (err) {
-          if (badgeEl) {
-            badgeEl.className = 'test-result-badge badge-error';
-            badgeEl.textContent = '✕ Lỗi Mạng';
-            badgeEl.title = err.message;
-          }
-        } finally {
-          if (spinner) spinner.style.display = 'none';
-          if (icon) icon.style.display = 'inline';
-        }
-      });
-    });
-
-    // Setup Save Config Button
+    // Save Team Config Event
     if (btnSaveTeamConfig) {
       btnSaveTeamConfig.addEventListener('click', async () => {
         if (spinSaveConfig) spinSaveConfig.style.display = 'inline-block';
         if (cfgSaveStatusMsg) {
-          cfgSaveStatusMsg.textContent = 'Đang ghi cấu hình vào team.yaml...';
+          cfgSaveStatusMsg.textContent = 'Đang lưu cấu hình vào team.yaml...';
           cfgSaveStatusMsg.style.color = 'var(--text-secondary)';
         }
 
         const rolesPayload = {};
-        for (const [rKey, inputEl] of Object.entries(roleInputs)) {
-          if (!inputEl) continue;
-          const val = inputEl.value.trim();
-          if (val) {
-            rolesPayload[rKey] = {
-              model: val,
-              display_name: val.split('/').pop() || val
+        squadMembers.forEach(m => {
+          if (m.role && m.role !== 'standby') {
+            rolesPayload[m.role] = {
+              model: m.model,
+              display_name: m.name || m.model.split('/').pop()
             };
           }
-        }
+        });
 
         try {
           const res = await fetch('/api/save-team-config', {
@@ -482,7 +648,7 @@
           }
         } catch (err) {
           if (cfgSaveStatusMsg) {
-            cfgSaveStatusMsg.textContent = `✕ Lỗi kết nối: ${err.message}`;
+            cfgSaveStatusMsg.textContent = `✕ Lỗi: ${err.message}`;
             cfgSaveStatusMsg.style.color = '#f87171';
           }
         } finally {
