@@ -15,9 +15,9 @@ const ACTIVE_DIR = path.resolve(TEAM_DIR, 'tasks', 'active');
 async function runCockpitTests() {
   console.log('Testing Interactive Goal Cockpit & CSRF Security...\n');
 
-  // Start test server on random port
-  const testPort = 4399;
-  await startServer(testPort, '127.0.0.1');
+  // Start test server on dynamic free port
+  const srv = await startServer(0, '127.0.0.1');
+  const testPort = srv.address().port;
 
   try {
     // Test 1: Snapshot returns CSRF token
