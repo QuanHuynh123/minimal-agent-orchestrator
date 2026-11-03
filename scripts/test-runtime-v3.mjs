@@ -187,6 +187,29 @@ assert.strictEqual(readRes.ok, true);
 assert.strictEqual(readRes.start_line, 1);
 assert.ok(readRes.content.includes('1: # ROLE: Writer'));
 
+// Scoped Read Guard
+const scopedReadAllowed = await executeTool('read_file', { path: 'core/downloader.py', start_line: 1, end_line: 5 }, {
+  role: 'writer',
+  allowedTools: ['read_file'],
+  allowedScope: ['core/downloader.py']
+});
+assert.strictEqual(scopedReadAllowed.ok, true);
+
+const scopedReadDenied = await executeTool('read_file', { path: 'core/eraser.py', start_line: 1, end_line: 5 }, {
+  role: 'writer',
+  allowedTools: ['read_file'],
+  allowedScope: ['core/downloader.py']
+});
+assert.strictEqual(scopedReadDenied.ok, false);
+assert.ok(scopedReadDenied.error.includes('SCOPE_VIOLATION'));
+
+const scopedDocAllowed = await executeTool('read_file', { path: 'AGENTS.md', start_line: 1, end_line: 5 }, {
+  role: 'writer',
+  allowedTools: ['read_file'],
+  allowedScope: ['core/downloader.py']
+});
+assert.strictEqual(scopedDocAllowed.ok, true);
+
 // RBAC Guard
 const rbacDenied = await executeTool('apply_patch', { patch: 'test' }, {
   role: 'router',

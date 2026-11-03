@@ -249,7 +249,7 @@ export function toolSearchCode(repoRoot, args = {}) {
   };
 }
 
-export function toolReadFile(repoRoot, args = {}) {
+export function toolReadFile(repoRoot, args = {}, context = {}) {
   const relPath = args.path;
   if (!relPath) return { ok: false, error: 'File path is required' };
 
@@ -257,6 +257,23 @@ export function toolReadFile(repoRoot, args = {}) {
     const safeRel = normalizeOrThrow(repoRoot, relPath);
     if (isForbiddenAttachment(safeRel)) {
       return { ok: false, error: `Access denied to sensitive file: ${safeRel}` };
+    }
+
+    // Scoped Read Guard: Restrict file reading to active task scope when defined
+    const allowedScope = context.allowedScope || [];
+    if (allowedScope.length > 0) {
+      const normalizedScope = allowedScope.map(p => normalizeOrThrow(repoRoot, p));
+      const isDocOrMeta = safeRel.endsWith('.md')
+        || safeRel.startsWith('docs/')
+        || safeRel.startsWith('agent-team/config/')
+        || safeRel.startsWith('agent-team/roles/');
+      const inScope = normalizedScope.includes(safeRel);
+      if (!inScope && !isDocOrMeta) {
+        return {
+          ok: false,
+          error: `SCOPE_VIOLATION: File "${safeRel}" is outside active task scope [${allowedScope.join(', ')}]. Reading restricted to scoped files or project docs.`
+        };
+      }
     }
 
     const fullPath = path.resolve(repoRoot, safeRel);
@@ -443,7 +460,7 @@ export async function executeTool(toolName, args = {}, context = {}) {
     case 'search_code':
       return toolSearchCode(repoRoot, args);
     case 'read_file':
-      return toolReadFile(repoRoot, args);
+      return toolReadFile(repoRoot, args, context);
     case 'apply_patch':
       return toolApplyPatch(repoRoot, args, context);
     case 'run_validator':
