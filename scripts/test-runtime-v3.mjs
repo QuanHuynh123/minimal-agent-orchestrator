@@ -29,8 +29,10 @@ import {
 import {
   executeTool,
   getAvailableToolSchemas,
+  isDangerousCommand,
   toolListFiles,
   toolReadFile,
+  toolRunCommand,
   toolSearchCode
 } from '../runtime/tool-runtime.mjs';
 import { loadRoleConfig } from '../runtime/index.mjs';
@@ -194,10 +196,35 @@ assert.strictEqual(rbacDenied.ok, false);
 assert.ok(rbacDenied.error.includes('PERMISSION_DENIED'));
 
 // Schemas filter
-const schemas = getAvailableToolSchemas(['read_file', 'apply_patch']);
-assert.strictEqual(schemas.length, 2);
+const schemas = getAvailableToolSchemas(['read_file', 'apply_patch', 'run_command']);
+assert.strictEqual(schemas.length, 3);
 assert.strictEqual(schemas[0].function.name, 'read_file');
 assert.strictEqual(schemas[1].function.name, 'apply_patch');
+assert.strictEqual(schemas[2].function.name, 'run_command');
+
+// run_command security guardrail checks
+assert.strictEqual(isDangerousCommand('del /f /s /q C:\\Windows'), true);
+assert.strictEqual(isDangerousCommand('format d:'), true);
+assert.strictEqual(isDangerousCommand('cat .env.production'), true);
+assert.strictEqual(isDangerousCommand('type .env'), true);
+assert.strictEqual(isDangerousCommand('git status --short'), false);
+assert.strictEqual(isDangerousCommand('python tests/test_indentation.py'), false);
+
+// run_command execution
+const cmdSafe = await toolRunCommand(REPO_ROOT, { command: 'node -e "console.log(\'AGENT_CLI_OK\')"' });
+assert.strictEqual(cmdSafe.ok, true);
+assert.ok(cmdSafe.stdout.includes('AGENT_CLI_OK'));
+
+const cmdBlocked = await toolRunCommand(REPO_ROOT, { command: 'del /f /s /q C:\\Windows\\System32' });
+assert.strictEqual(cmdBlocked.ok, false);
+assert.ok(cmdBlocked.error.includes('SECURITY_BLOCKED'));
+
+const cmdViaDispatch = await executeTool('run_command', { command: 'node -e "console.log(\'DISPATCH_OK\')"' }, {
+  role: 'writer',
+  allowedTools: ['run_command']
+});
+assert.strictEqual(cmdViaDispatch.ok, true);
+assert.ok(cmdViaDispatch.stdout.includes('DISPATCH_OK'));
 
 console.log('✓ Tool Execution Runtime tests passed.');
 

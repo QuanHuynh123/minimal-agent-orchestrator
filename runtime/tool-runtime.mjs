@@ -6,6 +6,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { exec } from 'node:child_process';
 import { applyEdits, normalizeOrThrow, resolveRepoRoot } from '../scripts/applier.mjs';
 import { validateFast, validateSuite } from '../scripts/validator.mjs';
 import { isForbiddenAttachment } from './context-adapter.mjs';
@@ -118,6 +119,28 @@ export const TOOL_SCHEMAS = {
             description: 'Validation mode: "fast" (TAB indentation & quick lint) or "suite" (full tests).'
           }
         }
+      }
+    }
+  },
+
+  run_command: {
+    type: 'function',
+    function: {
+      name: 'run_command',
+      description: 'Execute a non-interactive CLI shell command in the workspace root (e.g. running python tests, inspecting git status) with strict timeout and security guardrails.',
+      parameters: {
+        type: 'object',
+        properties: {
+          command: {
+            type: 'string',
+            description: 'The shell command string to execute.'
+          },
+          timeout_sec: {
+            type: 'number',
+            description: 'Timeout in seconds (default: 30, max: 60).'
+          }
+        },
+        required: ['command']
       }
     }
   }
@@ -308,6 +331,96 @@ export async function toolRunValidator(args = {}) {
   }
 }
 
+export const DANGEROUS_COMMAND_PATTERNS = [
+  /\bformat\s+[a-z]:/i,
+  /\bdel\s+.*[a-z]:\\/i,
+  /\brmdir\s+.*[a-z]:\\/i,
+  /\brm\s+-(?:rf|fr)\s+\//i,
+  /\bshutdown\b/i,
+  /\breg\s+delete\b/i,
+  /\bnet\s+user\b/i,
+  /\bvssadmin\b/i,
+  /\bbcdedit\b/i,
+  /\bdiskpart\b/i,
+  /\b(?:type|cat|get-content)\s+.*\.env/i
+];
+
+export function isDangerousCommand(cmd = '') {
+  const normalized = String(cmd).trim();
+  for (const pattern of DANGEROUS_COMMAND_PATTERNS) {
+    if (pattern.test(normalized)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function toolRunCommand(repoRoot, args = {}) {
+  const rawCmd = (args.command || '').trim();
+  if (!rawCmd) {
+    return Promise.resolve({ ok: false, error: 'Command cannot be empty' });
+  }
+
+  if (isDangerousCommand(rawCmd)) {
+    return Promise.resolve({
+      ok: false,
+      error: `SECURITY_BLOCKED: Command was rejected by security guardrails: "${rawCmd.slice(0, 80)}"`
+    });
+  }
+
+  const timeoutSec = Math.min(Math.max(args.timeout_sec || 30, 5), 60);
+  const timeoutMs = timeoutSec * 1000;
+  const start = Date.now();
+
+  return new Promise((resolve) => {
+    exec(rawCmd, {
+      cwd: repoRoot,
+      timeout: timeoutMs,
+      maxBuffer: 1024 * 1024,
+      windowsHide: true
+    }, (error, stdout, stderr) => {
+      const durationMs = Date.now() - start;
+      const MAX_OUTPUT_CHARS = 4000;
+
+      let outStr = (stdout || '').trim();
+      let errStr = (stderr || '').trim();
+      let truncated = false;
+
+      if (outStr.length > MAX_OUTPUT_CHARS) {
+        outStr = outStr.slice(0, MAX_OUTPUT_CHARS) + `\n[... Truncated ${outStr.length - MAX_OUTPUT_CHARS} chars ...]`;
+        truncated = true;
+      }
+      if (errStr.length > MAX_OUTPUT_CHARS) {
+        errStr = errStr.slice(0, MAX_OUTPUT_CHARS) + `\n[... Truncated ${errStr.length - MAX_OUTPUT_CHARS} chars ...]`;
+        truncated = true;
+      }
+
+      if (error) {
+        const isTimeout = error.killed || error.signal === 'SIGTERM';
+        resolve({
+          ok: false,
+          exit_code: error.code || (isTimeout ? 124 : 1),
+          error: isTimeout ? `Command timed out after ${timeoutSec}s` : error.message,
+          stdout: outStr,
+          stderr: errStr,
+          duration_ms: durationMs,
+          truncated
+        });
+        return;
+      }
+
+      resolve({
+        ok: true,
+        exit_code: 0,
+        stdout: outStr,
+        stderr: errStr,
+        duration_ms: durationMs,
+        truncated
+      });
+    });
+  });
+}
+
 /**
  * Universal Tool Dispatcher with RBAC Guard
  */
@@ -335,6 +448,8 @@ export async function executeTool(toolName, args = {}, context = {}) {
       return toolApplyPatch(repoRoot, args, context);
     case 'run_validator':
       return await toolRunValidator(args);
+    case 'run_command':
+      return await toolRunCommand(repoRoot, args);
     default:
       return { ok: false, error: `Unknown tool: "${toolName}"` };
   }
