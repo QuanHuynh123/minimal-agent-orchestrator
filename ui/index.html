@@ -1034,6 +1034,214 @@
       max-width: 95%;
     }
 
+    /* TAB 0: GOAL STUDIO & COCKPIT */
+    .cockpit-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      height: 100%;
+      padding: 14px;
+      overflow-y: auto;
+      background: #0d0d10;
+    }
+    .cockpit-hero {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .cockpit-hero-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .cockpit-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .cockpit-desc {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+    .goal-textarea {
+      width: 100%;
+      height: 72px;
+      background: #09090c;
+      border: 1px solid var(--border-hover);
+      border-radius: 6px;
+      padding: 10px;
+      color: #f8fafc;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      resize: none;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .goal-textarea:focus {
+      border-color: var(--color-9router);
+      box-shadow: 0 0 8px rgba(234, 88, 12, 0.25);
+    }
+    .chips-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+    .chips-label {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .chip-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 10.5px;
+      padding: 3px 9px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .chip-btn:hover {
+      border-color: var(--color-9router);
+      color: #fff;
+      background: rgba(234, 88, 12, 0.1);
+    }
+    .cockpit-actions-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 2px;
+    }
+    .btn-decompose {
+      background: linear-gradient(135deg, #ea580c, #c2410c);
+      color: #fff;
+      font-weight: 700;
+      font-size: 11.5px;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-decompose:hover:not(:disabled) {
+      box-shadow: 0 0 14px rgba(234, 88, 12, 0.55);
+      transform: translateY(-1px);
+    }
+    .btn-decompose:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-approve {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #052e16;
+      font-weight: 800;
+      font-size: 12px;
+      border: none;
+      border-radius: 6px;
+      padding: 9px 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-approve:hover:not(:disabled) {
+      box-shadow: 0 0 16px rgba(16, 185, 129, 0.65);
+      transform: translateY(-1px);
+    }
+    .btn-approve:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .btn-stop-orchestrator {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 6px;
+      padding: 8px 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-stop-orchestrator:hover {
+      background: rgba(239, 68, 68, 0.25);
+    }
+    .cockpit-review-board {
+      flex: 1;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 220px;
+    }
+    .review-board-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+    .draft-cards-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 260px;
+      overflow-y: auto;
+    }
+    .draft-card {
+      background: #141418;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-left: 3px solid #f59e0b;
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .draft-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .draft-card-id {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: #fed7aa;
+    }
+    .draft-card-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .draft-card-scope {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: #93c5fd;
+    }
+    .draft-card-criteria {
+      font-size: 11px;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+
     /* Intelligent Failure Tail Error Callout */
     .error-banner {
       background: rgba(239, 68, 68, 0.12);
@@ -1415,6 +1623,9 @@
       <div class="central-stage-card">
         <div class="tab-header-bar">
           <div class="tab-nav">
+            <button class="tab-btn" id="tab-btn-cockpit">
+              <span>🚀 0. Goal Studio &amp; Cockpit</span>
+            </button>
             <button class="tab-btn active" id="tab-btn-topology">
               <span>🕸️ 1. 9Router AI Live Topology</span>
             </button>
@@ -1428,6 +1639,57 @@
           <div class="tab-meta-badges">
             <span>Attempt: <strong id="out-attempt-badge">1 / 3</strong></span>
             <span>Reason: <strong id="out-finish-badge">N/A</strong></span>
+          </div>
+        </div>
+
+        <!-- TAB 0: GOAL STUDIO & COCKPIT -->
+        <div id="pane-cockpit" class="tab-pane">
+          <div class="cockpit-container">
+            <!-- Hero Command Box -->
+            <div class="cockpit-hero">
+              <div class="cockpit-hero-title-row">
+                <span class="cockpit-title">🎯 Phân Tích &amp; Bóc Tách Mục Tiêu Tự Động (AI Architect Planner)</span>
+                <span class="tag tag-quick" style="background: rgba(234, 88, 12, 0.15); border-color: var(--color-9router); color: var(--color-9router-light);">Claude Sonnet 4.5</span>
+              </div>
+              <p class="cockpit-desc">Nhập tính năng bạn muốn xây dựng bằng ngôn ngữ tự nhiên. Kiến trúc sư AI sẽ dùng công cụ đọc code thật để phân rã thành 1–3 Task nguyên tử có Scope và Acceptance Criteria rõ ràng.</p>
+              <textarea id="inp-goal-text" class="goal-textarea" placeholder="Ví dụ: Nâng cấp chế độ xóa phụ đề hộp đen tự động phát hiện đường viền, viết thêm unit test trong tests/test_eraser.py..."></textarea>
+              <div class="chips-row">
+                <span class="chips-label">Gợi ý mẫu:</span>
+                <button class="chip-btn" data-goal="Tự động bóc tách kịch bản Shorts từ Transcript video trong core/transcript.py và tests/test_competitor_analysis.py">🎬 Kịch bản Shorts</button>
+                <button class="chip-btn" data-goal="Tối ưu hóa hàng đợi tải video hỗ trợ dừng và tải tiếp khi đứt kết nối mạng trong core/downloader.py">⚡ Tối ưu tải video</button>
+                <button class="chip-btn" data-goal="Bổ sung bộ test kiểm thử Zero-Trust Anti-XSS cho các thẻ hiển thị transcript trong ui_web/index.html">🛡️ Anti-XSS Test</button>
+              </div>
+              <div class="cockpit-actions-row">
+                <button id="btn-decompose-goal" class="btn-decompose">
+                  <span id="spin-decompose" style="display: none;" class="dot running"></span>
+                  <span id="txt-decompose-btn">🪄 Phân Tích &amp; Sinh Kế Hoạch (Router Agent)</span>
+                </button>
+                <span id="lbl-decompose-status" style="font-size: 11px; color: var(--text-muted); font-style: italic;"></span>
+              </div>
+            </div>
+
+            <!-- Review Board: Draft Tasks -->
+            <div class="cockpit-review-board">
+              <div class="review-board-header">
+                <div>
+                  <span class="card-title" style="font-size: 12px;">📋 Kế Hoạch Đã Bóc Tách Chờ Duyệt (Draft Tasks)</span>
+                  <span style="font-size: 10px; color: var(--text-muted); margin-left: 8px;">Trạng thái: draft_review (An toàn - Chưa can thiệp code)</span>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <button id="btn-approve-run" class="btn-approve" disabled>
+                    <span>✓ Phê Duyệt &amp; Khởi Động Đội Ngũ AI (Approve &amp; Run)</span>
+                  </button>
+                  <button id="btn-stop-orchestrator" class="btn-stop-orchestrator" style="display: none;">
+                    <span>🛑 Dừng Squad</span>
+                  </button>
+                </div>
+              </div>
+              <div id="list-draft-tasks" class="draft-cards-list">
+                <div style="color: var(--text-muted); font-size: 11px; font-style: italic; text-align: center; padding: 24px;">
+                  Chưa có kế hoạch nào. Hãy nhập mục tiêu ở trên và bấm "Phân Tích &amp; Sinh Kế Hoạch".
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1660,6 +1922,8 @@
     const lastErrorRaw = document.getElementById('last-error-raw');
 
     // Central Tabs
+    const tabBtnCockpit = document.getElementById('tab-btn-cockpit');
+    const paneCockpit = document.getElementById('pane-cockpit');
     const tabBtnTopology = document.getElementById('tab-btn-topology');
     const tabBtnOutput = document.getElementById('tab-btn-output');
     const tabBtnSessions = document.getElementById('tab-btn-sessions');
@@ -1668,6 +1932,18 @@
     const paneSessions = document.getElementById('pane-sessions');
     const outAttemptBadge = document.getElementById('out-attempt-badge');
     const outFinishBadge = document.getElementById('out-finish-badge');
+
+    // Tab 0 Cockpit Elements
+    const inpGoalText = document.getElementById('inp-goal-text');
+    const btnDecomposeGoal = document.getElementById('btn-decompose-goal');
+    const txtDecomposeBtn = document.getElementById('txt-decompose-btn');
+    const spinDecompose = document.getElementById('spin-decompose');
+    const lblDecomposeStatus = document.getElementById('lbl-decompose-status');
+    const listDraftTasks = document.getElementById('list-draft-tasks');
+    const btnApproveRun = document.getElementById('btn-approve-run');
+    const btnStopOrchestrator = document.getElementById('btn-stop-orchestrator');
+    let csrfToken = null;
+    let currentDraftTasks = [];
 
     // Tab 3 Sessions Elements
     const sessionsList = document.getElementById('sessions-list');
@@ -1715,35 +1991,203 @@
     const btnClearLog = document.getElementById('btn-clear-log');
     const logFilter = document.getElementById('log-filter');
 
-    // Tab Switching Logic
-    tabBtnTopology.addEventListener('click', () => {
-      tabBtnTopology.classList.add('active');
-      tabBtnOutput.classList.remove('active');
-      tabBtnSessions.classList.remove('active');
-      paneTopology.classList.add('active');
-      paneOutput.classList.remove('active');
-      paneSessions.classList.remove('active');
-      requestAnimationFrame(recalculateSvgLinks);
+    // Tab Switching Logic (4 Central Tabs)
+    function switchTab(target) {
+      const tabs = [
+        { btn: tabBtnCockpit, pane: paneCockpit, name: 'cockpit' },
+        { btn: tabBtnTopology, pane: paneTopology, name: 'topology' },
+        { btn: tabBtnOutput, pane: paneOutput, name: 'output' },
+        { btn: tabBtnSessions, pane: paneSessions, name: 'sessions' }
+      ];
+      tabs.forEach(t => {
+        if (!t.btn || !t.pane) return;
+        if (t.name === target) {
+          t.btn.classList.add('active');
+          t.pane.classList.add('active');
+        } else {
+          t.btn.classList.remove('active');
+          t.pane.classList.remove('active');
+        }
+      });
+      if (target === 'topology') {
+        requestAnimationFrame(recalculateSvgLinks);
+      } else if (target === 'sessions') {
+        if (cachedSessionsList.length > 0 && !currentSelectedSessionId) {
+          selectSession(cachedSessionsList[0].session_id);
+        }
+      }
+    }
+
+    tabBtnCockpit.addEventListener('click', () => switchTab('cockpit'));
+    tabBtnTopology.addEventListener('click', () => switchTab('topology'));
+    tabBtnOutput.addEventListener('click', () => switchTab('output'));
+    tabBtnSessions.addEventListener('click', () => switchTab('sessions'));
+
+    // Quick Prompt Chips
+    document.querySelectorAll('.chip-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const goal = btn.getAttribute('data-goal');
+        if (goal && inpGoalText) {
+          inpGoalText.value = goal;
+          inpGoalText.focus();
+        }
+      });
     });
 
-    tabBtnOutput.addEventListener('click', () => {
-      tabBtnOutput.classList.add('active');
-      tabBtnTopology.classList.remove('active');
-      tabBtnSessions.classList.remove('active');
-      paneOutput.classList.add('active');
-      paneTopology.classList.remove('active');
-      paneSessions.classList.remove('active');
+    // Decompose Goal Action
+    btnDecomposeGoal.addEventListener('click', async () => {
+      const goal = inpGoalText.value.trim();
+      if (!goal) {
+        alert('Vui lòng nhập mục tiêu tính năng cần phân tích!');
+        return;
+      }
+
+      btnDecomposeGoal.disabled = true;
+      spinDecompose.style.display = 'inline-block';
+      txtDecomposeBtn.textContent = 'Router Agent đang khảo sát codebase...';
+      lblDecomposeStatus.textContent = 'Đang gọi Claude Sonnet 4.5 đọc cấu trúc code...';
+
+      try {
+        const res = await fetch('/api/decompose', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Dashboard-Token': csrfToken || ''
+          },
+          body: JSON.stringify({ goal })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || 'Lỗi bóc tách mục tiêu');
+        }
+        currentDraftTasks = data.tasks || [];
+        renderDraftTasks(currentDraftTasks);
+        lblDecomposeStatus.textContent = `✓ Đã sinh thành công ${currentDraftTasks.length} task(s)! Bạn hãy xem lại và bấm "Phê Duyệt & Khởi Động".`;
+      } catch (err) {
+        lblDecomposeStatus.textContent = `❌ Lỗi: ${err.message}`;
+        alert('Lỗi phân tích goal: ' + err.message);
+      } finally {
+        btnDecomposeGoal.disabled = false;
+        spinDecompose.style.display = 'none';
+        txtDecomposeBtn.textContent = '🪄 Phân Tích & Sinh Kế Hoạch (Router Agent)';
+      }
     });
 
-    tabBtnSessions.addEventListener('click', () => {
-      tabBtnSessions.classList.add('active');
-      tabBtnTopology.classList.remove('active');
-      tabBtnOutput.classList.remove('active');
-      paneSessions.classList.add('active');
-      paneTopology.classList.remove('active');
-      paneOutput.classList.remove('active');
-      if (cachedSessionsList.length > 0 && !currentSelectedSessionId) {
-        selectSession(cachedSessionsList[0].session_id);
+    function renderDraftTasks(tasks) {
+      while (listDraftTasks.firstChild) {
+        listDraftTasks.removeChild(listDraftTasks.firstChild);
+      }
+      if (!tasks || tasks.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.color = 'var(--text-muted)';
+        empty.style.fontSize = '11px';
+        empty.style.fontStyle = 'italic';
+        empty.style.textAlign = 'center';
+        empty.style.padding = '24px';
+        empty.textContent = 'Chưa có task nào được sinh ra.';
+        listDraftTasks.appendChild(empty);
+        btnApproveRun.disabled = true;
+        return;
+      }
+
+      tasks.forEach(t => {
+        const card = document.createElement('div');
+        card.className = 'draft-card';
+
+        const head = document.createElement('div');
+        head.className = 'draft-card-header';
+
+        const idSpan = document.createElement('span');
+        idSpan.className = 'draft-card-id';
+        idSpan.textContent = t.task_id;
+
+        const badges = document.createElement('div');
+        badges.style.display = 'flex';
+        badges.style.gap = '4px';
+
+        const modeBadge = document.createElement('span');
+        modeBadge.className = 'tag tag-' + (t.mode === 'full' ? 'standard' : 'quick');
+        modeBadge.textContent = t.mode.toUpperCase();
+
+        const riskBadge = document.createElement('span');
+        riskBadge.className = 'tag tag-' + (t.risk_level || 'low');
+        riskBadge.textContent = (t.risk_level || 'low').toUpperCase();
+
+        badges.appendChild(modeBadge);
+        badges.appendChild(riskBadge);
+        head.appendChild(idSpan);
+        head.appendChild(badges);
+
+        const title = document.createElement('div');
+        title.className = 'draft-card-title';
+        title.textContent = t.title || t.goal;
+
+        const scope = document.createElement('div');
+        scope.className = 'draft-card-scope';
+        scope.textContent = 'Scope: ' + (t.scope && t.scope.length > 0 ? t.scope.join(', ') : '(None)');
+
+        const crit = document.createElement('div');
+        crit.className = 'draft-card-criteria';
+        const critList = t.acceptance_criteria || [];
+        crit.textContent = 'Tiêu chí nghiệm thu: ' + critList.join(' • ');
+
+        card.appendChild(head);
+        card.appendChild(title);
+        card.appendChild(scope);
+        card.appendChild(crit);
+        listDraftTasks.appendChild(card);
+      });
+
+      btnApproveRun.disabled = false;
+    }
+
+    // Approve & Run Action
+    btnApproveRun.addEventListener('click', async () => {
+      btnApproveRun.disabled = true;
+      const oldText = btnApproveRun.textContent;
+      btnApproveRun.textContent = 'Đang khởi chạy Orchestrator...';
+
+      try {
+        const res = await fetch('/api/approve-run', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Dashboard-Token': csrfToken || ''
+          },
+          body: JSON.stringify({})
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || 'Lỗi phê duyệt task');
+        }
+        btnApproveRun.textContent = '✓ Đã khởi chạy Squad!';
+        setTimeout(() => {
+          btnApproveRun.textContent = oldText;
+          btnApproveRun.disabled = false;
+          switchTab('topology');
+        }, 900);
+      } catch (err) {
+        alert('Lỗi: ' + err.message);
+        btnApproveRun.disabled = false;
+        btnApproveRun.textContent = oldText;
+      }
+    });
+
+    // Stop Action
+    btnStopOrchestrator.addEventListener('click', async () => {
+      if (!confirm('Bạn có chắc chắn muốn dừng Orchestrator đang chạy?')) return;
+      try {
+        const res = await fetch('/api/stop', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Dashboard-Token': csrfToken || ''
+          }
+        });
+        const data = await res.json();
+        alert(data.message || 'Đã gửi lệnh dừng');
+      } catch (err) {
+        alert('Lỗi: ' + err.message);
       }
     });
 
@@ -2475,6 +2919,10 @@
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
 
+        if (data.csrf_token) {
+          csrfToken = data.csrf_token;
+        }
+
         txtPolling.textContent = '1s Polling';
 
         // 1. Project Info
@@ -2496,9 +2944,11 @@
         if (isRunning) {
           dotOrchestrator.className = 'dot running';
           txtOrchestrator.textContent = 'RUNNING (PID ' + data.orchestrator.pid + ')';
+          if (btnStopOrchestrator) btnStopOrchestrator.style.display = 'inline-block';
         } else {
           dotOrchestrator.className = 'dot';
           txtOrchestrator.textContent = 'IDLE';
+          if (btnStopOrchestrator) btnStopOrchestrator.style.display = 'none';
         }
 
         // 4. Tokens

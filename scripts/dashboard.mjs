@@ -2,8 +2,11 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
+import { decomposeGoal } from './goal-planner.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,6 +25,59 @@ const LIVE_STATUS_FILE = path.resolve(STATE_DIR, 'live-status.json');
 const TASK_STATE_FILE = path.resolve(STATE_DIR, 'task-state.json');
 const RUNS_DIR = path.resolve(STATE_DIR, 'runs');
 const SESSIONS_DIR = path.resolve(STATE_DIR, 'sessions');
+
+// Zero-Trust Localhost CSRF Token generated fresh on dashboard startup
+export const DASHBOARD_CSRF_TOKEN = crypto.randomUUID();
+
+function verifyCsrfAndOrigin(req) {
+  const origin = req.headers['origin'] || req.headers['referer'] || '';
+  if (origin) {
+    try {
+      const parsedOrigin = new URL(origin);
+      if (parsedOrigin.hostname !== '127.0.0.1' && parsedOrigin.hostname !== 'localhost') {
+        return { ok: false, status: 403, error: 'Forbidden: Cross-Origin Request Blocked' };
+      }
+    } catch {
+      return { ok: false, status: 403, error: 'Forbidden: Invalid Request Origin' };
+    }
+  }
+
+  const token = req.headers['x-dashboard-token'];
+  if (!token || token !== DASHBOARD_CSRF_TOKEN) {
+    return { ok: false, status: 403, error: 'Forbidden: Missing or Invalid X-Dashboard-Token' };
+  }
+
+  return { ok: true };
+}
+
+function parseJsonBody(req, maxBytes = 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        req.destroy();
+        reject(new Error(`Payload exceeds maximum limit of ${maxBytes} bytes`));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      if (!raw.trim()) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(raw));
+      } catch (err) {
+        reject(new Error(`Invalid JSON body: ${err.message}`));
+      }
+    });
+    req.on('error', reject);
+  });
+}
 
 export function isProcessAlive(pid) {
   if (!pid || typeof pid !== 'number') return false;
@@ -450,6 +506,7 @@ export async function createSnapshot() {
 
   return {
     timestamp: new Date().toISOString(),
+    csrf_token: DASHBOARD_CSRF_TOKEN,
     project,
     orchestrator: {
       running: orchestratorRunning,
@@ -552,6 +609,136 @@ export const server = http.createServer(async (req, res) => {
         'Content-Type': 'application/json; charset=utf-8',
         'Access-Control-Allow-Origin': '*'
       });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return;
+  }
+
+  // -----------------------------------------------------------
+  // INTERACTIVE COCKPIT POST ENDPOINTS (Guarded with CSRF & Origin)
+  // -----------------------------------------------------------
+
+  if (req.method === 'POST' && url.pathname === '/api/decompose') {
+    const auth = verifyCsrfAndOrigin(req);
+    if (!auth.ok) {
+      res.writeHead(auth.status, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: auth.error }));
+      return;
+    }
+
+    try {
+      const body = await parseJsonBody(req);
+      const goal = String(body.goal || '').trim();
+      if (!goal) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: 'Goal cannot be empty' }));
+        return;
+      }
+
+      console.log(`[Dashboard API] Decomposing goal with Router Agent: "${goal}"...`);
+      const decompRes = await decomposeGoal(goal, { dryRun: false });
+      res.writeHead(decompRes.ok ? 200 : 500, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-cache'
+      });
+      res.end(JSON.stringify(decompRes));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/approve-run') {
+    const auth = verifyCsrfAndOrigin(req);
+    if (!auth.ok) {
+      res.writeHead(auth.status, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: auth.error }));
+      return;
+    }
+
+    try {
+      const body = await parseJsonBody(req);
+      const targetIds = Array.isArray(body.task_ids) ? new Set(body.task_ids) : null;
+
+      // 1. Approve tasks: convert 'draft_review' to 'ready'
+      let approvedCount = 0;
+      if (fs.existsSync(TASKS_ACTIVE_DIR)) {
+        const files = fs.readdirSync(TASKS_ACTIVE_DIR).filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
+        for (const f of files) {
+          const filePath = path.resolve(TASKS_ACTIVE_DIR, f);
+          const parsed = loadYamlSafe(filePath);
+          if (!parsed) continue;
+          const raw = (parsed.task && typeof parsed.task === 'object') ? parsed.task : parsed;
+          const tid = raw.task_id || raw.id;
+          if (!tid) continue;
+
+          if (raw.status === 'draft_review' && (!targetIds || targetIds.has(tid))) {
+            raw.status = 'ready';
+            raw.updated_at = new Date().toISOString();
+            fs.writeFileSync(filePath, YAML.stringify(parsed), 'utf8');
+            approvedCount++;
+          }
+        }
+      }
+
+      // 2. Check if Orchestrator is already running
+      const lockData = fs.existsSync(LOCK_FILE) ? loadYamlSafe(LOCK_FILE) : null;
+      if (lockData && isProcessAlive(lockData.pid)) {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+          ok: true,
+          approved_count: approvedCount,
+          message: 'Tasks approved. Orchestrator is already actively running.'
+        }));
+        return;
+      }
+
+      // 3. Spawn Orchestrator in detached background process
+      const orchestratorScript = path.resolve(__dirname, 'orchestrator.mjs');
+      const child = spawn(process.execPath, [orchestratorScript, 'run'], {
+        cwd: path.resolve(TEAM_DIR, '..'),
+        detached: true,
+        stdio: 'ignore',
+        env: { ...process.env }
+      });
+      child.unref();
+
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        ok: true,
+        approved_count: approvedCount,
+        message: `Approved ${approvedCount} task(s) and launched Orchestrator in background.`,
+        pid: child.pid
+      }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/stop') {
+    const auth = verifyCsrfAndOrigin(req);
+    if (!auth.ok) {
+      res.writeHead(auth.status, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: auth.error }));
+      return;
+    }
+
+    try {
+      const lockData = fs.existsSync(LOCK_FILE) ? loadYamlSafe(LOCK_FILE) : null;
+      if (!lockData || !isProcessAlive(lockData.pid)) {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: true, message: 'Orchestrator is not running.' }));
+        return;
+      }
+
+      process.kill(lockData.pid, 'SIGTERM');
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: true, message: `Terminated Orchestrator process (PID: ${lockData.pid})` }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ ok: false, error: err.message }));
     }
     return;

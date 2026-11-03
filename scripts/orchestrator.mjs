@@ -1064,8 +1064,11 @@ async function runOrchestrator() {
     }
 
     const initialStatus = String(task.status || 'ready').toLowerCase();
-    if (initialStatus === 'blocked' || initialStatus === 'done') {
-      console.log(`[Orchestrator] Skipping ${tFile} (status="${initialStatus}"). Reset status to "ready" to re-run.`);
+    if (initialStatus === 'blocked' || initialStatus === 'done' || initialStatus === 'draft_review') {
+      const hint = initialStatus === 'draft_review'
+        ? 'Awaits human approval on Dashboard or CLI (change status to "ready" to execute).'
+        : 'Reset status to "ready" to re-run.';
+      console.log(`[Orchestrator] Skipping ${tFile} (status="${initialStatus}"). ${hint}`);
       continue;
     }
 
