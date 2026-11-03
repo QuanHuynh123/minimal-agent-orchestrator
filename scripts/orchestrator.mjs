@@ -21,6 +21,7 @@ import {
   snapshot
 } from './git-guard.mjs';
 import { hashString, validateFast, validateSuite } from './validator.mjs';
+import { runAgent } from '../runtime/index.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1335,9 +1336,44 @@ async function runOrchestrator() {
             : 'Please generate the exact code modifications to fulfill the goal. Think briefly (<100 words) and immediately output the SEARCH/REPLACE blocks.'
         ].join('\n\n');
 
-        const writerRes = await call9Router(writerModel, writerSystemRole, userMessage, 16384, writerFallback, writerTemp, {
-          maxThinkingTokens: writerMaxThinking
-        });
+        let writerRes;
+        try {
+          const agentRes = await runAgent({
+            role: 'writer',
+            prompt: userMessage,
+            sessionId: `${task.task_id}-writer`,
+            scope: task.scope || [],
+            attachments: task.attachments || [],
+            modelOverride: writerModel,
+            maxTurns: 4,
+            timeoutMs: (task.mode === 'quick' ? 90 : 180) * 1000,
+            repoRoot: REPO_ROOT
+          });
+
+          if (agentRes.ok) {
+            writerRes = {
+              ok: true,
+              content: agentRes.content || '',
+              rawContent: agentRes.content || '',
+              rawReasoning: '',
+              finishReason: 'stop',
+              usage: { prompt_tokens: 0, completion_tokens: 0 },
+              modelUsed: agentRes.model_used || writerModel,
+              responseModel: agentRes.model_used || writerModel,
+              modelMatched: true
+            };
+          } else {
+            console.warn(`[Writer Runtime] Agent run returned error: ${agentRes.error}. Falling back to call9Router...`);
+            writerRes = await call9Router(writerModel, writerSystemRole, userMessage, 16384, writerFallback, writerTemp, {
+              maxThinkingTokens: writerMaxThinking
+            });
+          }
+        } catch (agentErr) {
+          console.warn(`[Writer Runtime] Exception during runAgent: ${agentErr.message}. Falling back to call9Router...`);
+          writerRes = await call9Router(writerModel, writerSystemRole, userMessage, 16384, writerFallback, writerTemp, {
+            maxThinkingTokens: writerMaxThinking
+          });
+        }
 
         if (!writerRes.ok) {
           console.error(`[Writer] API error: ${writerRes.error}`);
