@@ -241,7 +241,6 @@
       router: document.getElementById('cov-pill-router'),
       writer: document.getElementById('cov-pill-writer'),
       designer: document.getElementById('cov-pill-designer'),
-      debugger: document.getElementById('cov-pill-debugger'),
       reviewer: document.getElementById('cov-pill-reviewer')
     };
     const squadTabCountBadge = document.getElementById('squad-tab-count-badge');
@@ -405,7 +404,6 @@
               <option value="router" ${member.role === 'router' ? 'selected' : ''}>🧠 Router (Architect)</option>
               <option value="writer" ${member.role === 'writer' ? 'selected' : ''}>⚡ Writer (Single Writer)</option>
               <option value="designer" ${member.role === 'designer' ? 'selected' : ''}>🎨 Designer (Visual Auditor)</option>
-              <option value="debugger" ${member.role === 'debugger' ? 'selected' : ''}>🔍 Debugger (RCA Specialist)</option>
               <option value="reviewer" ${member.role === 'reviewer' ? 'selected' : ''}>🛡️ Reviewer (TechLead)</option>
             </select>
             ${latencyBadgeHtml}

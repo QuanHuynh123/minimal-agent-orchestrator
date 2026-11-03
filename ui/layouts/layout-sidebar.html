@@ -18,55 +18,55 @@
         <div class="task-goal-text" id="task-goal">Waiting for orchestrator task...</div>
       </div>
 
-      <!-- Standard Workflow Personnel Card (Chỉ thuần khiết Model thực tế) -->
+      <!-- Standard Workflow Personnel Card (Chuẩn 5 Roles chính thức từ agent-team/roles/) -->
       <div class="bento-card">
         <div class="card-header">
           <span class="card-title">Standard Workflow Models</span>
         </div>
         <div class="roles-container">
-          <!-- 1. Claude Sonnet 4.5 Thinking -->
+          <!-- 1. Router Agent -->
           <div class="role-row">
             <div class="role-name">
-              <span class="role-name-title">🧠 Claude Sonnet 4.5 Thinking</span>
+              <span class="role-name-title">🧠 Router Agent</span>
               <span class="role-model" id="squad-model-router">kr/claude-sonnet-4.5-thinking • Spec &amp; Plan</span>
             </div>
             <span class="status-badge badge-idle" id="squad-status-router">IDLE</span>
           </div>
 
-          <!-- 2. Gemini 3.8 Flash (Frontend Writer / IDE) -->
+          <!-- 2. Writer Agent -->
           <div class="role-row">
             <div class="role-name">
-              <span class="role-name-title">⚡ Gemini 3.8 Flash</span>
-              <span class="role-model" id="squad-model-frontend">Frontend Writer / IDE Assistant</span>
-            </div>
-            <span class="status-badge badge-done" id="squad-status-frontend">ONLINE</span>
-          </div>
-
-          <!-- 3. DeepSeek V4.1 Flash (Backend Writer) -->
-          <div class="role-row">
-            <div class="role-name">
-              <span class="role-name-title">✍️ DeepSeek V4.1 Flash</span>
-              <span class="role-model" id="squad-model-writer">deepseek-ai/deepseek-v4.1-flash-1017 • Backend Writer</span>
+              <span class="role-name-title">⚡ Writer Agent</span>
+              <span class="role-model" id="squad-model-writer">DeepSeek V4.1 Flash • Single Writer</span>
             </div>
             <span class="status-badge badge-idle" id="squad-status-writer">IDLE</span>
           </div>
 
-          <!-- 4. Validator Guard -->
+          <!-- 3. Designer Agent -->
           <div class="role-row">
             <div class="role-name">
-              <span class="role-name-title">🛡️ Validator Guard</span>
-              <span class="role-model" id="squad-model-validator">validator.mjs • Feedback Loop Gate</span>
+              <span class="role-name-title">🎨 Designer Agent</span>
+              <span class="role-model" id="squad-model-designer">kr/claude-sonnet-4.5-thinking • Visual Audit</span>
             </div>
-            <span class="status-badge badge-idle" id="squad-status-validator">IDLE</span>
+            <span class="status-badge badge-idle" id="squad-status-designer">IDLE</span>
           </div>
 
-          <!-- 5. Claude Opus 5.5 High (Tech Lead Reviewer) -->
+          <!-- 4. Reviewer Agent -->
           <div class="role-row">
             <div class="role-name">
-              <span class="role-name-title">🔍 Claude Opus 5.5 High</span>
-              <span class="role-model" id="squad-model-reviewer">ag/claude-opus-5-5-high • Tech Lead Reviewer</span>
+              <span class="role-name-title">🛡️ Reviewer Agent</span>
+              <span class="role-model" id="squad-model-reviewer">ag/claude-opus-5-5-high • TechLead</span>
             </div>
             <span class="status-badge badge-skipped" id="squad-status-reviewer">SKIPPED</span>
+          </div>
+
+          <!-- 6. Validator Guard -->
+          <div class="role-row">
+            <div class="role-name">
+              <span class="role-name-title">⚖️ Validator Guard</span>
+              <span class="role-model" id="squad-model-validator">validator.mjs • 0-Token Gate</span>
+            </div>
+            <span class="status-badge badge-idle" id="squad-status-validator">IDLE</span>
           </div>
         </div>
       </div>

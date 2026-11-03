@@ -48,17 +48,6 @@ roles:
     allowed_actions: ["visual_audit", "ui_ux_spec", "read_scoped_files"]
     forbidden_actions: ["direct_write", "apply_patch"]
 
-  debugger:
-    enabled: true
-    provider: "local_9router"
-    display_name: "Claude Sonnet 4.5 Thinking"
-    model: "kr/claude-sonnet-4.5-thinking"
-    fallback_model: null
-    temperature: 0.1
-    spec_file: "roles/debugger.md"
-    allowed_actions: ["error_diagnostics", "rca_analysis", "read_scoped_files", "run_test_probe"]
-    forbidden_actions: ["direct_write", "apply_patch"]
-
   reviewer:
     enabled: true
     provider: "local_9router"
