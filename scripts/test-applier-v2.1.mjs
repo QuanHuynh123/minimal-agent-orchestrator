@@ -54,7 +54,7 @@ assert.throws(() => normalizeOrThrow(REPO_ROOT, '../outside.txt'), /escapes repo
 assert.throws(() => normalizeOrThrow(REPO_ROOT, 'src/../../outside.txt'), /escapes repository root/);
 assert.throws(() => normalizeOrThrow(REPO_ROOT, 'foo/\0/bar.txt'), /Null byte/);
 assert.throws(() => normalizeOrThrow(REPO_ROOT, 'C:/evil.txt'), /Absolute paths forbidden/);
-assert.strictEqual(normalizeOrThrow(REPO_ROOT, 'core/downloader.py'), 'core/downloader.py');
+assert.strictEqual(normalizeOrThrow(REPO_ROOT, 'agent-team/package.json'), 'agent-team/package.json');
 console.log('✓ Path traversal checks passed');
 
 // Test 3: Forbidden Files rejection
@@ -63,7 +63,7 @@ const forbiddenRes = applyEdits('### FILE: .env\n<<<<<<< SEARCH\nfoo\n=======\nb
   allow_scope_expansion: false
 }, {
   protectedFiles: ['**/.env*'],
-  allowedDirs: ['core/']
+  allowedDirs: ['agent-team/']
 });
 assert.strictEqual(forbiddenRes.ok, false);
 assert.strictEqual(forbiddenRes.security, true);
@@ -72,60 +72,60 @@ assert.match(forbiddenRes.error, /Forbidden file edit attempted/);
 console.log('✓ Forbidden file rejection passed');
 
 // Test 4: Strict Scope & Exact Relative Path Matching (No loose suffix bypass)
-assert.strictEqual(isFileInScope('ui_web/index.html', ['index.html']), false);
-assert.strictEqual(isFileInScope('ui_web/index.html', ['ui_web/index.html']), true);
-assert.strictEqual(isFileInScope('ui_web/index.html', ['**/index.html']), true);
+assert.strictEqual(isFileInScope('src/web/index.html', ['index.html']), false);
+assert.strictEqual(isFileInScope('src/web/index.html', ['src/web/index.html']), true);
+assert.strictEqual(isFileInScope('src/web/index.html', ['**/index.html']), true);
 
-const outOfScopeRes = applyEdits('### FILE: core/unknown.py\n<<<<<<< SEARCH\nfoo\n=======\nbar\n>>>>>>> REPLACE', {
-  scope: ['core/downloader.py'],
+const outOfScopeRes = applyEdits('### FILE: agent-team/roles/reviewer.md\n<<<<<<< SEARCH\nfoo\n=======\nbar\n>>>>>>> REPLACE', {
+  scope: ['agent-team/roles/writer.md'],
   allow_scope_expansion: false
 }, {
-  allowedDirs: ['core/']
+  allowedDirs: ['agent-team/']
 });
 assert.strictEqual(outOfScopeRes.ok, false);
 assert.match(outOfScopeRes.error, /Out-of-scope edit attempted/);
 console.log('✓ Strict scope rejection & exact path matching passed');
 
 // Test 5: Scope Expansion with limit & High-Risk Escalation Block
-const expansionOkRes = applyEdits('### FILE: core/downloader.py\n<<<<<<< SEARCH\nnonexistent_line_xyz\n=======\nbar\n>>>>>>> REPLACE', {
-  scope: ['core/downloader.py'],
+const expansionOkRes = applyEdits('### FILE: agent-team/roles/writer.md\n<<<<<<< SEARCH\nnonexistent_line_xyz\n=======\nbar\n>>>>>>> REPLACE', {
+  scope: ['agent-team/roles/router.md'],
   allow_scope_expansion: true,
   scope_expansions: []
 }, {
-  allowedDirs: ['core/'],
+  allowedDirs: ['agent-team/'],
   maxScopeIncrease: 1
 });
 // Fails because SEARCH block not found on disk, but passed scope check!
 assert.match(expansionOkRes.error, /SEARCH block 1 not found/);
 
-const newFileOutScopeRes = applyEdits('### FILE: core/brand_new_unscoped.py\n<<<<<<< SEARCH\n\n=======\nprint(1)\n>>>>>>> REPLACE', {
-  scope: ['core/downloader.py'],
+const newFileOutScopeRes = applyEdits('### FILE: agent-team/roles/brand_new_unscoped.md\n<<<<<<< SEARCH\n\n=======\n# role\n>>>>>>> REPLACE', {
+  scope: ['agent-team/roles/writer.md'],
   allow_scope_expansion: true,
   scope_expansions: []
 }, {
-  allowedDirs: ['core/'],
+  allowedDirs: ['agent-team/'],
   maxScopeIncrease: 1,
   newFilesOnlyInScope: true
 });
 assert.strictEqual(newFileOutScopeRes.ok, false);
 assert.match(newFileOutScopeRes.error, /new_files_only_in_scope/);
 
-const disallowNewFileRes = applyEdits('### FILE: core/brand_new_scoped.py\n<<<<<<< SEARCH\n\n=======\nprint(1)\n>>>>>>> REPLACE', {
-  scope: ['core/brand_new_scoped.py'],
+const disallowNewFileRes = applyEdits('### FILE: agent-team/roles/brand_new_scoped.md\n<<<<<<< SEARCH\n\n=======\n# role\n>>>>>>> REPLACE', {
+  scope: ['agent-team/roles/brand_new_scoped.md'],
   allow_scope_expansion: false
 }, {
-  allowedDirs: ['core/'],
+  allowedDirs: ['agent-team/'],
   allowNewFiles: false
 });
 assert.strictEqual(disallowNewFileRes.ok, false);
 assert.match(disallowNewFileRes.error, /allow_new_files: false/);
 
-const highRiskExpansionRes = applyEdits('### FILE: core/auth_secret.py\n<<<<<<< SEARCH\nfoo\n=======\nbar\n>>>>>>> REPLACE', {
-  scope: ['core/downloader.py'],
+const highRiskExpansionRes = applyEdits('### FILE: agent-team/roles/auth_secret.md\n<<<<<<< SEARCH\nfoo\n=======\nbar\n>>>>>>> REPLACE', {
+  scope: ['agent-team/roles/writer.md'],
   allow_scope_expansion: true,
   scope_expansions: []
 }, {
-  allowedDirs: ['core/'],
+  allowedDirs: ['agent-team/'],
   maxScopeIncrease: 1
 });
 assert.strictEqual(highRiskExpansionRes.ok, false);
@@ -197,16 +197,16 @@ if (process.platform === 'win32') {
   assert.strictEqual(curlExeCheck.ok, true);
 }
 
-const auditPass = auditGitScope(['core/downloader.py'], {
-  modifiedFiles: ['core/downloader.py'],
-  allowedDirs: ['core/'],
+const auditPass = auditGitScope(['src/service.js'], {
+  modifiedFiles: ['src/service.js'],
+  allowedDirs: ['src/'],
   protectedFiles: ['**/.env*']
 });
 assert.strictEqual(auditPass.ok, true);
 
-const auditFail = auditGitScope(['core/downloader.py'], {
-  modifiedFiles: ['core/downloader.py', 'ui/main_window.py'],
-  allowedDirs: ['core/', 'ui/'],
+const auditFail = auditGitScope(['src/service.js'], {
+  modifiedFiles: ['src/service.js', 'ui/view.js'],
+  allowedDirs: ['src/', 'ui/'],
   protectedFiles: ['**/.env*']
 });
 assert.strictEqual(auditFail.ok, false);
@@ -230,10 +230,10 @@ const noisyUnittestOutput = [
   '"2477491847488_tick"',
   '    ("after" script)',
   '======================================================================',
-  'FAIL: test_inpaint_sha256 (test_inpaint_models.TestInpaintModels.test_inpaint_sha256)',
+  'FAIL: test_model_sha256 (test_models.TestModels.test_model_sha256)',
   '----------------------------------------------------------------------',
   'Traceback (most recent call last):',
-  '  File "d:\\tool-download\\tests\\test_inpaint_models.py", line 42, in test_inpaint_sha256',
+  '  File "/workspace/app/tests/test_models.py", line 42, in test_model_sha256',
   '    self.assertEqual(status["status"], "ready")',
   'AssertionError: "corrupted" != "ready"'
 ].join('\r\n');
@@ -242,7 +242,7 @@ const cleanedErr = formatValidationErrorForRetry(noisyUnittestOutput, 600);
 assert.strictEqual(cleanedErr.includes('BIET DOI AUTONOMOUS SQUAD'), false);
 assert.strictEqual(cleanedErr.includes('2477491847488_tick'), false);
 assert.strictEqual(cleanedErr.includes('test_foo'), false);
-assert.match(cleanedErr, /FAIL: test_inpaint_sha256/);
+assert.match(cleanedErr, /FAIL: test_model_sha256/);
 assert.match(cleanedErr, /AssertionError: "corrupted" != "ready"/);
 console.log('✓ Validation error tail extraction (strips banner/noise, preserves Traceback) passed');
 
@@ -293,23 +293,22 @@ assert.match(matchWrong.reason, /Requested model "kr\/claude-sonnet-4\.5" but up
 console.log('✓ State deduplication, stale blocked purge, validateConfig & verifyResponseModel passed');
 
 // 13. Test Role-Specific Context Builders (Router Google Maps + Bounded File List, Reviewer Function-Context + Previous Issues)
-const routerCtx = buildRouterContext(['core/', 'ui_bridge/'], resolveRepoRoot(), 50);
-assert.match(routerCtx, /CODEBASE GOOGLE MAPS/);
+const routerCtx = buildRouterContext(['agent-team/scripts/', 'agent-team/runtime/'], resolveRepoRoot(), 50);
 assert.match(routerCtx, /AVAILABLE WORKSPACE FILES/);
-assert.match(routerCtx, /- core\/eraser\.py/);
+assert.match(routerCtx, /- agent-team\/scripts\/applier\.mjs/);
 assert.doesNotMatch(routerCtx, /__pycache__/);
 
 const revPromptFresh = buildReviewerPrompt(
   {
     task_id: 'T-REV-1',
     goal: 'Fix timeout handling',
-    constraints: ['Use TAB indentation', 'Explicit timeout'],
+    constraints: ['Preserve existing indentation', 'Explicit timeout'],
     acceptance_criteria: ['All unit tests pass']
   },
-  'diff --git a/core/eraser.py b/core/eraser.py\n+timeout=30',
+  'diff --git a/src/service.js b/src/service.js\n+timeout=30',
   []
 );
-assert.match(revPromptFresh, /CONSTRAINTS:\n- Use TAB indentation\n- Explicit timeout/);
+assert.match(revPromptFresh, /CONSTRAINTS:\n- Preserve existing indentation\n- Explicit timeout/);
 assert.doesNotMatch(revPromptFresh, /PREVIOUS REVIEW ISSUES TO VERIFY/);
 assert.match(revPromptFresh, /GIT DIFF \(WITH FUNCTION CONTEXT\):/);
 
@@ -317,10 +316,10 @@ const revPromptRetry = buildReviewerPrompt(
   {
     task_id: 'T-REV-1',
     goal: 'Fix timeout handling',
-    constraints: ['Use TAB indentation'],
+    constraints: ['Preserve existing indentation'],
     acceptance_criteria: ['All unit tests pass']
   },
-  'diff --git a/core/eraser.py b/core/eraser.py\n+timeout=30',
+  'diff --git a/src/service.js b/src/service.js\n+timeout=30',
   ['Missing timeout on subprocess.run at line 142']
 );
 assert.match(revPromptRetry, /PREVIOUS REVIEW ISSUES TO VERIFY/);

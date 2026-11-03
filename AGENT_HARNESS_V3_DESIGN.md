@@ -120,8 +120,8 @@ Runtime cung cấp sẵn 5 công cụ nội bộ. Khi một Model trên 9Router 
 | **`list_files`** | `{ "dir": "agent-team/ui", "max_results": 200 }` | Quét và trả về danh sách đường dẫn file thật trong thư mục (bỏ qua `.venv`, `node_modules`, `__pycache__`, `.git`). |
 | **`search_code`** | `{ "pattern": "renderSquadRoles", "dir": "agent-team/ui" }` | Tìm kiếm chuỗi/regex trong các file thuộc phạm vi cho phép, trả về `file:line: content` (tối đa 50 dòng khớp). |
 | **`read_file`** | `{ "path": "agent-team/ui/index.html", "start_line": 1, "end_line": 200 }` | Đọc chính xác từ dòng `start_line` đến `end_line` (tối đa 300 dòng/lần đọc) của bất kỳ file không bị cấm nào trong repo. |
-| **`apply_patch`** | `{ "patch": "FILE: ...\n<<<<<<< SEARCH..." }` | Đưa khối `SEARCH/REPLACE` qua 8 bước kiểm định của [`applier.mjs`](file:///d:/tool-download/agent-team/scripts/applier.mjs) (kiểm tra `allowed_scope`, cấm xóa trắng, ghi nguyên tử qua `.tmp`). |
-| **`run_validator`** | `{ "mode": "fast", "scope": ["agent-team/ui/index.html"] }` | Chạy [`validator.mjs`](file:///d:/tool-download/agent-team/scripts/validator.mjs) và trả về kết quả kiểm tra (`ok: true/false` kèm đuôi lỗi đã lọc nhiễu). |
+| **`apply_patch`** | `{ "patch": "FILE: ...\n<<<<<<< SEARCH..." }` | Đưa khối `SEARCH/REPLACE` qua 8 bước kiểm định của [`applier.mjs`](scripts/applier.mjs) (kiểm tra `allowed_scope`, cấm xóa trắng, ghi nguyên tử qua `.tmp`). |
+| **`run_validator`** | `{ "mode": "fast", "scope": ["agent-team/ui/index.html"] }` | Chạy [`validator.mjs`](scripts/validator.mjs) và trả về kết quả kiểm tra (`ok: true/false` kèm đuôi lỗi đã lọc nhiễu). |
 
 ### 4.2. Cơ chế Thực thi Vòng lặp (`Bounded Tool Loop`) & Dual-Protocol
 1. **Kiểm tra Quyền (`Role RBAC`):** Mỗi Role chỉ được gọi các tool nằm trong `role.allowed_tools`. Nếu gọi tool ngoài danh sách $\rightarrow$ trả về `{ ok: false, error: "PERMISSION_DENIED" }`.
@@ -182,11 +182,11 @@ Giải quyết trực tiếp vấn đề: *"Sau mỗi request gửi qua 9Router,
 
 ## 6. Định Nghĩa Cấu Hình Các `Role Agents` Độc Lập (`config/team.yaml`)
 
-Khi đã có `Agent Runtime`, mỗi Role trong [`team.yaml`](file:///d:/tool-download/agent-team/config/team.yaml) trở thành một **Agent độc lập có đầy đủ quyền năng**:
+Khi đã có `Agent Runtime`, mỗi Role trong [`team.yaml`](config/team.yaml) trở thành một **Agent độc lập có đầy đủ quyền năng**:
 
 | Role Agent | Model (9Router) | Vision (`Đôi mắt ảnh`) | `allowed_tools` (`Đôi tay`) | `allowed_scope` (`Ranh giới quyền hạn`) | Session Memory |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`designer`** | `kr/claude-sonnet-4.5-thinking` | `true` (Nhận ảnh `.png`/`.jpg` Base64) | `list_files`, `search_code`, `read_file`, `apply_patch`, `run_validator` | `["ui_web/**", "ui/**", "agent-team/ui/**", "agent-team/*.md"]` | `persistent` (Giữ mạch thiết kế nhiều lượt) |
+| **`designer`** | `kr/claude-sonnet-4.5-thinking` | `true` (Nhận ảnh `.png`/`.jpg` Base64) | `list_files`, `search_code`, `read_file`, `apply_patch`, `run_validator` | `["src/ui/**", "ui/**", "agent-team/ui/**", "agent-team/*.md"]` | `persistent` (Giữ mạch thiết kế nhiều lượt) |
 | **`writer`** | `Deepseek V4.1 Flash/...` | `false` | `list_files`, `search_code`, `read_file`, `apply_patch`, `run_validator` | Khóa chặt theo `--scope` (hoặc `task.scope`) | `task_scoped` |
 | **`router`** | `kr/claude-sonnet-4.5-thinking` | `false` | `list_files`, `search_code`, `read_file` *(Read-Only)* | Toàn bộ `project.allowed_dirs` (Chỉ đọc) | `task_scoped` |
 | **`reviewer`** | `ag/claude-opus-5-5-high` | `true` | `read_file`, `search_code` *(Read-Only)* | Toàn bộ `project.allowed_dirs` (Chỉ đọc) | `issues_only` (Chỉ giữ `previousReviewIssues`) |

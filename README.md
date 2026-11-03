@@ -182,7 +182,7 @@ project:
   validation:
     fast_checks:
       - name: "syntax_and_lint"
-        run: "python -m unittest tests/test_indentation.py"
+        run: "python -m unittest discover -s tests -p test_smoke.py"
         timeout_sec: 15
     suite_checks:
       - name: "unit_test_suite"

@@ -20,7 +20,7 @@ Bạn là Router của hệ thống điều phối AI Agent Squad. Nhiệm vụ 
   ],
   "acceptance_criteria": [
     "Hàm test_ping() trả về True",
-    "Tuân thủ 100% TAB indentation"
+    "Giữ đúng chuẩn indentation và coding style của dự án"
   ]
 }
 ```

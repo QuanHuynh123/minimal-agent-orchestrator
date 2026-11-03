@@ -1,14 +1,15 @@
 project:
-  id: "tool-download-stable"
-  language: "python"
+  id: "my-workspace"
+  language: "polyglot"
   repo_root: "../"
   
-  # Chỉ cho phép Applier ghi vào các thư mục này
+  # Chỉ cho phép Applier ghi vào các thư mục nguồn của dự án
   allowed_dirs:
+    - "src/"
+    - "lib/"
+    - "app/"
     - "core/"
     - "ui/"
-    - "ui_bridge/"
-    - "ui_web/"
     - "tests/"
     - "scripts/"
     - "agent-team/"
@@ -19,7 +20,6 @@ project:
     - "package.json"
     - "package-lock.json"
     - "requirements.txt"
-    - "tests/test_indentation.py"
     - "agent-team/scripts/**"
     - "agent-team/runtime/**"
     - "agent-team/config/**"
@@ -28,16 +28,16 @@ project:
   # Chuỗi lệnh kiểm tra bắt buộc (Chạy tuần tự, 0 Token)
   validation:
     fast_checks:
-      - name: "tab_indentation_check"
-        run: ".\\.venv\\Scripts\\python.exe -m unittest tests/test_indentation.py"
-        timeout_sec: 15
       - name: "agent_team_self_test"
         run: "node agent-team/scripts/test-applier-v2.1.mjs"
         timeout_sec: 10
       - name: "agent_runtime_self_test"
         run: "node agent-team/scripts/test-runtime-v3.mjs"
         timeout_sec: 10
+      - name: "agent_cockpit_self_test"
+        run: "node agent-team/scripts/test-cockpit.mjs"
+        timeout_sec: 10
     suite_checks:
-      - name: "unit_test_suite"
-        run: ".\\.venv\\Scripts\\python.exe -m unittest discover -s tests -v"
-        timeout_sec: 180
+      - name: "full_self_test_suite"
+        run: "node agent-team/scripts/test-applier-v2.1.mjs && node agent-team/scripts/test-runtime-v3.mjs && node agent-team/scripts/test-cockpit.mjs"
+        timeout_sec: 30

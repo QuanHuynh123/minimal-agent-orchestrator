@@ -1,10 +1,12 @@
 node_modules/
 .orchestrator.lock
 *.tmp.*
+config/*.local.yaml
 state/task-state.json
 state/morning-report.md
 state/live-status.json
 state/runs/
+state/sessions/*.json
 tasks/active/*.yaml
 tasks/archive/*.yaml
 tasks/blocked/*.yaml

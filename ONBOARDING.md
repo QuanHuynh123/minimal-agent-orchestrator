@@ -75,7 +75,7 @@ Khi khởi tạo dự án mới hoặc nhận một bài toán lớn từ ngư�
 ### Quy tắc 2: Chuyển hóa Yêu cầu của Người dùng thành Task Contract (`.yaml`)
 Khi người dùng mô tả một tính năng hoặc lỗi cần sửa trong khung chat:
 1. Bạn đọc các file liên quan trong dự án để hiểu ngữ cảnh (**Read-Only**).
-2. Bạn soạn thảo **Task Contract** theo đúng khuôn mẫu [`agent-team/tasks/task-template.yaml`](file:///d:/tool-download/agent-team/tasks/task-template.yaml) (cho mục tiêu `agent-team/tasks/active/T-YYYY-MM-DD-XXX.yaml`), chỉ cần điền **6 trường bắt buộc** (các trường nội bộ như `retries`, `error_history`, `last_report` do Orchestrator tự quản lý):
+2. Bạn soạn thảo **Task Contract** theo đúng khuôn mẫu [`agent-team/tasks/task-template.yaml`](tasks/task-template.yaml) (cho mục tiêu `agent-team/tasks/active/T-YYYY-MM-DD-XXX.yaml`), chỉ cần điền **6 trường bắt buộc** (các trường nội bộ như `retries`, `error_history`, `last_report` do Orchestrator tự quản lý):
    ```yaml
    # 1. CÁC TRƯỜNG BẮT BUỘC (REQUIRED)
    task_id: "T-2026-11-02-001"
@@ -83,17 +83,17 @@ Khi người dùng mô tả một tính năng hoặc lỗi cần sửa trong khu
    status: "ready" # "ready" khi đã có scope rõ ràng
    goal: "Mô tả chính xác hàm/lớp cần thêm hoặc sửa (< 150 dòng thay đổi mỗi task)"
    scope:
-     - "core/module_a.py"
+     - "src/module_a.py"
      - "tests/test_module_a.py"
    acceptance_criteria:
      - "Tiêu chí nghiệm thu cụ thể 1"
-     - "Toàn bộ unit tests trong scope và tests/test_indentation.py PASS 100%"
+     - "Toàn bộ unit tests trong scope và validator fast PASS 100%"
 
    # 2. CÁC TRƯỜNG TÙY CHỌN (OPTIONAL — CÓ MẶC ĐỊNH AN TOÀN)
    mode: "quick" # "quick" (<=3 files, low/medium risk) | "standard" (bật Reviewer gate khi risk >= high)
    risk_level: "low" # "low" | "medium" | "high" | "critical"
    constraints:
-     - "100% TAB indentation cho mọi file Python"
+     - "Giữ nguyên chuẩn thụt lề (indentation) của file gốc trong dự án"
      - "Không sửa ngoài danh sách scope"
    ```
 3. Nếu tác vụ chạm vào vùng nhạy cảm (`auth`, `keyring`, `secret`, `migration`, `infra`), bạn phải đặt `risk_level: "high"` và thông báo mã `scope_hash` để Human cấp quyền `approval` trước khi chạy.

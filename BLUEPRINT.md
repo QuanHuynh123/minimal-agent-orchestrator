@@ -191,8 +191,8 @@ project:
   # Chuỗi lệnh kiểm tra bắt buộc ở bước [validating] (Chạy tuần tự, 0 Token)
   validation:
     fast_checks:
-      - name: "tab_indentation_check"
-        run: "python -m unittest tests/test_indentation.py"
+      - name: "syntax_and_lint_check"
+        run: "python -m unittest discover -s tests -p test_smoke.py"
         timeout_sec: 15
       - name: "agent_team_self_test"
         run: "node agent-team/scripts/test-applier-v2.1.mjs"
@@ -374,7 +374,7 @@ File JSON Schema này dùng để `orchestrator.mjs` kiểm tra tính hợp lệ
 Để `applier.mjs` có thể tự động ghi code chính xác mà không làm mất code cũ, `Writer` bắt buộc trả về các khối sửa đổi theo cú pháp chuẩn sau:
 
 ```text
-FILE: src/core/downloader.py
+FILE: src/core/worker.py
 <<<<<<< SEARCH
 	def cancel_download(self, task_id: str):
 		pass

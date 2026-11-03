@@ -50,7 +50,7 @@ roles:
     type: "deterministic_script"
     display_name: "Validator Guard"
     script: "scripts/validator.mjs"
-    allowed_actions: ["tab_indentation_check", "pytest_suite", "syntax_lint"]
+    allowed_actions: ["fast_checks", "suite_checks", "scope_audit", "syntax_lint"]
 
   reviewer:
     enabled: true

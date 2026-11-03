@@ -6,8 +6,9 @@
   "scripts": {
     "start": "node scripts/orchestrator.mjs",
     "agent": "node runtime/index.mjs",
+    "plan": "node scripts/goal-planner.mjs",
     "dashboard": "node scripts/dashboard.mjs",
-    "test": "node scripts/test-applier-v2.1.mjs && node scripts/test-runtime-v3.mjs",
+    "test": "node scripts/test-applier-v2.1.mjs && node scripts/test-runtime-v3.mjs && node scripts/test-cockpit.mjs",
     "validate": "node scripts/validator.mjs",
     "git-guard": "node scripts/git-guard.mjs"
   },

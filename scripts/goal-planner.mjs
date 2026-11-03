@@ -22,6 +22,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEAM_DIR = path.resolve(__dirname, '..');
 const ACTIVE_TASKS_DIR = path.resolve(TEAM_DIR, 'tasks', 'active');
+const PROJECT_LOCAL_CONFIG_FILE = path.resolve(TEAM_DIR, 'config', 'project.local.yaml');
 const PROJECT_CONFIG_FILE = path.resolve(TEAM_DIR, 'config', 'project.yaml');
 const POLICY_CONFIG_FILE = path.resolve(TEAM_DIR, 'config', 'policy.yaml');
 
@@ -80,10 +81,13 @@ export async function decomposeGoal(goal, options = {}) {
     return { ok: false, error: 'User goal cannot be empty' };
   }
 
-  const projectConfig = loadYamlSafe(PROJECT_CONFIG_FILE);
+  const projectConfig = fs.existsSync(PROJECT_LOCAL_CONFIG_FILE)
+    ? loadYamlSafe(PROJECT_LOCAL_CONFIG_FILE)
+    : loadYamlSafe(PROJECT_CONFIG_FILE);
   const policyConfig = loadYamlSafe(POLICY_CONFIG_FILE);
   const repoRoot = options.repoRoot || resolveRepoRoot(projectConfig);
-  const allowedDirs = projectConfig.project?.allowed_dirs || ['core', 'ui', 'ui_web', 'ui_bridge', 'tests'];
+  const projectId = projectConfig.project?.id || 'my-workspace';
+  const allowedDirs = projectConfig.project?.allowed_dirs || ['src', 'lib', 'app', 'core', 'tests'];
   const maxFilesPerTask = policyConfig.policy?.scope_control?.max_files_per_task || 5;
 
   const routerContext = buildRouterContext(allowedDirs, repoRoot, 300);
@@ -99,7 +103,7 @@ export async function decomposeGoal(goal, options = {}) {
     `1. You are the AI Software Architect & Router. Inspect the codebase thoroughly using tools if needed (list_files, search_code, read_file).`,
     `2. Decompose the goal into 1 to 3 ATOMIC, sequential tasks (< 150 lines modified per task).`,
     `3. Every task MUST define an explicit "scope" of files (relative to repository root) that actually exist or will be created in allowed directories: [${allowedDirs.join(', ')}].`,
-    `4. Python files in scope MUST mandate: "100% TAB (\\t) indentation cho Python (tuyệt đối không dùng 4 spaces)".`,
+    `4. Code edits in scope MUST preserve the exact indentation style (tabs or spaces) and coding conventions of the target files.`,
     `5. Frontend/Web files in scope MUST mandate: "Zero-Trust Anti-XSS (chỉ dùng textContent hoặc escapeHtml, không gán raw innerHTML)".`,
     `6. Every task MUST define at least 2 measurable, testable "acceptance_criteria".`,
     `7. Output STRICT JSON conforming to the following schema with NO surrounding chatter:`,
@@ -108,11 +112,11 @@ export async function decomposeGoal(goal, options = {}) {
     `    {`,
     `      "title": "Short descriptive title (Vietnamese or English)",`,
     `      "goal": "Precise goal describing what this atomic task achieves",`,
-    `      "mode": "quick", // "quick" for single file/light edits, "full" for complex logic`,
+    `      "mode": "quick", // "quick" for single file/light edits, "standard" for complex logic`,
     `      "risk_level": "low", // "low", "medium", or "high"`,
-    `      "scope": ["core/example.py", "tests/test_example.py"],`,
+    `      "scope": ["src/example.js", "tests/test_example.js"],`,
     `      "constraints": [`,
-    `        "100% TAB (\\t) indentation cho tất cả các file Python (tuyệt đối không dùng 4 spaces)",`,
+    `        "Giữ nguyên chuẩn thụt lề (indentation) của file gốc trong dự án",`,
     `        "Giữ nguyên tính tương thích ngược",`,
     `        "Pass 100% test suite liên quan"` ,
     `      ],`,
@@ -167,13 +171,14 @@ export async function decomposeGoal(goal, options = {}) {
         .filter(s => s.length > 0 && !s.startsWith('/') && !s.includes('..'))
         .slice(0, maxFilesPerTask);
 
+      const normalizedMode = rawTask.mode === 'full' ? 'standard' : (['quick', 'standard'].includes(rawTask.mode) ? rawTask.mode : 'quick');
       const canonicalTask = {
         task: {
           task_id: taskId,
-          project_id: 'tool-download-stable',
+          project_id: projectId,
           title,
           goal: String(rawTask.goal || title).trim(),
-          mode: ['quick', 'full'].includes(rawTask.mode) ? rawTask.mode : 'quick',
+          mode: normalizedMode,
           risk_level: ['low', 'medium', 'high', 'critical'].includes(rawTask.risk_level) ? rawTask.risk_level : 'low',
           owner: 'writer',
           status: 'draft_review', // Human-in-the-loop gate: awaits approval before running

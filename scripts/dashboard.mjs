@@ -364,12 +364,16 @@ function scanTaskDir(dirPath) {
 
 export async function createSnapshot() {
   // 1. Team & Project & Policy (Cleanly scrub teamConfig.providers to prevent any secret exposure)
-  const teamYaml = loadYamlSafe(path.resolve(CONFIG_DIR, 'team.yaml')) || {};
+  const teamYaml = loadYamlSafe(path.resolve(CONFIG_DIR, 'team.local.yaml'))
+    || loadYamlSafe(path.resolve(CONFIG_DIR, 'team.yaml'))
+    || {};
   const roles = teamYaml.roles || {};
 
-  const projectYaml = loadYamlSafe(path.resolve(CONFIG_DIR, 'project.yaml')) || {};
+  const projectYaml = loadYamlSafe(path.resolve(CONFIG_DIR, 'project.local.yaml'))
+    || loadYamlSafe(path.resolve(CONFIG_DIR, 'project.yaml'))
+    || {};
   const project = {
-    id: projectYaml.project?.id || 'tool-download-stable',
+    id: projectYaml.project?.id || 'my-workspace',
     allowed_dirs: projectYaml.project?.allowed_dirs || []
   };
 

@@ -203,7 +203,7 @@ export function normalizeTask(parsed) {
 
   raw.task_id = canonicalId.trim();
   raw.id = raw.task_id;
-  raw.project_id = raw.project_id || 'tool-download-stable';
+  raw.project_id = raw.project_id || projectConfig.project?.id || 'my-workspace';
   raw.status = raw.status || 'ready';
   raw.owner = raw.owner || 'writer';
   raw.retries = typeof raw.retries === 'number' ? raw.retries : 0;
@@ -229,8 +229,12 @@ function loadYaml(filePath) {
   return YAML.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
-const teamConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'team.yaml')) || {};
-const projectConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'project.yaml')) || {};
+const teamConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'team.local.yaml'))
+  || loadYaml(path.resolve(TEAM_DIR, 'config', 'team.yaml'))
+  || {};
+const projectConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'project.local.yaml'))
+  || loadYaml(path.resolve(TEAM_DIR, 'config', 'project.yaml'))
+  || {};
 const policyConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'policy.yaml')) || {};
 const REPO_ROOT = resolveRepoRoot(projectConfig);
 

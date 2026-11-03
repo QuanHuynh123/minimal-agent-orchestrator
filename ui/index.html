@@ -1443,7 +1443,7 @@
         <span class="brand-badge">v3.0 Neural Graph</span>
       </div>
       <div class="pill pill-project" id="pill-project">
-        <span>Project: <strong id="txt-project">tool-download-stable</strong></span>
+        <span>Project: <strong id="txt-project">my-workspace</strong></span>
       </div>
     </div>
     <div class="top-right">
@@ -1689,12 +1689,12 @@
                 <span class="tag tag-quick" style="background: rgba(234, 88, 12, 0.15); border-color: var(--color-9router); color: var(--color-9router-light);">Claude Sonnet 4.5</span>
               </div>
               <p class="cockpit-desc">Nhập tính năng bạn muốn xây dựng bằng ngôn ngữ tự nhiên. Kiến trúc sư AI sẽ dùng công cụ đọc code thật để phân rã thành 1–3 Task nguyên tử có Scope và Acceptance Criteria rõ ràng.</p>
-              <textarea id="inp-goal-text" class="goal-textarea" placeholder="Ví dụ: Nâng cấp chế độ xóa phụ đề hộp đen tự động phát hiện đường viền, viết thêm unit test trong tests/test_eraser.py..."></textarea>
+              <textarea id="inp-goal-text" class="goal-textarea" placeholder="Ví dụ: Thêm API kiểm tra trạng thái hệ thống kèm bộ unit test đầy đủ..."></textarea>
               <div class="chips-row">
                 <span class="chips-label">Gợi ý mẫu:</span>
-                <button class="chip-btn" data-goal="Tự động bóc tách kịch bản Shorts từ Transcript video trong core/transcript.py và tests/test_competitor_analysis.py">🎬 Kịch bản Shorts</button>
-                <button class="chip-btn" data-goal="Tối ưu hóa hàng đợi tải video hỗ trợ dừng và tải tiếp khi đứt kết nối mạng trong core/downloader.py">⚡ Tối ưu tải video</button>
-                <button class="chip-btn" data-goal="Bổ sung bộ test kiểm thử Zero-Trust Anti-XSS cho các thẻ hiển thị transcript trong ui_web/index.html">🛡️ Anti-XSS Test</button>
+                <button class="chip-btn" data-goal="Bổ sung endpoint kiểm tra sức khỏe dịch vụ (Healthcheck API) và viết unit test tương ứng">⚡ Healthcheck API</button>
+                <button class="chip-btn" data-goal="Tối ưu cơ chế retry có backoff khi kết nối mạng bị gián đoạn và bổ sung test cases">🔄 Retry &amp; Backoff</button>
+                <button class="chip-btn" data-goal="Bổ sung bộ kiểm thử bảo mật Zero-Trust Anti-XSS và kiểm tra đầu vào cho giao diện">🛡️ Security &amp; Anti-XSS</button>
               </div>
               <div class="cockpit-actions-row">
                 <button id="btn-decompose-goal" class="btn-decompose">

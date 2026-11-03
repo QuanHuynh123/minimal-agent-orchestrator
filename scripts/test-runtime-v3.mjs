@@ -187,26 +187,26 @@ assert.strictEqual(readRes.ok, true);
 assert.strictEqual(readRes.start_line, 1);
 assert.ok(readRes.content.includes('1: # ROLE: Writer'));
 
-// Scoped Read Guard
-const scopedReadAllowed = await executeTool('read_file', { path: 'core/downloader.py', start_line: 1, end_line: 5 }, {
+// Scoped Read Guard (uses files inside agent-team/ so the test is 100% repo-independent)
+const scopedReadAllowed = await executeTool('read_file', { path: 'agent-team/scripts/applier.mjs', start_line: 1, end_line: 5 }, {
   role: 'writer',
   allowedTools: ['read_file'],
-  allowedScope: ['core/downloader.py']
+  allowedScope: ['agent-team/scripts/applier.mjs']
 });
 assert.strictEqual(scopedReadAllowed.ok, true);
 
-const scopedReadDenied = await executeTool('read_file', { path: 'core/eraser.py', start_line: 1, end_line: 5 }, {
+const scopedReadDenied = await executeTool('read_file', { path: 'agent-team/scripts/validator.mjs', start_line: 1, end_line: 5 }, {
   role: 'writer',
   allowedTools: ['read_file'],
-  allowedScope: ['core/downloader.py']
+  allowedScope: ['agent-team/scripts/applier.mjs']
 });
 assert.strictEqual(scopedReadDenied.ok, false);
 assert.ok(scopedReadDenied.error.includes('SCOPE_VIOLATION'));
 
-const scopedDocAllowed = await executeTool('read_file', { path: 'AGENTS.md', start_line: 1, end_line: 5 }, {
+const scopedDocAllowed = await executeTool('read_file', { path: 'agent-team/README.md', start_line: 1, end_line: 5 }, {
   role: 'writer',
   allowedTools: ['read_file'],
-  allowedScope: ['core/downloader.py']
+  allowedScope: ['agent-team/scripts/applier.mjs']
 });
 assert.strictEqual(scopedDocAllowed.ok, true);
 
@@ -231,7 +231,7 @@ assert.strictEqual(isDangerousCommand('format d:'), true);
 assert.strictEqual(isDangerousCommand('cat .env.production'), true);
 assert.strictEqual(isDangerousCommand('type .env'), true);
 assert.strictEqual(isDangerousCommand('git status --short'), false);
-assert.strictEqual(isDangerousCommand('python tests/test_indentation.py'), false);
+assert.strictEqual(isDangerousCommand('npm test'), false);
 
 // run_command execution
 const cmdSafe = await toolRunCommand(REPO_ROOT, { command: 'node -e "console.log(\'AGENT_CLI_OK\')"' });

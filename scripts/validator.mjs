@@ -38,6 +38,10 @@ export function hashString(str) {
 }
 
 export function loadProjectConfig() {
+  const localPath = path.resolve(__dirname, '..', 'config', 'project.local.yaml');
+  if (fs.existsSync(localPath)) {
+    return YAML.parse(fs.readFileSync(localPath, 'utf8'));
+  }
   const cfgPath = path.resolve(__dirname, '..', 'config', 'project.yaml');
   if (!fs.existsSync(cfgPath)) {
     return null;

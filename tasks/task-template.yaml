@@ -6,11 +6,11 @@ title: "Mô tả ngắn gọn tiêu đề task (< 80 ký tự)"
 status: "ready" # Đặt "ready" khi đã có scope rõ ràng; "draft" nếu muốn Router tự lập scope
 goal: "Mô tả cụ thể hàm/lớp cần thêm hoặc sửa (< 150 dòng code thay đổi mỗi task; nếu lớn hơn phải tách thành 001A, 001B)"
 scope:
-  - "core/example.py"
+  - "src/example.py"
   - "tests/test_example.py"
 acceptance_criteria:
   - "Hàm X xử lý đúng trường hợp Y"
-  - "Toàn bộ unit tests trong scope và tests/test_indentation.py PASS 100%"
+  - "Toàn bộ unit tests trong scope và validator fast PASS 100%"
 
 # ============================================================================
 # 2. CÁC TRƯỜNG TÙY CHỌN (OPTIONAL — CÓ GIÁ TRỊ MẶC ĐỊNH AN TOÀN)
@@ -19,7 +19,7 @@ mode: "quick" # "quick" (<=3 files, low/medium risk, 0-token Validator) | "stand
 risk_level: "low" # "low" | "medium" | "high" | "critical"
 force_ai_review: false # Đặt true nếu muốn ép chạy AI Reviewer ngay cả khi risk_level là low/medium
 constraints:
-  - "100% TAB indentation cho mọi file Python"
+  - "Giữ nguyên chuẩn thụt lề (indentation) của file gốc trong dự án"
   - "Không đổi tên hàm/biến dùng chung xuyên nhiều file nếu không thực sự cần thiết"
 forbidden_files:
   - ".env*"

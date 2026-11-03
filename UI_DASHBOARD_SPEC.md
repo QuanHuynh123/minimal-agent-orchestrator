@@ -2,8 +2,8 @@
 
 - **Document ID:** `SPEC-ORCHESTRATOR-UI-V3.0`
 - **Target Files:**
-  - Frontend UI: [`agent-team/ui/index.html`](file:///d:/tool-download/agent-team/ui/index.html)
-  - Read-Only Telemetry Server: [`agent-team/scripts/dashboard.mjs`](file:///d:/tool-download/agent-team/scripts/dashboard.mjs)
+  - Frontend UI: [`agent-team/ui/index.html`](ui/index.html)
+  - Read-Only Telemetry Server: [`agent-team/scripts/dashboard.mjs`](scripts/dashboard.mjs)
   - Visual Reference Image: `agent-team/ui/reference-9router-graph.png`
 - **Triết lý Cốt lõi:**
   1. **Read-Only Telemetry & Zero Fake Data:** Chỉ hiển thị dữ liệu thật từ `/api/snapshot`. Không bịa dữ liệu giả.
@@ -29,7 +29,7 @@
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ 1. TOP BAR (52px cố định)                                                                                  │
-│ [⚡ 9Router Orchestrator v3.0] [Project: tool-download-stable] │ [Stage: IDLE] [9Router :20128 ● 18ms]     │
+│ [⚡ 9Router Orchestrator v3.0] [Project: my-workspace]         │ [Stage: IDLE] [9Router :20128 ● 18ms]     │
 │                                                                │ [PID: IDLE] [Tokens: 789.7k↑ | 422.9k↓]   │
 ├────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
 │ 2. WATERFALL PIPELINE BAR (54px — Các trạm cơ khí thác nước + Vòng lặp Retry + Đồng hồ tại trạm active)    │
@@ -45,8 +45,8 @@
 │ │ Duration: ⏱ 1m 37s (Recovered on Retry 1) │ │ └────────────────────────────────────────────────────────┘ │
 │ │ Goal: Nâng cấp inpaint_ai trong core/...  │ │ ┌─ TAB 1: 9ROUTER AI NODE GRAPH CANVAS (Grid 32x32px) ───┐ │
 │ │ Locked Scope (2 files):                   │ │ │  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  │ │
-│ │  • core/eraser.py             [VALIDATED] │ │ │                   ┌──────────────────────────┐         │ │
-│ │  • tests/test_eraser.py       [VALIDATED] │ │ │                   │ [OP] Dev Cá Voi (Writer) │         │ │
+│ │  • src/service.py             [VALIDATED] │ │ │                   ┌──────────────────────────┐         │ │
+│ │  • tests/test_service.py      [VALIDATED] │ │ │                   │ [OP] Dev Cá Voi (Writer) │         │ │
 │ └───────────────────────────────────────────┘ │ │                   │ DeepSeek V4.1 Flash      │         │ │
 │                                               │ │                   │ ● DONE (41.5k ➔ 2.2k tok)│         │ │
 │ ┌─ B. AI SQUAD MODELS (CHỈ NHÂN SỰ AI) ─────┐ │ │                   └────────────┬─────────────┘         │ │
@@ -111,7 +111,7 @@ Canvas Tab 1 phản ánh chân thực chu trình làm việc **Standard Workflow
    - **Vai trò:** Lập trình viên Backend, xử lý thuật toán `core/**`, sinh các khối `<<<<<<< SEARCH / ======= / >>>>>>> REPLACE`.
 4. **`Validator Guard` `(x: 70%, y: 50%)` — Feedback Loop & Test Gate:**
    - **Form dáng:** Capsule tối `#18181b`, icon `🛡️` xanh lục `#064e3b`.
-   - **Vai trò:** Kiểm định nội bộ của Writer (`validator.mjs`): chạy `test_indentation.py` (100% TAB), `pytest`. Nếu tạch, bắn lỗi Traceback ngược lại cho Writer sửa lại ở Attempt 2/3.
+   - **Vai trò:** Kiểm định nội bộ của Writer (`validator.mjs`): chạy linter, syntax checks, unit tests. Nếu tạch, bắn lỗi Traceback ngược lại cho Writer sửa lại ở Attempt 2/3.
 5. **`Claude Opus 5.5 High` `(x: 89%, y: 50%)` — Tech Lead Reviewer:**
    - **Form dáng:** Capsule tối `#18181b`, icon `O` xanh tím `#1e1b4b`.
    - **Vai trò:** Giám định viên cấp cao, thẩm tra `git diff` các task rủi ro cao trước khi cho phép Git Guard commit.

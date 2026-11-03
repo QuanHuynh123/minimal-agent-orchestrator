@@ -43,7 +43,8 @@ async function runCockpitTests() {
     console.log('3. Testing /api/approve-run task status conversion...');
     const dummyTaskId = `T-test-cockpit-dummy-${Date.now()}`;
     const dummyPath = path.resolve(ACTIVE_DIR, `${dummyTaskId}.yaml`);
-    fs.writeFileSync(dummyPath, `task:\n  task_id: "${dummyTaskId}"\n  status: "draft_review"\n  scope: ["core/eraser.py"]\n`, 'utf8');
+    fs.mkdirSync(ACTIVE_DIR, { recursive: true });
+    fs.writeFileSync(dummyPath, `task:\n  task_id: "${dummyTaskId}"\n  status: "draft_review"\n  scope: ["src/example.js"]\n`, 'utf8');
 
     try {
       const approveRes = await fetch(`http://127.0.0.1:${testPort}/api/approve-run`, {
