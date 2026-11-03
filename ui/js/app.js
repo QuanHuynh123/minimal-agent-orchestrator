@@ -184,6 +184,8 @@
     function openConfigModal() {
       if (modalConfigOverlay) {
         modalConfigOverlay.style.display = 'flex';
+        syncInputsWithCurrentConfig();
+        load9RouterModels();
       }
     }
     function closeConfigModal() {
@@ -203,6 +205,295 @@
         closeConfigModal();
       }
     });
+
+    // =========================================================
+    // CONFIG HUB: INTERACTIVE SQUAD CONFIGURATOR & MODEL TESTER
+    // =========================================================
+    let available9RouterModels = [];
+    let currentSquadRolesConfig = {};
+
+    const cfgRouterBadge = document.getElementById('cfg-router-badge');
+    const btnRefreshModels = document.getElementById('btn-refresh-models');
+    const spinRefreshModels = document.getElementById('spin-refresh-models');
+    const cfgSearchModels = document.getElementById('cfg-search-models');
+    const cfgModelsCountText = document.getElementById('cfg-models-count-text');
+    const datalist9RouterModels = document.getElementById('datalist-9router-models');
+    const btnCancelConfig = document.getElementById('btn-cancel-config');
+    const btnSaveTeamConfig = document.getElementById('btn-save-team-config');
+    const spinSaveConfig = document.getElementById('spin-save-config');
+    const cfgSaveStatusMsg = document.getElementById('cfg-save-status-msg');
+
+    const roleInputs = {
+      router: document.getElementById('cfg-model-router'),
+      writer: document.getElementById('cfg-model-writer'),
+      designer: document.getElementById('cfg-model-designer'),
+      debugger: document.getElementById('cfg-model-debugger'),
+      reviewer: document.getElementById('cfg-model-reviewer')
+    };
+
+    const roleCaps = {
+      router: document.getElementById('caps-router'),
+      writer: document.getElementById('caps-writer'),
+      designer: document.getElementById('caps-designer'),
+      debugger: document.getElementById('caps-debugger'),
+      reviewer: document.getElementById('caps-reviewer')
+    };
+
+    const roleBadges = {
+      router: document.getElementById('test-res-router'),
+      writer: document.getElementById('test-res-writer'),
+      designer: document.getElementById('test-res-designer'),
+      debugger: document.getElementById('test-res-debugger'),
+      reviewer: document.getElementById('test-res-reviewer')
+    };
+
+    async function load9RouterModels(force = false) {
+      if (available9RouterModels.length > 0 && !force) return;
+      if (spinRefreshModels) spinRefreshModels.style.display = 'inline-block';
+      if (cfgModelsCountText) cfgModelsCountText.textContent = 'Đang tải danh sách model từ 9Router...';
+
+      try {
+        const res = await fetch('/api/models');
+        const data = await res.json();
+        if (data.ok && Array.isArray(data.models)) {
+          available9RouterModels = data.models;
+          renderModelDatalist(available9RouterModels);
+          if (cfgModelsCountText) {
+            cfgModelsCountText.textContent = `Đã tìm thấy ${data.models.length} model khả dụng (${data.latency_ms}ms)`;
+          }
+          if (cfgRouterBadge) {
+            cfgRouterBadge.className = 'tag tag-low';
+            cfgRouterBadge.textContent = `🟢 9Router :20128 (${data.models.length} models)`;
+          }
+        } else {
+          if (cfgModelsCountText) cfgModelsCountText.textContent = 'Không lấy được model từ 9Router';
+          if (cfgRouterBadge) {
+            cfgRouterBadge.className = 'tag tag-error';
+            cfgRouterBadge.textContent = '🔴 9Router Ngoại Tuyến';
+          }
+        }
+      } catch (err) {
+        if (cfgModelsCountText) cfgModelsCountText.textContent = `Lỗi kết nối: ${err.message}`;
+        if (cfgRouterBadge) {
+          cfgRouterBadge.className = 'tag tag-error';
+          cfgRouterBadge.textContent = '🔴 9Router Ngoại Tuyến';
+        }
+      } finally {
+        if (spinRefreshModels) spinRefreshModels.style.display = 'none';
+      }
+    }
+
+    function renderModelDatalist(models, filterKeyword = '') {
+      if (!datalist9RouterModels) return;
+      datalist9RouterModels.innerHTML = '';
+      const kw = filterKeyword.toLowerCase().trim();
+      const filtered = kw ? models.filter(m => m.id.toLowerCase().includes(kw) || m.name.toLowerCase().includes(kw)) : models;
+
+      filtered.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        const capParts = [];
+        if (m.capabilities?.vision) capParts.push('👁️ Vision');
+        if (m.capabilities?.tools) capParts.push('⚙️ Tools');
+        if (m.capabilities?.reasoning) capParts.push('🧠 Thinking');
+        const capsStr = capParts.length > 0 ? ` [${capParts.join(', ')}]` : '';
+        opt.label = `${m.name} (${m.owned_by || '9router'})${capsStr}`;
+        datalist9RouterModels.appendChild(opt);
+      });
+    }
+
+    function updateCapsDisplay(roleKey, modelId) {
+      const container = roleCaps[roleKey];
+      if (!container) return;
+      container.innerHTML = '';
+      if (!modelId) return;
+
+      const matched = available9RouterModels.find(m => m.id === modelId);
+      const isVision = matched ? matched.capabilities.vision : (modelId.includes('gemini') || modelId.includes('claude'));
+      const isTools = matched ? matched.capabilities.tools : true;
+      const isReasoning = matched ? matched.capabilities.reasoning : (modelId.includes('thinking') || modelId.includes('opus') || modelId.includes('sonnet'));
+
+      if (isVision) {
+        const s = document.createElement('span');
+        s.className = 'cap-tag cap-vision';
+        s.textContent = '👁️ Vision';
+        s.title = 'Hỗ trợ Vision / Multimodal';
+        container.appendChild(s);
+      }
+      if (isTools) {
+        const s = document.createElement('span');
+        s.className = 'cap-tag cap-tools';
+        s.textContent = '⚙️ Tools';
+        s.title = 'Hỗ trợ Tool Calling';
+        container.appendChild(s);
+      }
+      if (isReasoning) {
+        const s = document.createElement('span');
+        s.className = 'cap-tag cap-reasoning';
+        s.textContent = '🧠 Thinking';
+        s.title = 'Hỗ trợ Reasoning / Thinking Process';
+        container.appendChild(s);
+      }
+    }
+
+    function syncInputsWithCurrentConfig() {
+      for (const [rKey, inputEl] of Object.entries(roleInputs)) {
+        if (!inputEl) continue;
+        const currentModel = currentSquadRolesConfig[rKey]?.model || '';
+        if (currentModel && !inputEl.value) {
+          inputEl.value = currentModel;
+        }
+        updateCapsDisplay(rKey, inputEl.value);
+      }
+    }
+
+    if (cfgSearchModels) {
+      cfgSearchModels.addEventListener('input', (e) => {
+        const kw = e.target.value;
+        renderModelDatalist(available9RouterModels, kw);
+      });
+    }
+
+    if (btnRefreshModels) {
+      btnRefreshModels.addEventListener('click', () => load9RouterModels(true));
+    }
+
+    // Gắn event input cho từng role để cập nhật capabilities badge khi chọn model
+    for (const [rKey, inputEl] of Object.entries(roleInputs)) {
+      if (!inputEl) continue;
+      inputEl.addEventListener('input', () => {
+        updateCapsDisplay(rKey, inputEl.value.trim());
+        const badge = roleBadges[rKey];
+        if (badge) {
+          badge.className = 'test-result-badge';
+          badge.textContent = 'Chưa test';
+        }
+      });
+    }
+
+    // Setup Test Buttons (Ống nghiệm đỏ phong cách 9Router)
+    document.querySelectorAll('.btn-model-test').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const role = btn.dataset.role;
+        const inputEl = roleInputs[role];
+        const badgeEl = roleBadges[role];
+        const spinner = btn.querySelector('.test-spinner');
+        const icon = btn.querySelector('.test-icon');
+        const label = btn.querySelector('.test-label');
+        const model = inputEl ? inputEl.value.trim() : '';
+
+        if (!model) {
+          if (badgeEl) {
+            badgeEl.className = 'test-result-badge badge-error';
+            badgeEl.textContent = 'Thiếu Model';
+          }
+          return;
+        }
+
+        if (spinner) spinner.style.display = 'inline-block';
+        if (icon) icon.style.display = 'none';
+        if (badgeEl) {
+          badgeEl.className = 'test-result-badge badge-running';
+          badgeEl.textContent = 'Đang ping...';
+        }
+
+        try {
+          const res = await fetch('/api/test-model', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Dashboard-Token': csrfToken || ''
+            },
+            body: JSON.stringify({ model })
+          });
+          const data = await res.json();
+          if (data.ok) {
+            if (badgeEl) {
+              badgeEl.className = 'test-result-badge badge-done';
+              badgeEl.textContent = `✓ ${data.latency_ms}ms`;
+              badgeEl.title = `Ping thành công! Phản hồi từ 9Router: "${data.reply_preview || 'OK'}"`;
+            }
+          } else {
+            if (badgeEl) {
+              badgeEl.className = 'test-result-badge badge-error';
+              const shortErr = (data.error || 'Lỗi').slice(0, 16);
+              badgeEl.textContent = `✕ ${shortErr}`;
+              badgeEl.title = `Lỗi: ${data.error || 'Không kết nối được model'}`;
+            }
+          }
+        } catch (err) {
+          if (badgeEl) {
+            badgeEl.className = 'test-result-badge badge-error';
+            badgeEl.textContent = '✕ Lỗi Mạng';
+            badgeEl.title = err.message;
+          }
+        } finally {
+          if (spinner) spinner.style.display = 'none';
+          if (icon) icon.style.display = 'inline';
+        }
+      });
+    });
+
+    // Setup Save Config Button
+    if (btnSaveTeamConfig) {
+      btnSaveTeamConfig.addEventListener('click', async () => {
+        if (spinSaveConfig) spinSaveConfig.style.display = 'inline-block';
+        if (cfgSaveStatusMsg) {
+          cfgSaveStatusMsg.textContent = 'Đang ghi cấu hình vào team.yaml...';
+          cfgSaveStatusMsg.style.color = 'var(--text-secondary)';
+        }
+
+        const rolesPayload = {};
+        for (const [rKey, inputEl] of Object.entries(roleInputs)) {
+          if (!inputEl) continue;
+          const val = inputEl.value.trim();
+          if (val) {
+            rolesPayload[rKey] = {
+              model: val,
+              display_name: val.split('/').pop() || val
+            };
+          }
+        }
+
+        try {
+          const res = await fetch('/api/save-team-config', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Dashboard-Token': csrfToken || ''
+            },
+            body: JSON.stringify({ roles: rolesPayload })
+          });
+          const data = await res.json();
+          if (data.ok) {
+            if (cfgSaveStatusMsg) {
+              cfgSaveStatusMsg.textContent = `✓ ${data.message}`;
+              cfgSaveStatusMsg.style.color = '#34d399';
+            }
+            fetchSnapshot();
+            setTimeout(() => {
+              if (cfgSaveStatusMsg) cfgSaveStatusMsg.textContent = '';
+            }, 5000);
+          } else {
+            if (cfgSaveStatusMsg) {
+              cfgSaveStatusMsg.textContent = `✕ Lỗi: ${data.error || 'Không thể lưu'}`;
+              cfgSaveStatusMsg.style.color = '#f87171';
+            }
+          }
+        } catch (err) {
+          if (cfgSaveStatusMsg) {
+            cfgSaveStatusMsg.textContent = `✕ Lỗi kết nối: ${err.message}`;
+            cfgSaveStatusMsg.style.color = '#f87171';
+          }
+        } finally {
+          if (spinSaveConfig) spinSaveConfig.style.display = 'none';
+        }
+      });
+    }
+
+    if (btnCancelConfig) {
+      btnCancelConfig.addEventListener('click', closeConfigModal);
+    }
 
     // Collapsible Sidebar Toggle Logic (Mặc định ẩn sang trái - Bấm thì đẩy ra)
     function setSidebarCollapsed(collapsed) {
@@ -1242,6 +1533,7 @@
         // 7. Left Column AI Personnel Models
         const rolesStatus = live.roles_status || {};
         const rolesConfig = data.roles || {};
+        currentSquadRolesConfig = rolesConfig;
 
         squadModelRouter.textContent = rolesConfig.router?.model || 'kr/claude-sonnet-4.5-thinking';
         squadStatusRouter.textContent = (rolesStatus.router?.status || (activeStage === 'router' ? 'working' : 'idle')).toUpperCase();
