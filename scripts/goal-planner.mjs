@@ -22,8 +22,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEAM_DIR = path.resolve(__dirname, '..');
 const ACTIVE_TASKS_DIR = path.resolve(TEAM_DIR, 'tasks', 'active');
-const PROJECT_LOCAL_CONFIG_FILE = path.resolve(TEAM_DIR, 'config', 'project.local.yaml');
-const PROJECT_CONFIG_FILE = path.resolve(TEAM_DIR, 'config', 'project.yaml');
+const POLICY_LOCAL_CONFIG_FILE = path.resolve(TEAM_DIR, 'config', 'policy.local.yaml');
 const POLICY_CONFIG_FILE = path.resolve(TEAM_DIR, 'config', 'policy.yaml');
 
 function loadYamlSafe(filePath) {
@@ -81,16 +80,17 @@ export async function decomposeGoal(goal, options = {}) {
     return { ok: false, error: 'User goal cannot be empty' };
   }
 
-  const policyConfig = loadYamlSafe(POLICY_CONFIG_FILE) || {};
-  const projectConfig = loadYamlSafe(path.resolve(TEAM_DIR, 'config', 'project.local.yaml'))
-    || loadYamlSafe(path.resolve(TEAM_DIR, 'config', 'project.yaml'))
+  const policyConfig = loadYamlSafe(path.resolve(TEAM_DIR, 'config', 'policy.local.yaml'))
+    || loadYamlSafe(POLICY_CONFIG_FILE)
     || {};
-  const projectId = projectConfig.project?.id || 'my-workspace';
-  const repoRoot = options.repoRoot || resolveRepoRoot(projectConfig);
+  const projectId = policyConfig.policy?.project_id || 'my-workspace';
+  const repoRoot = options.repoRoot || resolveRepoRoot(policyConfig);
   const maxFilesPerTask = policyConfig.policy?.scope_control?.max_files_per_task || 5;
 
-  // Use configured allowed_dirs from project.yaml or auto-detect
-  let allowedDirs = projectConfig.project?.allowed_dirs || [];
+  // Use configured allowed_dirs from policy.yaml or auto-detect
+  let allowedDirs = policyConfig.policy?.scope_control?.allowed_dirs
+    || policyConfig.policy?.allowed_dirs
+    || [];
   if (!Array.isArray(allowedDirs) || allowedDirs.length === 0) {
     try {
       const entries = fs.readdirSync(repoRoot, { withFileTypes: true });

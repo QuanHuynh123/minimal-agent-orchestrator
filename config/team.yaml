@@ -1,17 +1,40 @@
+# ==============================================================================
+# 👥 AGENT TEAM & PROVIDERS CONFIGURATION (team.yaml)
+# ==============================================================================
+# MỤC ĐÍCH (PURPOSE):
+# - File 1 trong bộ 2 file cấu hình duy nhất của framework (team.yaml & policy.yaml).
+# - Dành cho: Cấu hình cổng kết nối LLM (OpenAI-compatible, 9Router, DeepSeek, vLLM, Ollama)
+#   và phân bổ các vai trò AI trong Squad (Writer, Router, Designer, Reviewer).
+#
+# NGUYÊN TẮC QUAN TRỌNG (KEY INVARIANTS):
+# 1. Cơ chế Kế thừa 1-Model (1-Model Minimal Setup):
+#    - Bạn chỉ bắt buộc phải điền model cho 'writer'.
+#    - Nếu chưa cấu hình model riêng cho 'router' hoặc 'reviewer', hệ thống sẽ tự động
+#      kế thừa model của 'writer' để bạn có thể chạy được ngay mà không cần nhiều model.
+# 2. Bảo mật Khóa API (Zero-Trust Secret Management):
+#    - Tuyệt đối không hardcode API key thật vào file này.
+#    - Luôn dùng 'api_key_env' để đọc từ biến môi trường hệ điều hành.
+# ==============================================================================
+
 team:
   name: "hybrid-agent-squad"
   version: "3.0"
   single_writer_lock: true
 
-# Định nghĩa cổng kết nối 9Router tập trung
+# ------------------------------------------------------------------------------
+# 1. ĐỊNH NGHĨA CỔNG KẾT NỐI AI GATEWAY (PROVIDERS)
+# ------------------------------------------------------------------------------
 providers:
   local_9router:
     base_url: "http://127.0.0.1:20128/v1"
     api_key_env: "NINE_ROUTER_API_KEY"
     default_key: "sk-default"
 
-# Cấu hình chuẩn 4 Vai Trò Lớn API 9Router (Multi-Model Pool) + 1 Validator Cục Bộ
+# ------------------------------------------------------------------------------
+# 2. PHÂN BỔ VAI TRÒ AI TRONG SQUAD (ROLES & MODEL POOL)
+# ------------------------------------------------------------------------------
 roles:
+  # Vai trò 1: Router & Architect (Phân tích, bóc tách Goal thành các task atomic)
   router:
     enabled: true
     provider: "local_9router"
@@ -27,6 +50,7 @@ roles:
     allowed_actions: ["ui_ux_design", "scope_routing", "task_planning"]
     forbidden_actions: ["direct_write"]
 
+  # Vai trò 2: Writer (Kỹ sư lập trình chính, xuất code khối SEARCH/REPLACE chuẩn)
   writer:
     enabled: true
     provider: "local_9router"
@@ -44,6 +68,7 @@ roles:
     allowed_actions: ["backend_write", "frontend_write", "read_scoped_files", "propose_patch"]
     forbidden_actions: ["out_of_scope_edit", "unapproved_dependency"]
 
+  # Vai trò 3: Designer (Tư vấn UI/UX và thiết kế giao diện)
   designer:
     enabled: true
     provider: "local_9router"
@@ -58,6 +83,7 @@ roles:
     allowed_actions: ["visual_audit", "ui_ux_spec", "read_scoped_files"]
     forbidden_actions: ["direct_write", "apply_patch"]
 
+  # Vai trò 4: Reviewer (Kiểm duyệt code sau khi Writer hoàn thành, chỉ kích hoạt khi rủi ro cao)
   reviewer:
     enabled: true
     provider: "local_9router"
@@ -72,6 +98,7 @@ roles:
     allowed_actions: ["review_diff", "approve", "reject"]
     forbidden_actions: ["direct_write"]
 
+  # Vai trò 5: Deterministic Validator Guard (0-token gate, chạy fast_checks & suite_checks)
   validator:
     enabled: true
     type: "deterministic_script"

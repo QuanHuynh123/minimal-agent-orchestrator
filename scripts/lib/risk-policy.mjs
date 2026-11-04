@@ -68,6 +68,10 @@ export const DEFAULT_POLICY_CONFIG = Object.freeze({
     rollback_on_validation_fail: true,
     auto_commit_on_done: true,
     commit_message_prefix: '[AI-Task]'
+  }),
+  validation: Object.freeze({
+    fast_checks: Object.freeze([]),
+    suite_checks: Object.freeze([])
   })
 });
 
@@ -107,6 +111,10 @@ export function mergePolicyWithDefaults(userPolicy = {}) {
 
   if (user.git_hygiene && typeof user.git_hygiene === 'object') {
     Object.assign(merged.git_hygiene, user.git_hygiene);
+  }
+
+  if (user.validation && typeof user.validation === 'object') {
+    merged.validation = user.validation;
   }
 
   return merged;
@@ -186,6 +194,12 @@ export function validateConfig(teamCfg = {}, policyCfg = {}, projectCfg = null) 
   const scopeCfg = policyCfg?.policy?.scope_control || policyCfg?.scope_control;
   if (scopeCfg?.max_files_per_task !== undefined && (typeof scopeCfg.max_files_per_task !== 'number' || scopeCfg.max_files_per_task <= 0)) {
     errors.push('policy.yaml: policy.scope_control.max_files_per_task must be a positive number');
+  }
+  if (scopeCfg?.allowed_dirs !== undefined && !Array.isArray(scopeCfg.allowed_dirs)) {
+    errors.push('policy.yaml: policy.scope_control.allowed_dirs must be an array');
+  }
+  if (scopeCfg?.protected_files !== undefined && !Array.isArray(scopeCfg.protected_files)) {
+    errors.push('policy.yaml: policy.scope_control.protected_files must be an array');
   }
   const retryCfg = policyCfg?.policy?.retry_and_escalation || policyCfg?.retry_and_escalation;
   if (retryCfg?.max_retries_per_task !== undefined && (typeof retryCfg.max_retries_per_task !== 'number' || retryCfg.max_retries_per_task < 0)) {

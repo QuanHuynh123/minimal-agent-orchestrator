@@ -50,6 +50,10 @@ export function loadProjectConfig() {
 }
 
 export function loadPolicyConfig() {
+  const localPath = path.resolve(__dirname, '..', 'config', 'policy.local.yaml');
+  if (fs.existsSync(localPath)) {
+    return YAML.parse(fs.readFileSync(localPath, 'utf8'));
+  }
   const cfgPath = path.resolve(__dirname, '..', 'config', 'policy.yaml');
   if (!fs.existsSync(cfgPath)) {
     return null;
@@ -86,10 +90,19 @@ export function checkCommandGuardrails(cmd = '', timeoutMs = 60000, guardrails =
  * Inspects git modified files and verifies none violate protected_files, allowed_dirs, or declared scope.
  */
 export function auditGitScope(declaredScope = [], options = {}) {
+  const policyCfg = loadPolicyConfig() || {};
   const projCfg = options.projectConfig || loadProjectConfig() || {};
-  const repoRoot = resolveRepoRoot(projCfg);
-  const allowedDirs = options.allowedDirs || projCfg.project?.allowed_dirs || ['*'];
-  const protectedFiles = options.protectedFiles || projCfg.project?.protected_files || [];
+  const repoRoot = resolveRepoRoot(policyCfg?.policy?.repo_root ? policyCfg : projCfg);
+  const allowedDirs = options.allowedDirs
+    || policyCfg.policy?.scope_control?.allowed_dirs
+    || policyCfg.policy?.allowed_dirs
+    || projCfg.project?.allowed_dirs
+    || ['*'];
+  const protectedFiles = options.protectedFiles
+    || policyCfg.policy?.scope_control?.protected_files
+    || policyCfg.policy?.protected_files
+    || projCfg.project?.protected_files
+    || [];
   const targetFilter = options.checkAllWorktree ? [] : declaredScope;
 
   const modified = options.modifiedFiles || getModifiedFiles(targetFilter);
@@ -233,13 +246,17 @@ export function runCommandAsync(cmd, cwd = REPO_ROOT, timeoutMs = 60000, guardra
 }
 
 export async function validateFast(projectConfig) {
+  const policyCfg = projectConfig ? {} : (loadPolicyConfig() || {});
   const cfg = projectConfig || loadProjectConfig() || {};
-  const repoRoot = resolveRepoRoot(cfg);
-  const fastChecks = cfg?.project?.validation?.fast_checks
-    || cfg?.validation?.fast_checks;
+  const repoRoot = resolveRepoRoot(cfg?.policy?.repo_root ? cfg : (policyCfg?.policy?.repo_root ? policyCfg : cfg));
+  const fastChecks = cfg?.policy?.validation?.fast_checks
+    || cfg?.validation?.fast_checks
+    || cfg?.project?.validation?.fast_checks
+    || policyCfg?.policy?.validation?.fast_checks
+    || policyCfg?.validation?.fast_checks;
 
   if (!fastChecks || fastChecks.length === 0) {
-    return { ok: true, skipped: true, message: 'No fast_checks defined in project.yaml.' };
+    return { ok: true, skipped: true, message: 'No fast_checks defined.' };
   }
 
   for (const item of fastChecks) {
@@ -263,13 +280,17 @@ export async function validateFast(projectConfig) {
 }
 
 export async function validateSuite(projectConfig) {
+  const policyCfg = projectConfig ? {} : (loadPolicyConfig() || {});
   const cfg = projectConfig || loadProjectConfig() || {};
-  const repoRoot = resolveRepoRoot(cfg);
-  const suiteChecks = cfg?.project?.validation?.suite_checks
-    || cfg?.validation?.suite_checks;
+  const repoRoot = resolveRepoRoot(cfg?.policy?.repo_root ? cfg : (policyCfg?.policy?.repo_root ? policyCfg : cfg));
+  const suiteChecks = cfg?.policy?.validation?.suite_checks
+    || cfg?.validation?.suite_checks
+    || cfg?.project?.validation?.suite_checks
+    || policyCfg?.policy?.validation?.suite_checks
+    || policyCfg?.validation?.suite_checks;
 
   if (!suiteChecks || suiteChecks.length === 0) {
-    return { ok: true, skipped: true, message: 'No suite_checks defined in project.yaml.' };
+    return { ok: true, skipped: true, message: 'No suite_checks defined.' };
   }
 
   for (const item of suiteChecks) {

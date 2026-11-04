@@ -11,21 +11,35 @@ export const TEAM_DIR = path.resolve(__dirname, '..');
 export function resolveRepoRoot(projectConfig = null) {
   let cfg = projectConfig;
   if (!cfg) {
-    const localCfgPath = path.resolve(TEAM_DIR, 'config', 'project.local.yaml');
-    if (fs.existsSync(localCfgPath)) {
+    const localPolicyPath = path.resolve(TEAM_DIR, 'config', 'policy.local.yaml');
+    if (fs.existsSync(localPolicyPath)) {
       try {
-        cfg = YAML.parse(fs.readFileSync(localCfgPath, 'utf8'));
+        cfg = YAML.parse(fs.readFileSync(localPolicyPath, 'utf8'));
       } catch {}
     } else {
-      const cfgPath = path.resolve(TEAM_DIR, 'config', 'project.yaml');
-      if (fs.existsSync(cfgPath)) {
+      const policyPath = path.resolve(TEAM_DIR, 'config', 'policy.yaml');
+      if (fs.existsSync(policyPath)) {
         try {
-          cfg = YAML.parse(fs.readFileSync(cfgPath, 'utf8'));
+          cfg = YAML.parse(fs.readFileSync(policyPath, 'utf8'));
         } catch {}
+      } else {
+        const localCfgPath = path.resolve(TEAM_DIR, 'config', 'project.local.yaml');
+        if (fs.existsSync(localCfgPath)) {
+          try {
+            cfg = YAML.parse(fs.readFileSync(localCfgPath, 'utf8'));
+          } catch {}
+        } else {
+          const cfgPath = path.resolve(TEAM_DIR, 'config', 'project.yaml');
+          if (fs.existsSync(cfgPath)) {
+            try {
+              cfg = YAML.parse(fs.readFileSync(cfgPath, 'utf8'));
+            } catch {}
+          }
+        }
       }
     }
   }
-  const configuredRoot = cfg?.project?.repo_root || '..';
+  const configuredRoot = cfg?.policy?.repo_root || cfg?.project?.repo_root || '..';
   return path.resolve(TEAM_DIR, configuredRoot);
 }
 

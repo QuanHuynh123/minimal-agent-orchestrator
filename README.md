@@ -37,11 +37,11 @@ roles:
 ```
 *(Chỉ cần cấu hình duy nhất model cho `writer`, các role khác sẽ tự động kế thừa nếu bạn chưa bật multi-model).*
 
-### 3. Cấu hình Ranh giới Dự án (`config/project.yaml`)
-> **⚠️ LƯU Ý QUAN TRỌNG:** File `config/project.yaml` đi kèm là **cấu hình mẫu** cho dự án Python hiện tại. Trước khi chạy task cho dự án của bạn, hãy mở `config/project.yaml` và thay đổi:
-> - `allowed_dirs`: Thư mục mã nguồn AI được phép sửa (ví dụ: `src/`, `lib/`).
-> - `protected_files`: File nhạy cảm cấm sửa tự do (ví dụ: `package.json`, `.env*`).
-> - `validation`: Lệnh kiểm thử của dự án bạn (ví dụ: `npm test` hoặc `pytest`).
+### 3. Cấu hình Ranh giới & Kiểm thử (`config/policy.yaml`)
+Framework chuẩn hóa chỉ gồm **đúng 2 file cấu hình** trong `config/` (`team.yaml` và `policy.yaml`). Trước khi giao task cho codebase của bạn, hãy mở [`config/policy.yaml`](config/policy.yaml) để điều chỉnh:
+- `scope_control.allowed_dirs`: Thư mục mã nguồn AI được phép sửa (ví dụ: `src/`, `lib/`).
+- `scope_control.protected_files`: File nhạy cảm cấm sửa tự do (ví dụ: `package.json`, `.env*`).
+- `validation.fast_checks`: Lệnh kiểm thử tự động của dự án bạn (ví dụ: `npm test` hoặc `pytest`).
 
 ---
 
@@ -84,7 +84,7 @@ flowchart TD
 | `npm run dashboard` | `scripts/dashboard.mjs` | **Mở Web Cockpit Studio tại `http://127.0.0.1:4310`**. Bàn điều khiển AI một chạm (gõ ý tưởng $\rightarrow$ xem kế hoạch $\rightarrow$ bấm duyệt chạy ngầm), bảo mật Zero-Trust CSRF. |
 | `npm run plan -- "<goal>"` | `scripts/goal-planner.mjs` | **AI Architect Decomposer:** Dùng Router Agent đọc cấu trúc code thật, bóc tách Goal thành 1–3 file Task Contract YAML (`status: draft_review`). |
 | `npm run agent` | `runtime/index.mjs` | **Chạy Standalone Agent:** Chạy 1 Agent độc lập với vòng lặp Bounded Tool Loop ($\le 4$ turns), hỗ trợ đính kèm ảnh `--image` và file `--file`. |
-| `npm start` | `scripts/orchestrator.mjs` | **Chạy Orchestrator Pipeline:** Quét và thực thi toàn bộ các task có `status: "ready"` trong `tasks/active/`. |
+| `npm start` | `scripts/orchestrator.mjs` | **Chạy Orchestrator Pipeline:** Quét và thực thi toàn bộ các task có `status: "ready"` trong `tasks/active/`. Chạy kèm cờ `--approve` (hoặc `-y`) để tự động duyệt các task `draft_review`. |
 | `npm test` | Test runner tổng hợp | **Chạy toàn bộ Unit Tests:** Kiểm tra Applier v2.1, Runtime v3.0 và Web Cockpit CSRF Security. |
 | `npm run validate` | `scripts/validator.mjs` | **Chạy 0-Token Validator:** Kiểm tra chuẩn thụt lề TAB và bộ test của dự án. |
 
@@ -98,9 +98,8 @@ agent-team/
 ├── package.json               # Các lệnh vận hành (dashboard, plan, agent, start, test)
 ├── README.md                  # Tài liệu kiến trúc và hướng dẫn sử dụng
 ├── config/
-│   ├── team.yaml              # Cấu hình Provider (9Router/OpenAI), Role và Model
-│   ├── project.yaml           # Ranh giới dự án (allowed_dirs, protected_files, test commands)
-│   └── policy.yaml            # Chính sách bảo vệ, trần token/retry và Risk Gates
+│   ├── team.yaml              # Cấu hình Provider (9Router/OpenAI), Role và Model (1-Model Setup)
+│   └── policy.yaml            # Chính sách bảo vệ, rào chắn dự án, validation test và Git rules
 ├── roles/
 │   ├── router.md              # System prompt và JSON contract cho Router Agent
 │   ├── writer.md              # System prompt ép chuẩn SEARCH/REPLACE cho Writer

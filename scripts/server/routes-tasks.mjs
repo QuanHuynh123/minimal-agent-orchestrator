@@ -126,7 +126,7 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
 
     try {
       const body = await parseJsonBody(req);
-      const targetIds = Array.isArray(body.task_ids) ? new Set(body.task_ids) : null;
+      const targetIds = (Array.isArray(body.task_ids) && body.task_ids.length > 0) ? new Set(body.task_ids) : null;
 
       // 1. Approve tasks: convert 'draft_review' to 'ready'
       let approvedCount = 0;

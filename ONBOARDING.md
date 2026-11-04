@@ -44,17 +44,20 @@ roles:
 ```
 > **💡 Cơ chế Kế thừa 1-Model:** Bạn **chỉ cần cấu hình duy nhất model cho `writer`**. Các role khác (`router`, `reviewer`) sẽ tự động kế thừa model này nếu bạn chưa cần chia tách nhiều model khác nhau.
 
-### B. Ranh giới Dự án (`config/project.yaml`)
-> **⚠️ LƯU Ý QUAN TRỌNG:** File `config/project.yaml` đi kèm là **cấu hình mẫu của dự án hiện tại**. Trước khi bắt đầu giao task, bạn hãy mở file này và thay đổi cho phù hợp với codebase của bạn:
+### B. Ranh giới & Bộ Kiểm Thử Dự Án (`config/policy.yaml`)
+Hệ thống chuẩn hóa **chỉ có đúng 2 file cấu hình** trong `config/` (`team.yaml` và `policy.yaml`). Toàn bộ ranh giới thư mục, file được bảo vệ và lệnh kiểm thử tự động của codebase bạn được quản lý tập trung trong `config/policy.yaml`:
 ```yaml
-project:
-  id: "my-project"
+policy:
+  project_id: "my-project"
   language: "typescript"
-  allowed_dirs:
-    - "src/"         # Thư mục chứa mã nguồn được phép sửa
-    - "tests/"       # Thư mục chứa bài test
-  protected_files:
-    - "package.json" # File nhạy cảm cấm AI tự ý sửa
+
+  scope_control:
+    allowed_dirs:
+      - "src/"         # Thư mục chứa mã nguồn được phép sửa
+      - "tests/"       # Thư mục chứa bài test
+    protected_files:
+      - "package.json" # File nhạy cảm cấm AI tự ý sửa
+
   validation:
     fast_checks:
       - name: "unit_tests"
@@ -101,15 +104,17 @@ npm run dashboard
 ```bash
 # Bước 1: Bóc tách Goal thành Task YAML
 npm run plan -- "Tích hợp tính năng xuất báo cáo PDF cho module billing"
-# -> Lệnh này sẽ tạo file task trong thư mục tasks/active/ ở trạng thái 'draft_review'
+# -> Lệnh này sẽ tạo file task trong thư mục tasks/active/ ở trạng thái an toàn 'draft_review'
 
-# Bước 2: Phê duyệt task để bảo vệ an toàn working tree
-# Mở file tasks/active/<task-id>.yaml, xem lại trường 'scope', rồi đổi:
-# status: "draft_review"  ->  status: "ready"
+# Bước 2 & 3: Phê duyệt và khởi động Orchestrator
+# 🚀 Lựa chọn 1 (Nhanh nhất): Duyệt tự động và chạy ngay bằng cờ --approve (hoặc -y)
+npm start -- --approve
 
-# Bước 3: Khởi động Orchestrator để tự động viết code & kiểm thử
+# 🔍 Lựa chọn 2 (Kiểm tra thủ công): Mở file tasks/active/<task-id>.yaml, xem lại trường 'scope',
+# đổi status: "draft_review" -> status: "ready", sau đó chạy:
 npm start
 ```
+> **💡 Nguyên tắc an toàn `draft_review`:** Mọi task sau khi sinh ra từ AI Planner đều ở trạng thái `draft_review` (chưa can thiệp code). Nếu bạn chạy `npm start` mà chưa duyệt, Orchestrator sẽ an toàn bỏ qua (skip) các task này và in lời nhắc hướng dẫn duyệt qua Dashboard hoặc chạy kèm cờ `--approve`.
 
 ---
 
@@ -123,7 +128,7 @@ npm start
 ### Quy tắc 1: Cổng Thu Thập Thông Tin Bắt Buộc (Intake Gate)
 Khi người dùng giao một bài toán lớn hoặc khởi tạo dự án mới, nếu thiếu bất kỳ thông tin cốt lõi nào dưới đây, bạn **BẮT BUỘC phải dừng lại hỏi người dùng** — **TUYỆT ĐỐI KHÔNG tự bịa tên model hay đoán bừa**:
 1. **Đội ngũ AI (`config/team.yaml`):** Cổng kết nối (`base_url`), model chính xác cho `writer`.
-2. **Ranh giới Dự án (`config/project.yaml`):** Thư mục nguồn (`allowed_dirs`), file cấm đụng (`protected_files`), lệnh chạy test tự động (`validation`).
+2. **Ranh giới & Rào chắn Dự án (`config/policy.yaml`):** Thư mục nguồn (`allowed_dirs`), file cấm đụng (`protected_files`), lệnh chạy test tự động (`validation`).
 3. **Mục tiêu & Nghiệm thu Task:** Nếu người dùng chỉ nói mục tiêu chung chung, bạn phải làm rõ đầu ra cụ thể và tiêu chí nghiệm thu (`acceptance_criteria`) trước khi tạo file task `status: "ready"`.
 
 ### Quy tắc 2: Khuôn Mẫu Task Contract YAML 6 Trường

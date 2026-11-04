@@ -196,7 +196,7 @@ function saveStateAtomic(state) {
 }
 
 export function normalizeTask(parsed) {
-  return normalizeTaskBase(parsed, projectConfig?.project?.id || 'my-workspace');
+  return normalizeTaskBase(parsed, policyConfig?.policy?.project_id || 'my-workspace');
 }
 
 function saveTaskAtomic(taskPath, taskData) {
@@ -212,12 +212,11 @@ function loadYaml(filePath) {
 const teamConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'team.local.yaml'))
   || loadYaml(path.resolve(TEAM_DIR, 'config', 'team.yaml'))
   || {};
-const projectConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'project.local.yaml'))
-  || loadYaml(path.resolve(TEAM_DIR, 'config', 'project.yaml'))
+const rawPolicyConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'policy.local.yaml'))
+  || loadYaml(path.resolve(TEAM_DIR, 'config', 'policy.yaml'))
   || {};
-const rawPolicyConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'policy.yaml')) || {};
 const policyConfig = { policy: mergePolicyWithDefaults(rawPolicyConfig) };
-const REPO_ROOT = resolveRepoRoot(projectConfig);
+const REPO_ROOT = resolveRepoRoot(policyConfig);
 
 function sanitizeGoal(str = '') {
   return str.replace(/[\r\n\x1B]/g, ' ').slice(0, 80).trim();
@@ -262,7 +261,9 @@ async function runRouterPlanner(task) {
     ? fs.readFileSync(path.resolve(TEAM_DIR, 'roles', 'router.md'), 'utf8')
     : 'Analyze the goal and return JSON { "plan": [], "scope": [], "acceptance_criteria": [] }.';
 
-  const allowedDirs = projectConfig.project?.allowed_dirs || ['*'];
+  const allowedDirs = policyConfig.policy?.scope_control?.allowed_dirs
+    || policyConfig.policy?.allowed_dirs
+    || ['*'];
   const routerContext = buildRouterContext(allowedDirs, REPO_ROOT, 300);
   const prompt = [
     `TASK ID: ${task.task_id}`,
@@ -389,7 +390,7 @@ export function writeMorningReport(state) {
 
 // 7. Main Orchestrator Loop
 async function runOrchestrator() {
-  const cfgValidation = validateConfig(teamConfig, policyConfig, projectConfig);
+  const cfgValidation = validateConfig(teamConfig, policyConfig);
   if (!cfgValidation.ok) {
     console.error(`[Orchestrator] Configuration validation failed:\n  - ${cfgValidation.errors.join('\n  - ')}`);
     process.exit(1);
@@ -434,8 +435,12 @@ async function runOrchestrator() {
   const rollbackOnValidationFail = policyConfig.policy?.git_hygiene?.rollback_on_validation_fail ?? true;
   const autoCommitOnDone = policyConfig.policy?.git_hygiene?.auto_commit_on_done ?? true;
   const commitPrefix = policyConfig.policy?.git_hygiene?.commit_message_prefix || '[AI-Task]';
-  const allowedDirs = projectConfig.project?.allowed_dirs || ['*'];
-  const protectedFiles = projectConfig.project?.protected_files || [];
+  const allowedDirs = policyConfig.policy?.scope_control?.allowed_dirs
+    || policyConfig.policy?.allowed_dirs
+    || ['*'];
+  const protectedFiles = policyConfig.policy?.scope_control?.protected_files
+    || policyConfig.policy?.protected_files
+    || [];
 
   if (!fs.existsSync(ACTIVE_TASKS_DIR)) {
     fs.mkdirSync(ACTIVE_TASKS_DIR, { recursive: true });
@@ -511,11 +516,26 @@ async function runOrchestrator() {
     }
 
     const initialStatus = String(task.status || 'ready').toLowerCase();
-    if (initialStatus === 'blocked' || initialStatus === 'done' || initialStatus === 'draft_review') {
-      const hint = initialStatus === 'draft_review'
-        ? 'Awaits human approval on Dashboard or CLI (change status to "ready" to execute).'
-        : 'Reset status to "ready" to re-run.';
-      console.log(`[Orchestrator] Skipping ${tFile} (status="${initialStatus}"). ${hint}`);
+    const autoApprove = process.argv.includes('--approve') || process.argv.includes('-y');
+    if (initialStatus === 'draft_review') {
+      if (autoApprove) {
+        console.log(`[APPROVE] Auto-approving ${tFile} (--approve flag detected). Status changed to 'ready'.`);
+        task.status = 'ready';
+        task.updated_at = new Date().toISOString();
+        if (parsed.task && typeof parsed.task === 'object') {
+          parsed.task.status = 'ready';
+          parsed.task.updated_at = task.updated_at;
+        } else {
+          parsed.status = 'ready';
+          parsed.updated_at = task.updated_at;
+        }
+        fs.writeFileSync(taskPath, YAML.stringify(parsed), 'utf8');
+      } else {
+        console.log(`[Orchestrator] Skipping ${tFile} (status="draft_review"). Awaits approval on Dashboard (:4310) or run 'npm start -- --approve' to execute.`);
+        continue;
+      }
+    } else if (initialStatus === 'blocked' || initialStatus === 'done') {
+      console.log(`[Orchestrator] Skipping ${tFile} (status="${initialStatus}"). Reset status to "ready" to re-run.`);
       continue;
     }
 
@@ -748,7 +768,7 @@ async function runOrchestrator() {
       }
 
       // Baseline Fast Check Guard (Ensure repo is not already broken before Writer runs)
-      const baselineCheck = await validateFast(projectConfig);
+      const baselineCheck = await validateFast(policyConfig);
       if (baselineCheck.skipped) {
         console.log(`[Validator] Baseline check: ${baselineCheck.message}`);
       } else if (!baselineCheck.ok) {
@@ -1032,7 +1052,7 @@ async function runOrchestrator() {
           }
         });
 
-        const fastVal = await validateFast(projectConfig);
+        const fastVal = await validateFast(policyConfig);
         if (fastVal.skipped) {
           console.log(`[Validator] Notice: ${fastVal.message}`);
         }
@@ -1051,7 +1071,7 @@ async function runOrchestrator() {
         }
 
         // Step D: Suite Validation (0-Token)
-        const suiteVal = await validateSuite(projectConfig);
+        const suiteVal = await validateSuite(policyConfig);
         if (suiteVal.skipped) {
           console.log(`[Validator] Notice: ${suiteVal.message}`);
         }
@@ -1075,7 +1095,7 @@ async function runOrchestrator() {
           passed: !isValidationSkipped,
           skipped: isValidationSkipped,
           status: isValidationSkipped ? 'skipped' : 'passed',
-          note: isValidationSkipped ? 'No validation checks configured in project.yaml' : 'All validation checks passed'
+          note: isValidationSkipped ? 'No validation checks configured in policy.yaml' : 'All validation checks passed'
         };
 
         updateLiveStatus({

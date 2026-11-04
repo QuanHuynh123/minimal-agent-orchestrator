@@ -98,10 +98,11 @@
       return res.json();
     },
 
-    async approveRun(taskIds = []) {
+    async approveRun(taskIds = null) {
+      const payload = (Array.isArray(taskIds) && taskIds.length > 0) ? { task_ids: taskIds } : {};
       const res = await request('/api/approve-run', {
         method: 'POST',
-        body: JSON.stringify({ task_ids: taskIds })
+        body: JSON.stringify(payload)
       });
       if (!res.ok) {
         let errData;

@@ -245,24 +245,6 @@
     };
     const squadTabCountBadge = document.getElementById('squad-tab-count-badge');
 
-    // Tab Navigation: team.yaml vs project.yaml
-    document.querySelectorAll('.cfg-nav-tab').forEach(tabBtn => {
-      tabBtn.addEventListener('click', () => {
-        document.querySelectorAll('.cfg-nav-tab').forEach(b => b.classList.remove('active'));
-        tabBtn.classList.add('active');
-        const target = tabBtn.dataset.tab;
-        const panelTeam = document.getElementById('cfg-panel-team');
-        const panelProj = document.getElementById('cfg-panel-project');
-        if (target === 'team') {
-          if (panelTeam) panelTeam.style.display = 'flex';
-          if (panelProj) panelProj.style.display = 'none';
-        } else {
-          if (panelTeam) panelTeam.style.display = 'none';
-          if (panelProj) panelProj.style.display = 'flex';
-        }
-      });
-    });
-
     async function load9RouterModels(force = false) {
       if (available9RouterModels.length > 0 && !force) {
         renderModelPool();

@@ -1,26 +1,34 @@
 # ==============================================================================
-# 🛡️ AGENT TEAM OPERATIONAL POLICY CONFIGURATION (policy.yaml)
+# 🛡️ AGENT TEAM OPERATIONAL POLICY & PROJECT GUARDRAILS (policy.yaml)
 # ==============================================================================
 # MỤC ĐÍCH (PURPOSE):
-# - File này định nghĩa các "chính sách vận hành" (HOW TO OPERATE) cho Đội ngũ AI.
-# - Dành cho: Người dùng muốn điều chỉnh giới hạn an toàn (scope, timeouts, retries,
-#   ngân sách token, cổng kiểm duyệt AI Reviewer, hành vi git commit).
+# - File này định nghĩa các "chính sách vận hành" (HOW TO OPERATE) và "rào chắn an toàn"
+#   cho Đội ngũ AI khi làm việc trong codebase.
+# - Cấu trúc thư mục config/ CHỈ CẦN 2 FILE DUY NHẤT:
+#     1. team.yaml: Cấu hình AI Provider (9Router/OpenAI) và phân vai Agent (Writer, Reviewer, Router).
+#     2. policy.yaml: Toàn bộ chính sách kiểm soát phạm vi (scope), rào chắn an toàn (guardrails),
+#        quy tắc Git, và bộ kiểm thử tự động của dự án (validation fast_checks / suite_checks).
 #
 # NGUYÊN TẮC HỆ THỐNG (ENGINE INVARIANTS & MERGE BEHAVIOR):
-# 1. Fallback An Toàn: Nếu bạn xóa bỏ hoặc không khai báo bất kỳ trường nào,
-#    Orchestrator sẽ tự động sử dụng giá trị mặc định tích hợp trong code
-#    (DEFAULT_POLICY_CONFIG trong risk-policy.mjs). Việc xóa YAML không làm vỡ hệ thống.
+# 1. Fallback An Toàn Tự Động: Mọi trường trong file này đều có giá trị mặc định an toàn
+#    trong mã nguồn framework (DEFAULT_POLICY_CONFIG trong risk-policy.mjs). Việc xóa hoặc
+#    để trống bất kỳ mục nào không làm vỡ hệ thống.
 # 2. Bất biến Cốt Lõi:
 #    - task_modes (quick, standard, consult) là enum cố định trong lõi framework.
 #      Không thể xóa mode hoặc biến mode 'consult' thành mode sửa code (mutation_enabled luôn là false).
 #    - Thư mục framework 'agent-team/**' luôn được bảo vệ tuyệt đối ở cấp độ engine.
-# 3. Validation tách biệt:
-#    - Lệnh kiểm thử (tests, linter) thuộc về dự án đích, đã được chuyển sang 'project.yaml'.
+# 3. Validation Trung Thực:
+#    - Nếu bỏ trống fast_checks / suite_checks, hệ thống ghi rõ "No validation checks configured"
+#      chứ không giả lập test vượt qua.
 # ==============================================================================
 
 policy:
+  # Mã định danh dự án và ngôn ngữ chính
+  project_id: "tool-download-stable"
+  language: "python"
+
   # ----------------------------------------------------------------------------
-  # 1. KIỂM SOÁT PHẠM VI SỬA ĐỔI (SCOPE CONTROL)
+  # 1. KIỂM SOÁT PHẠM VI SỬA ĐỔI & RANH GIỚI DỰ ÁN (SCOPE CONTROL & PROJECT BOUNDARIES)
   # ----------------------------------------------------------------------------
   scope_control:
     # Số file tối đa mà một task được phép sửa đổi (tránh AI sửa lan man mất kiểm soát)
@@ -37,6 +45,20 @@ policy:
 
     # Cưỡng chế nghiêm ngặt: từ chối mọi patch can thiệp vào file ngoài scope
     strict_scope_enforcement: true
+
+    # Thư mục được phép can thiệp (AI chỉ được đọc/ghi/tạo file trong các thư mục này):
+    allowed_dirs:
+      - "core/"         # Logic xử lý nghiệp vụ video, transcript, AI studio, connectors
+      - "ui/"           # Giao diện desktop CustomTkinter (legacy UI)
+      - "ui_bridge/"    # Cầu nối RPC giữa PyWebView và Python backend
+      - "ui_web/"       # Giao diện web frontend Studio v2.0 (HTML/CSS/JS)
+      - "tests/"        # Bộ kiểm thử đơn vị Python unittest
+
+    # Danh sách file được bảo vệ đặc biệt (AI bị cấm sửa đổi trừ khi có chỉ định rõ ràng):
+    protected_files:
+      - "tests/test_indentation.py" # Rào chắn bắt buộc 100% TAB indentation cho Python
+      - "package.json"              # Định nghĩa dependency npm
+      - "requirements.txt"          # Định nghĩa dependency Python
 
   # ----------------------------------------------------------------------------
   # 2. THAM SỐ CÁC LÀN CHẠY TASK (TASK MODES)
@@ -154,3 +176,20 @@ policy:
 
     # Tiền tố của commit message tự động do AI tạo ra
     commit_message_prefix: "[AI-Task]"
+
+  # ----------------------------------------------------------------------------
+  # 7. BỘ KIỂM THỬ TỰ ĐỘNG CỦA DỰ ÁN (PROJECT VALIDATION GATES)
+  # Orchestrator sẽ tự động chạy các lệnh này sau khi AI viết code để xác nhận kết quả (0-token gate).
+  # ----------------------------------------------------------------------------
+  validation:
+    # Fast Checks: Kiểm tra nhanh (chạy ở mọi task, thời gian < 30s)
+    fast_checks:
+      - name: "tab_indentation_check"
+        run: ".\\.venv\\Scripts\\python.exe -m unittest tests/test_indentation.py"
+        timeout_sec: 15
+
+    # Suite Checks: Kiểm tra toàn diện (chạy ở Standard Mode hoặc trước khi bàn giao hoàn tất)
+    suite_checks:
+      - name: "unit_test_suite"
+        run: ".\\.venv\\Scripts\\python.exe -m unittest discover -s tests -v"
+        timeout_sec: 180
