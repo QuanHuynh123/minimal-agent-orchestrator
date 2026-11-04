@@ -10,13 +10,16 @@ providers:
     api_key_env: "NINE_ROUTER_API_KEY"
     default_key: "sk-default"
 
-# Cấu hình chuẩn Vai Trò API 9Router (gồm 2 Writer song song) + 1 Validator Cục Bộ
+# Cấu hình chuẩn 4 Vai Trò Lớn API 9Router (Multi-Model Pool) + 1 Validator Cục Bộ
 roles:
   router:
     enabled: true
     provider: "local_9router"
     display_name: "Claude Sonnet 4.5 Thinking"
     model: "kr/claude-sonnet-4.5-thinking"
+    default_model: "kr/claude-sonnet-4.5-thinking"
+    models:
+      - "kr/claude-sonnet-4.5-thinking"
     fallback_model: null
     temperature: 0.2
     max_thinking_tokens: 200
@@ -27,22 +30,13 @@ roles:
   writer:
     enabled: true
     provider: "local_9router"
-    display_name: "DeepSeek V4.1 Flash"
+    display_name: "Code Generator Squad"
     model: "deepseek-ai/deepseek-v4.1-flash-1017"
+    default_model: "deepseek-ai/deepseek-v4.1-flash-1017"
+    models:
+      - "deepseek-ai/deepseek-v4.1-flash-1017"
+      - "ag/gemini-3.8-flash-medium"
     fallback_model: "ag/gemini-3.8-flash-medium"
-    temperature: 0.1
-    max_thinking_tokens: 200
-    output_format: "search_replace_blocks"
-    spec_file: "roles/writer.md"
-    allowed_actions: ["backend_write", "frontend_write", "read_scoped_files", "propose_patch"]
-    forbidden_actions: ["out_of_scope_edit", "unapproved_dependency"]
-
-  writer_gemini:
-    enabled: true
-    provider: "local_9router"
-    display_name: "Gemini 3.8 Flash"
-    model: "ag/gemini-3.8-flash-medium"
-    fallback_model: "deepseek-ai/deepseek-v4.1-flash-1017"
     temperature: 0.1
     max_thinking_tokens: 200
     output_format: "search_replace_blocks"
@@ -55,6 +49,9 @@ roles:
     provider: "local_9router"
     display_name: "Claude Sonnet 4.5 Thinking"
     model: "kr/claude-sonnet-4.5-thinking"
+    default_model: "kr/claude-sonnet-4.5-thinking"
+    models:
+      - "kr/claude-sonnet-4.5-thinking"
     fallback_model: null
     temperature: 0.2
     spec_file: "roles/designer.md"
@@ -66,6 +63,9 @@ roles:
     provider: "local_9router"
     display_name: "Claude Opus 5.5 High"
     model: "ag/claude-opus-5-5-high"
+    default_model: "ag/claude-opus-5-5-high"
+    models:
+      - "ag/claude-opus-5-5-high"
     fallback_model: null
     temperature: 0.1
     spec_file: "roles/reviewer.md"

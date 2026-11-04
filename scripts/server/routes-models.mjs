@@ -191,10 +191,17 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
       for (const [roleKey, roleSpec] of Object.entries(rolesInput)) {
         if (!roleSpec || typeof roleSpec !== 'object') continue;
         const newModel = String(roleSpec.model || '').trim();
-        if (!newModel) continue;
+        const modelsArray = Array.isArray(roleSpec.models)
+          ? roleSpec.models.filter(Boolean)
+          : (newModel ? [newModel] : []);
+
+        if (modelsArray.length === 0 && !newModel) continue;
+        const primaryModel = modelsArray[0] || newModel;
 
         if (teamData.roles[roleKey]) {
-          teamData.roles[roleKey].model = newModel;
+          teamData.roles[roleKey].model = primaryModel;
+          teamData.roles[roleKey].default_model = primaryModel;
+          teamData.roles[roleKey].models = modelsArray;
           if (roleSpec.display_name) {
             teamData.roles[roleKey].display_name = roleSpec.display_name;
           }
@@ -203,7 +210,9 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
             enabled: true,
             provider: 'local_9router',
             display_name: roleSpec.display_name || (roleKey.charAt(0).toUpperCase() + roleKey.slice(1)),
-            model: newModel,
+            model: primaryModel,
+            default_model: primaryModel,
+            models: modelsArray,
             fallback_model: null,
             temperature: 0.1
           };

@@ -240,7 +240,6 @@
     const covPills = {
       router: document.getElementById('cov-pill-router'),
       writer: document.getElementById('cov-pill-writer'),
-      writer_gemini: document.getElementById('cov-pill-writer_gemini'),
       designer: document.getElementById('cov-pill-designer'),
       reviewer: document.getElementById('cov-pill-reviewer')
     };
@@ -329,15 +328,20 @@
       const roles = currentSquadRolesConfig || {};
 
       for (const [rKey, rSpec] of Object.entries(roles)) {
-        if (rSpec && rSpec.model) {
+        if (!rSpec) continue;
+        const modelsList = Array.isArray(rSpec.models) && rSpec.models.length > 0
+          ? rSpec.models
+          : (rSpec.model ? [rSpec.model] : []);
+
+        modelsList.forEach(mId => {
           initial.push({
-            model: rSpec.model,
-            name: rSpec.display_name || rSpec.model.split('/').pop() || rSpec.model,
+            model: mId,
+            name: mId.split('/').pop() || mId,
             role: rKey,
             latency_ms: null,
             status: 'ready'
           });
-        }
+        });
       }
 
       if (initial.length === 0) {
@@ -402,11 +406,10 @@
           <div class="compact-right">
             <select class="compact-role-select" data-idx="${idx}">
               <option value="standby" ${member.role === 'standby' ? 'selected' : ''}>💤 Dự Bị (Standby)</option>
-              <option value="router" ${member.role === 'router' ? 'selected' : ''}>🧠 Router (Architect)</option>
-              <option value="writer" ${member.role === 'writer' ? 'selected' : ''}>⚡ Writer (DeepSeek V4.1)</option>
-              <option value="writer_gemini" ${member.role === 'writer_gemini' ? 'selected' : ''}>⚡ Writer (Gemini 3.8)</option>
+              <option value="router" ${member.role === 'router' ? 'selected' : ''}>🧠 Router (Architect &amp; Planner)</option>
+              <option value="writer" ${member.role === 'writer' ? 'selected' : ''}>⚡ Writer (Code Generator)</option>
               <option value="designer" ${member.role === 'designer' ? 'selected' : ''}>👁️ Designer (Visual Auditor)</option>
-              <option value="reviewer" ${member.role === 'reviewer' ? 'selected' : ''}>🛡️ Reviewer (TechLead)</option>
+              <option value="reviewer" ${member.role === 'reviewer' ? 'selected' : ''}>🛡️ Reviewer (TechLead Reviewer)</option>
             </select>
             ${latencyBadgeHtml}
             <button class="btn-compact-test btn-test-member" data-idx="${idx}" title="Đo độ trễ mạng thực tế">
@@ -466,14 +469,14 @@
       const assignedMap = {};
       squadMembers.forEach(m => {
         if (m.role && m.role !== 'standby') {
-          assignedMap[m.role] = m.name || m.model.split('/').pop();
+          if (!assignedMap[m.role]) assignedMap[m.role] = [];
+          assignedMap[m.role].push(m.name || m.model.split('/').pop());
         }
       });
 
       const roleDisplayNames = {
         router: 'Router',
-        writer: 'Writer (DS)',
-        writer_gemini: 'Writer (Gemini)',
+        writer: 'Writer',
         designer: 'Designer',
         reviewer: 'Reviewer'
       };
@@ -481,9 +484,11 @@
       for (const [rKey, pillEl] of Object.entries(covPills)) {
         if (!pillEl) continue;
         const roleName = roleDisplayNames[rKey] || (rKey.charAt(0).toUpperCase() + rKey.slice(1));
-        if (assignedMap[rKey]) {
+        const list = assignedMap[rKey] || [];
+        if (list.length > 0) {
           pillEl.className = 'cov-mini-pill assigned';
-          pillEl.innerHTML = `${roleName}: <strong>${escapeHtml(assignedMap[rKey])}</strong>`;
+          const label = list.length === 1 ? list[0] : `${list[0]} (+${list.length - 1})`;
+          pillEl.innerHTML = `${roleName}: <strong>${escapeHtml(label)}</strong>`;
         } else {
           pillEl.className = 'cov-mini-pill';
           pillEl.innerHTML = `${roleName}: <strong>Khuyết</strong>`;
@@ -638,10 +643,17 @@
         const rolesPayload = {};
         squadMembers.forEach(m => {
           if (m.role && m.role !== 'standby') {
-            rolesPayload[m.role] = {
-              model: m.model,
-              display_name: m.name || m.model.split('/').pop()
-            };
+            if (!rolesPayload[m.role]) {
+              rolesPayload[m.role] = {
+                model: m.model,
+                models: [m.model],
+                display_name: m.name || m.model.split('/').pop()
+              };
+            } else {
+              if (!rolesPayload[m.role].models.includes(m.model)) {
+                rolesPayload[m.role].models.push(m.model);
+              }
+            }
           }
         });
 

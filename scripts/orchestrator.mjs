@@ -736,12 +736,13 @@ async function runOrchestrator() {
         task.status = 'writing';
 
         // Step A: Prepare Writer Prompt WITH Context-Aware Scoped File Contents
-        const activeWriterKey = (task.owner === 'writer_gemini' && teamConfig.roles?.writer_gemini?.enabled)
-          ? 'writer_gemini'
-          : 'writer';
-        const writerRole = teamConfig.roles?.[activeWriterKey] || teamConfig.roles?.writer || {};
-        const writerModel = task.model || writerRole.model || 'deepseek-ai/deepseek-v4.1-flash-1017';
-        const writerFallback = writerRole.fallback_model || null;
+        const writerRole = teamConfig.roles?.writer || {};
+        const writerModel = task.model
+          || writerRole.default_model
+          || writerRole.model
+          || (Array.isArray(writerRole.models) ? writerRole.models[0] : null)
+          || 'deepseek-ai/deepseek-v4.1-flash-1017';
+        const writerFallback = writerRole.fallback_model || (writerRole.models?.find(m => m !== writerModel) || null);
         const writerTemp = writerRole.temperature ?? 0.1;
         const writerMaxThinking = writerRole.max_thinking_tokens;
         const writerSpecFile = writerRole.spec_file || 'roles/writer.md';
