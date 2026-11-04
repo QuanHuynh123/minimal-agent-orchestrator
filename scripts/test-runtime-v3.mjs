@@ -187,7 +187,7 @@ assert.strictEqual(readRes.ok, true);
 assert.strictEqual(readRes.start_line, 1);
 assert.ok(readRes.content.includes('1: # ROLE: Writer'));
 
-// Scoped Read Guard (uses files inside agent-team/ so the test is 100% repo-independent)
+// Open Read: Agent can freely inspect other workspace files (read-only) for architecture and cross-file references
 const scopedReadAllowed = await executeTool('read_file', { path: 'agent-team/scripts/applier.mjs', start_line: 1, end_line: 5 }, {
   role: 'writer',
   allowedTools: ['read_file'],
@@ -195,20 +195,21 @@ const scopedReadAllowed = await executeTool('read_file', { path: 'agent-team/scr
 });
 assert.strictEqual(scopedReadAllowed.ok, true);
 
-const scopedReadDenied = await executeTool('read_file', { path: 'agent-team/scripts/validator.mjs', start_line: 1, end_line: 5 }, {
+// Reading cross-file outside write scope is allowed for exploration
+const crossFileRead = await executeTool('read_file', { path: 'agent-team/scripts/validator.mjs', start_line: 1, end_line: 5 }, {
   role: 'writer',
   allowedTools: ['read_file'],
   allowedScope: ['agent-team/scripts/applier.mjs']
 });
-assert.strictEqual(scopedReadDenied.ok, false);
-assert.ok(scopedReadDenied.error.includes('SCOPE_VIOLATION'));
+assert.strictEqual(crossFileRead.ok, true);
 
-const scopedDocAllowed = await executeTool('read_file', { path: 'agent-team/README.md', start_line: 1, end_line: 5 }, {
+// Sensitive files remain strictly blocked
+const sensitiveReadDenied = await executeTool('read_file', { path: '.env', start_line: 1, end_line: 5 }, {
   role: 'writer',
-  allowedTools: ['read_file'],
-  allowedScope: ['agent-team/scripts/applier.mjs']
+  allowedTools: ['read_file']
 });
-assert.strictEqual(scopedDocAllowed.ok, true);
+assert.strictEqual(sensitiveReadDenied.ok, false);
+assert.ok(sensitiveReadDenied.error.includes('Access denied to sensitive file'));
 
 // RBAC Guard
 const rbacDenied = await executeTool('apply_patch', { patch: 'test' }, {

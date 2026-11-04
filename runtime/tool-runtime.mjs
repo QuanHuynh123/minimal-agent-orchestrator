@@ -259,24 +259,6 @@ export function toolReadFile(repoRoot, args = {}, context = {}) {
       return { ok: false, error: `Access denied to sensitive file: ${safeRel}` };
     }
 
-    // Scoped Read Guard: Restrict file reading to active task scope when defined
-    const allowedScope = context.allowedScope || [];
-    if (allowedScope.length > 0) {
-      const normalizedScope = allowedScope.map(p => normalizeOrThrow(repoRoot, p));
-      const isDocOrMeta = safeRel.endsWith('.md')
-        || safeRel.startsWith('docs/')
-        || safeRel.startsWith('agent-team/config/')
-        || safeRel.startsWith('agent-team/roles/')
-        || safeRel.startsWith('tests/'); // Allow read-only access to test suites for assertion inspection
-      const inScope = normalizedScope.includes(safeRel);
-      if (!inScope && !isDocOrMeta) {
-        return {
-          ok: false,
-          error: `SCOPE_VIOLATION: File "${safeRel}" is outside active task scope [${allowedScope.join(', ')}]. Reading restricted to scoped files, test suites, or project docs.`
-        };
-      }
-    }
-
     const fullPath = path.resolve(repoRoot, safeRel);
     if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
       return { ok: false, error: `File not found: ${safeRel}` };
