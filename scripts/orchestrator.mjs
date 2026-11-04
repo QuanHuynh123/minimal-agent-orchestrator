@@ -250,7 +250,11 @@ async function runRouterPlanner(task) {
     return { ok: false, error: 'Router role is disabled in team.yaml' };
   }
 
-  const routerModel = routerRole.model || 'kr/claude-sonnet-4.5-thinking';
+  const writerRole = teamConfig.roles?.writer || {};
+  const routerModel = routerRole.model || writerRole.model;
+  if (!routerModel) {
+    return { ok: false, error: 'Router role has no model configured and no writer model to inherit' };
+  }
   const routerFallback = routerRole.fallback_model || null;
   const routerTemp = routerRole.temperature ?? 0.2;
   const routerMaxThinking = routerRole.max_thinking_tokens;
@@ -258,7 +262,7 @@ async function runRouterPlanner(task) {
     ? fs.readFileSync(path.resolve(TEAM_DIR, 'roles', 'router.md'), 'utf8')
     : 'Analyze the goal and return JSON { "plan": [], "scope": [], "acceptance_criteria": [] }.';
 
-  const allowedDirs = projectConfig.project?.allowed_dirs || policyConfig.policy?.allowed_dirs || ['*'];
+  const allowedDirs = projectConfig.project?.allowed_dirs || ['*'];
   const routerContext = buildRouterContext(allowedDirs, REPO_ROOT, 300);
   const prompt = [
     `TASK ID: ${task.task_id}`,
@@ -303,7 +307,10 @@ async function runReviewerGate(task, scopedFiles, previousReviewIssues = []) {
     return { ok: true, skipped: true };
   }
 
-  const reviewerModel = reviewerRole.model || 'ag/claude-opus-5-5-high';
+  const reviewerModel = reviewerRole.model || teamConfig.roles?.writer?.model;
+  if (!reviewerModel) {
+    return { ok: false, error: 'Reviewer role has no model configured and no writer model to inherit' };
+  }
   const reviewerFallback = reviewerRole.fallback_model || null;
   const reviewerTemp = reviewerRole.temperature ?? 0.1;
   const reviewerMaxThinking = reviewerRole.max_thinking_tokens;
@@ -426,8 +433,8 @@ async function runOrchestrator() {
   const rollbackOnValidationFail = policyConfig.policy?.git_hygiene?.rollback_on_validation_fail ?? true;
   const autoCommitOnDone = policyConfig.policy?.git_hygiene?.auto_commit_on_done ?? true;
   const commitPrefix = policyConfig.policy?.git_hygiene?.commit_message_prefix || '[AI-Task]';
-  const allowedDirs = projectConfig.project?.allowed_dirs || policyConfig.policy?.allowed_dirs || ['*'];
-  const protectedFiles = projectConfig.project?.protected_files || policyConfig.policy?.protected_files || [];
+  const allowedDirs = projectConfig.project?.allowed_dirs || ['*'];
+  const protectedFiles = projectConfig.project?.protected_files || [];
 
   if (!fs.existsSync(ACTIVE_TASKS_DIR)) {
     fs.mkdirSync(ACTIVE_TASKS_DIR, { recursive: true });
@@ -828,9 +835,13 @@ async function runOrchestrator() {
         const writerModel = task.model
           || writerRole.default_model
           || writerRole.model
-          || (Array.isArray(writerRole.models) ? writerRole.models[0] : null)
-          || 'deepseek-ai/deepseek-v4.1-flash-1017';
-        const writerFallback = writerRole.fallback_model || (writerRole.models?.find(m => m !== writerModel) || null);
+          || (Array.isArray(writerRole.models) ? writerRole.models[0] : null);
+        if (!writerModel) {
+          blockReason = 'Writer role has no model specified in task or team.yaml';
+          task.status = 'blocked';
+          break;
+        }
+        const writerFallback = writerRole.fallback_model || null;
         const writerTemp = writerRole.temperature ?? 0.1;
         const writerMaxThinking = writerRole.max_thinking_tokens;
         const writerSpecFile = writerRole.spec_file || 'roles/writer.md';
@@ -1074,13 +1085,14 @@ async function runOrchestrator() {
         // Only invokes AI Reviewer (Opus) when risk_level >= review_min_risk_level ('high'/'critical') or force_ai_review: true
         if (shouldRunReviewerGate(task, policyConfig.policy, teamConfig.roles)) {
           task.status = 'reviewing';
+          const effectiveReviewerModel = teamConfig.roles?.reviewer?.model || writerModel;
           updateLiveStatus({
             current_stage: 'reviewer',
             stage_started_at: new Date().toISOString(),
             roles_status: {
               writer: { model: writerModel, status: 'done' },
               validator: { status: 'passed' },
-              reviewer: { model: teamConfig.roles?.reviewer?.model || 'ag/claude-opus-5-5-high', status: 'working' }
+              reviewer: { model: effectiveReviewerModel, status: 'working' }
             }
           });
 
@@ -1104,7 +1116,7 @@ async function runOrchestrator() {
               roles_status: {
                 writer: { model: writerModel, status: 'done' },
                 validator: { status: 'passed' },
-                reviewer: { model: teamConfig.roles?.reviewer?.model || 'ag/claude-opus-5-5-high', status: 'rejected' }
+                reviewer: { model: effectiveReviewerModel, status: 'rejected' }
               }
             });
             const revHash = hashString(revRes.error);
@@ -1116,7 +1128,7 @@ async function runOrchestrator() {
             roles_status: {
               writer: { model: writerModel, status: 'done' },
               validator: { status: 'passed' },
-              reviewer: { model: teamConfig.roles?.reviewer?.model || 'ag/claude-opus-5-5-high', status: 'approved' }
+              reviewer: { model: effectiveReviewerModel, status: 'approved' }
             }
           });
         } else {

@@ -272,17 +272,9 @@
       if (cfgModelsCountText) cfgModelsCountText.textContent = 'Đang tải...';
 
       try {
-        const res = await fetch('/api/models');
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}: Máy chủ cần khởi động lại để kích hoạt API mới.`);
-        }
-        const text = await res.text();
-        let data;
-        try {
-          data = JSON.parse(text);
-        } catch {
-          throw new Error('API /api/models chưa sẵn sàng. Hãy tắt và chạy lại: node agent-team/scripts/dashboard.mjs');
-        }
+        const data = window.CockpitApi?.fetchModels
+          ? await window.CockpitApi.fetchModels()
+          : await (await fetch('/api/models')).json();
 
         if (data.ok && Array.isArray(data.models)) {
           available9RouterModels = data.models;
@@ -593,6 +585,9 @@
     }
 
     async function pingModelTest(model) {
+      if (window.CockpitApi?.testModel) {
+        return window.CockpitApi.testModel(model);
+      }
       const start = Date.now();
       try {
         const res = await fetch('/api/test-model', {
@@ -658,15 +653,16 @@
         });
 
         try {
-          const res = await fetch('/api/save-team-config', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Dashboard-Token': csrfToken || ''
-            },
-            body: JSON.stringify({ roles: rolesPayload })
-          });
-          const data = await res.json();
+          const data = window.CockpitApi?.saveTeamConfig
+            ? await window.CockpitApi.saveTeamConfig({ roles: rolesPayload })
+            : await (await fetch('/api/save-team-config', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Dashboard-Token': csrfToken || ''
+                },
+                body: JSON.stringify({ roles: rolesPayload })
+              })).json();
           if (data.ok) {
             if (cfgSaveStatusMsg) {
               cfgSaveStatusMsg.textContent = `✓ ${data.message}`;
@@ -748,17 +744,18 @@
       lblDecomposeStatus.textContent = 'Đang gọi Claude Sonnet 4.5 đọc cấu trúc code...';
 
       try {
-        const res = await fetch('/api/decompose', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Dashboard-Token': csrfToken || ''
-          },
-          body: JSON.stringify({ goal })
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          throw new Error(data.error || 'Lỗi bóc tách mục tiêu');
+        const data = window.CockpitApi?.decomposeGoal
+          ? await window.CockpitApi.decomposeGoal(goal)
+          : await (await fetch('/api/decompose', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Dashboard-Token': csrfToken || ''
+              },
+              body: JSON.stringify({ goal })
+            })).json();
+        if (!data || !data.ok) {
+          throw new Error(data?.error || 'Lỗi bóc tách mục tiêu');
         }
         currentDraftTasks = data.tasks || [];
         renderDraftTasks(currentDraftTasks);
@@ -848,17 +845,18 @@
       btnApproveRun.textContent = 'Đang khởi chạy Orchestrator...';
 
       try {
-        const res = await fetch('/api/approve-run', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Dashboard-Token': csrfToken || ''
-          },
-          body: JSON.stringify({})
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          throw new Error(data.error || 'Lỗi phê duyệt task');
+        const data = window.CockpitApi?.approveRun
+          ? await window.CockpitApi.approveRun()
+          : await (await fetch('/api/approve-run', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Dashboard-Token': csrfToken || ''
+              },
+              body: JSON.stringify({})
+            })).json();
+        if (!data || !data.ok) {
+          throw new Error(data?.error || 'Lỗi phê duyệt task');
         }
         btnApproveRun.textContent = '✓ Đã khởi chạy Squad!';
         setTimeout(() => {
@@ -877,14 +875,15 @@
     btnStopOrchestrator.addEventListener('click', async () => {
       if (!confirm('Bạn có chắc chắn muốn dừng Orchestrator đang chạy?')) return;
       try {
-        const res = await fetch('/api/stop', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Dashboard-Token': csrfToken || ''
-          }
-        });
-        const data = await res.json();
+        const data = window.CockpitApi?.stopOrchestrator
+          ? await window.CockpitApi.stopOrchestrator()
+          : await (await fetch('/api/stop', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Dashboard-Token': csrfToken || ''
+              }
+            })).json();
         alert(data.message || 'Đã gửi lệnh dừng');
       } catch (err) {
         alert('Lỗi: ' + err.message);
@@ -1538,10 +1537,10 @@
       });
 
       try {
-        const res = await fetch(`/api/session?id=${encodeURIComponent(sessionId)}`);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        if (!data.ok || !data.session) return;
+        const data = window.CockpitApi?.fetchSession
+          ? await window.CockpitApi.fetchSession(sessionId)
+          : await (await fetch(`/api/session?id=${encodeURIComponent(sessionId)}`)).json();
+        if (!data || !data.ok || !data.session) return;
 
         const s = data.session;
         sessionEmptyState.style.display = 'none';
@@ -1615,12 +1614,13 @@
     // Main Snapshot Fetcher
     async function fetchSnapshot() {
       try {
-        const res = await fetch('/api/snapshot');
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
+        const data = window.CockpitApi?.fetchSnapshot
+          ? await window.CockpitApi.fetchSnapshot()
+          : await (await fetch('/api/snapshot')).json();
 
         if (data.csrf_token) {
           csrfToken = data.csrf_token;
+          if (window.CockpitApi?.setCsrfToken) window.CockpitApi.setCsrfToken(data.csrf_token);
         }
 
         txtPolling.textContent = '1s Polling';

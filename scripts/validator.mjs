@@ -86,11 +86,10 @@ export function checkCommandGuardrails(cmd = '', timeoutMs = 60000, guardrails =
  * Inspects git modified files and verifies none violate protected_files, allowed_dirs, or declared scope.
  */
 export function auditGitScope(declaredScope = [], options = {}) {
-  const policyCfg = loadPolicyConfig()?.policy || loadPolicyConfig() || {};
-  const projCfg = options.projectConfig || {};
+  const projCfg = options.projectConfig || loadProjectConfig() || {};
   const repoRoot = resolveRepoRoot(projCfg);
-  const allowedDirs = options.allowedDirs || projCfg.project?.allowed_dirs || policyCfg.allowed_dirs || ['*'];
-  const protectedFiles = options.protectedFiles || projCfg.project?.protected_files || policyCfg.protected_files || [];
+  const allowedDirs = options.allowedDirs || projCfg.project?.allowed_dirs || ['*'];
+  const protectedFiles = options.protectedFiles || projCfg.project?.protected_files || [];
   const targetFilter = options.checkAllWorktree ? [] : declaredScope;
 
   const modified = options.modifiedFiles || getModifiedFiles(targetFilter);
@@ -234,13 +233,10 @@ export function runCommandAsync(cmd, cwd = REPO_ROOT, timeoutMs = 60000, guardra
 }
 
 export async function validateFast(projectConfig) {
-  const cfg = projectConfig || loadProjectConfig() || loadPolicyConfig() || {};
+  const cfg = projectConfig || loadProjectConfig() || {};
   const repoRoot = resolveRepoRoot(cfg);
   const fastChecks = cfg?.project?.validation?.fast_checks
-    || cfg?.policy?.validation?.fast_checks
-    || cfg?.validation?.fast_checks
-    || loadPolicyConfig()?.policy?.validation?.fast_checks
-    || loadPolicyConfig()?.validation?.fast_checks;
+    || cfg?.validation?.fast_checks;
 
   if (!fastChecks || fastChecks.length === 0) {
     return { ok: true, skipped: true, message: 'No fast_checks defined in project.yaml.' };
@@ -267,13 +263,10 @@ export async function validateFast(projectConfig) {
 }
 
 export async function validateSuite(projectConfig) {
-  const cfg = projectConfig || loadProjectConfig() || loadPolicyConfig() || {};
+  const cfg = projectConfig || loadProjectConfig() || {};
   const repoRoot = resolveRepoRoot(cfg);
   const suiteChecks = cfg?.project?.validation?.suite_checks
-    || cfg?.policy?.validation?.suite_checks
-    || cfg?.validation?.suite_checks
-    || loadPolicyConfig()?.policy?.validation?.suite_checks
-    || loadPolicyConfig()?.validation?.suite_checks;
+    || cfg?.validation?.suite_checks;
 
   if (!suiteChecks || suiteChecks.length === 0) {
     return { ok: true, skipped: true, message: 'No suite_checks defined in project.yaml.' };
