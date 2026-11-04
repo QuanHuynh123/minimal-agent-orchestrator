@@ -16,8 +16,10 @@ import {
   buildReviewerPrompt,
   buildRouterContext,
   buildScopedFilesContext,
+  DEFAULT_POLICY_CONFIG,
   extractTaskKeywords,
   formatValidationErrorForRetry,
+  mergePolicyWithDefaults,
   normalizeTask,
   releaseLock,
   resolveEffectiveRisk,
@@ -32,7 +34,8 @@ import {
   auditGitScope,
   checkCommandGuardrails,
   hashString,
-  normalizeErrorForHash
+  normalizeErrorForHash,
+  validateFast
 } from './validator.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -272,13 +275,38 @@ assert.strictEqual(cleanState.blocked_tasks[0].block_reason, 'still blocked 2');
 const validCfgRes = validateConfig(
   { providers: { local_9router: { base_url: 'http://127.0.0.1:20128/v1' } }, roles: { writer: { model: 'deepseek' } } },
   { policy: { scope_control: { max_files_per_task: 5 } } },
-  { project: { allowed_dirs: ['core/'] } }
+  { project: { allowed_dirs: ['core/'], protected_files: ['tests/test_indentation.py'] } }
 );
 assert.strictEqual(validCfgRes.ok, true);
 
 const invalidCfgRes = validateConfig({}, {}, {});
 assert.strictEqual(invalidCfgRes.ok, false);
 assert.ok(invalidCfgRes.errors.length >= 2);
+
+// Test mergePolicyWithDefaults & Framework Invariants
+const emptyMerge = mergePolicyWithDefaults({});
+assert.strictEqual(emptyMerge.scope_control.max_files_per_task, 5);
+assert.strictEqual(emptyMerge.task_modes.consult.mutation_enabled, false);
+
+const customMerge = mergePolicyWithDefaults({
+  policy: {
+    scope_control: { max_files_per_task: 10 },
+    task_modes: {
+      quick: { max_runtime_sec: 240 },
+      consult: { mutation_enabled: true } // Attempted illegal override
+    }
+  }
+});
+assert.strictEqual(customMerge.scope_control.max_files_per_task, 10);
+assert.strictEqual(customMerge.scope_control.max_scope_increase, 1); // Preserves default
+assert.strictEqual(customMerge.task_modes.quick.max_runtime_sec, 240);
+assert.strictEqual(customMerge.task_modes.consult.mutation_enabled, false); // Invariant enforced!
+
+// Test Honest Validation reporting when no checks configured
+const skippedVal = await validateFast({ project: { validation: { fast_checks: [] } } });
+assert.strictEqual(skippedVal.ok, true);
+assert.strictEqual(skippedVal.skipped, true);
+assert.match(skippedVal.message, /No fast_checks defined/);
 
 const matchExact = verifyResponseModel(
   'Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017',

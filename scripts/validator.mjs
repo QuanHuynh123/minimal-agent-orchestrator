@@ -243,7 +243,7 @@ export async function validateFast(projectConfig) {
     || loadPolicyConfig()?.validation?.fast_checks;
 
   if (!fastChecks || fastChecks.length === 0) {
-    return { ok: true, message: 'No fast_checks defined.' };
+    return { ok: true, skipped: true, message: 'No fast_checks defined in project.yaml.' };
   }
 
   for (const item of fastChecks) {
@@ -276,7 +276,7 @@ export async function validateSuite(projectConfig) {
     || loadPolicyConfig()?.validation?.suite_checks;
 
   if (!suiteChecks || suiteChecks.length === 0) {
-    return { ok: true, message: 'No suite_checks defined.' };
+    return { ok: true, skipped: true, message: 'No suite_checks defined in project.yaml.' };
   }
 
   for (const item of suiteChecks) {

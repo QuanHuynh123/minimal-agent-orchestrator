@@ -35,6 +35,8 @@ import {
 } from './lib/context-builders.mjs';
 
 import {
+  DEFAULT_POLICY_CONFIG,
+  mergePolicyWithDefaults,
   RISK_LEVEL_RANK,
   resolveEffectiveRisk,
   shouldRunReviewerGate,
@@ -71,6 +73,8 @@ export {
   formatValidationErrorForRetry,
   buildRouterContext,
   buildReviewerPrompt,
+  DEFAULT_POLICY_CONFIG,
+  mergePolicyWithDefaults,
   RISK_LEVEL_RANK,
   resolveEffectiveRisk,
   shouldRunReviewerGate,
@@ -208,9 +212,12 @@ function loadYaml(filePath) {
 const teamConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'team.local.yaml'))
   || loadYaml(path.resolve(TEAM_DIR, 'config', 'team.yaml'))
   || {};
-const projectConfig = {};
-const policyConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'policy.yaml')) || {};
-const REPO_ROOT = resolveRepoRoot();
+const projectConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'project.local.yaml'))
+  || loadYaml(path.resolve(TEAM_DIR, 'config', 'project.yaml'))
+  || {};
+const rawPolicyConfig = loadYaml(path.resolve(TEAM_DIR, 'config', 'policy.yaml')) || {};
+const policyConfig = { policy: mergePolicyWithDefaults(rawPolicyConfig) };
+const REPO_ROOT = resolveRepoRoot(projectConfig);
 
 function sanitizeGoal(str = '') {
   return str.replace(/[\r\n\x1B]/g, ' ').slice(0, 80).trim();
@@ -251,7 +258,7 @@ async function runRouterPlanner(task) {
     ? fs.readFileSync(path.resolve(TEAM_DIR, 'roles', 'router.md'), 'utf8')
     : 'Analyze the goal and return JSON { "plan": [], "scope": [], "acceptance_criteria": [] }.';
 
-  const allowedDirs = policyConfig.policy?.allowed_dirs || ['*'];
+  const allowedDirs = projectConfig.project?.allowed_dirs || policyConfig.policy?.allowed_dirs || ['*'];
   const routerContext = buildRouterContext(allowedDirs, REPO_ROOT, 300);
   const prompt = [
     `TASK ID: ${task.task_id}`,
@@ -419,8 +426,8 @@ async function runOrchestrator() {
   const rollbackOnValidationFail = policyConfig.policy?.git_hygiene?.rollback_on_validation_fail ?? true;
   const autoCommitOnDone = policyConfig.policy?.git_hygiene?.auto_commit_on_done ?? true;
   const commitPrefix = policyConfig.policy?.git_hygiene?.commit_message_prefix || '[AI-Task]';
-  const allowedDirs = policyConfig.policy?.allowed_dirs || ['*'];
-  const protectedFiles = policyConfig.policy?.protected_files || [];
+  const allowedDirs = projectConfig.project?.allowed_dirs || policyConfig.policy?.allowed_dirs || ['*'];
+  const protectedFiles = projectConfig.project?.protected_files || policyConfig.policy?.protected_files || [];
 
   if (!fs.existsSync(ACTIVE_TASKS_DIR)) {
     fs.mkdirSync(ACTIVE_TASKS_DIR, { recursive: true });
@@ -1012,6 +1019,9 @@ async function runOrchestrator() {
         });
 
         const fastVal = await validateFast(projectConfig);
+        if (fastVal.skipped) {
+          console.log(`[Validator] Notice: ${fastVal.message}`);
+        }
         if (!fastVal.ok) {
           console.warn(`[Validator] Fast check failed: ${fastVal.checkName}`);
           updateLiveStatus({
@@ -1028,6 +1038,9 @@ async function runOrchestrator() {
 
         // Step D: Suite Validation (0-Token)
         const suiteVal = await validateSuite(projectConfig);
+        if (suiteVal.skipped) {
+          console.log(`[Validator] Notice: ${suiteVal.message}`);
+        }
         if (!suiteVal.ok) {
           console.warn(`[Validator] Suite check failed: ${suiteVal.checkName}`);
           updateLiveStatus({

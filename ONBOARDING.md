@@ -46,16 +46,18 @@ roles:
 ### B. Ranh giới Dự án (`config/project.yaml`)
 Chỉ định thư mục nào AI được phép sửa và lệnh kiểm thử tự động của dự án bạn:
 ```yaml
-allowed_dirs:
-  - "src"
-  - "tests"
-protected_files:
-  - "agent-team/config/**"
-  - ".env*"
-validation:
-  fast_checks:
-    - name: "fast-unit-test"
-      command: "npm test" # Hoặc: pytest tests/, go test ./...
+project:
+  id: "my-project"
+  language: "typescript"
+  allowed_dirs:
+    - "src"
+    - "tests"
+  protected_files:
+    - "package.json"
+  validation:
+    fast_checks:
+      - name: "fast-unit-test"
+        run: "npm test" # Hoặc: pytest tests/, go test ./...
 ```
 
 ---

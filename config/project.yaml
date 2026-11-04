@@ -1,0 +1,64 @@
+# ==============================================================================
+# 🎯 HOST PROJECT SPECIFIC CONFIGURATION (project.yaml)
+# ==============================================================================
+# MỤC ĐÍCH (PURPOSE):
+# - File này định nghĩa các đặc tính riêng của "Dự Án Đích" (WHAT REPO IS THIS).
+# - Dành cho: Khai báo ranh giới thư mục được phép sửa, các file nhạy cảm của dự án,
+#   và các lệnh chạy kiểm thử tự động (Unit Test / Linter) riêng của codebase này.
+#
+# NGUYÊN TẮC QUAN TRỌNG (KEY INVARIANTS):
+# 1. Tách biệt Kiểm thử Nội bộ Framework và Dự án:
+#    - Các bài test tự kiểm của chính framework (test-applier, test-runtime, test-cockpit)
+#      chạy độc lập qua 'npm test' của agent-team, TUYỆT ĐỐI KHÔNG trộn vào đây.
+#    - Mục 'validation' ở dưới CHỈ chứa các lệnh test thực tế của dự án đích (ví dụ: Python unittest, pytest).
+# 2. Trung thực về Kiểm thử:
+#    - Nếu dự án chưa có test suite và bỏ trống mục 'validation', hệ thống sẽ ghi nhận
+#      rõ "No validation checks configured" chứ không giả lập là test đã chạy thành công.
+# 3. Bảo vệ Bất biến (Hardcoded Protection):
+#    - Toàn bộ thư mục 'agent-team/**' luôn được lõi Orchestrator bảo vệ tự động,
+#      không cần phải khai báo thủ công trong protected_files.
+# ==============================================================================
+
+project:
+  # Mã định danh dự án và ngôn ngữ chính
+  id: "tool-download-stable"
+  language: "python"
+
+  # ----------------------------------------------------------------------------
+  # 1. THƯ MỤC ĐƯỢC PHÉP CAN THIỆP (ALLOWED DIRECTORIES)
+  # AI chỉ được phép đọc/ghi/tạo file bên trong các thư mục được liệt kê ở đây.
+  # Bất kỳ tác vụ nào cố tình sửa file ngoài các thư mục này sẽ bị Applier chặn đứng.
+  # ----------------------------------------------------------------------------
+  allowed_dirs:
+    - "core/"         # Logic xử lý nghiệp vụ video, transcript, AI studio, connectors
+    - "ui/"           # Giao diện desktop CustomTkinter (legacy UI)
+    - "ui_bridge/"    # Cầu nối RPC giữa PyWebView và Python backend
+    - "ui_web/"       # Giao diện web frontend Studio v2.0 (HTML/CSS/JS)
+    - "tests/"        # Bộ kiểm thử đơn vị Python unittest
+
+  # ----------------------------------------------------------------------------
+  # 2. DANH SÁCH FILE ĐƯỢC BẢO VỆ ĐẶC BIỆT (PROTECTED FILES)
+  # Các file mang tính chất rào chắn hoặc cấu hình gói của dự án đích.
+  # AI bị cấm sửa đổi các file này trừ khi có sự cho phép rõ ràng từ con người.
+  # ----------------------------------------------------------------------------
+  protected_files:
+    - "tests/test_indentation.py" # Rào chắn bắt buộc 100% TAB indentation cho Python
+    - "package.json"              # Định nghĩa dependency npm của frontend / studio
+    - "requirements.txt"          # Định nghĩa dependency Python của dự án
+
+  # ----------------------------------------------------------------------------
+  # 3. BỘ KIỂM THỬ TỰ ĐỘNG CỦA DỰ ÁN (PROJECT VALIDATION GATES)
+  # Orchestrator sẽ tự động chạy các lệnh này sau khi AI viết code để xác nhận kết quả.
+  # ----------------------------------------------------------------------------
+  validation:
+    # Fast Checks: Kiểm tra nhanh (chạy ở mọi task, thời gian < 30s)
+    fast_checks:
+      - name: "tab_indentation_check"
+        run: ".\\.venv\\Scripts\\python.exe -m unittest tests/test_indentation.py"
+        timeout_sec: 15
+
+    # Suite Checks: Kiểm tra toàn diện (chạy ở Standard Mode hoặc trước khi bàn giao hoàn tất)
+    suite_checks:
+      - name: "unit_test_suite"
+        run: ".\\.venv\\Scripts\\python.exe -m unittest discover -s tests -v"
+        timeout_sec: 180

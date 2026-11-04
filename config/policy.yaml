@@ -1,73 +1,156 @@
+# ==============================================================================
+# 🛡️ AGENT TEAM OPERATIONAL POLICY CONFIGURATION (policy.yaml)
+# ==============================================================================
+# MỤC ĐÍCH (PURPOSE):
+# - File này định nghĩa các "chính sách vận hành" (HOW TO OPERATE) cho Đội ngũ AI.
+# - Dành cho: Người dùng muốn điều chỉnh giới hạn an toàn (scope, timeouts, retries,
+#   ngân sách token, cổng kiểm duyệt AI Reviewer, hành vi git commit).
+#
+# NGUYÊN TẮC HỆ THỐNG (ENGINE INVARIANTS & MERGE BEHAVIOR):
+# 1. Fallback An Toàn: Nếu bạn xóa bỏ hoặc không khai báo bất kỳ trường nào,
+#    Orchestrator sẽ tự động sử dụng giá trị mặc định tích hợp trong code
+#    (DEFAULT_POLICY_CONFIG trong risk-policy.mjs). Việc xóa YAML không làm vỡ hệ thống.
+# 2. Bất biến Cốt Lõi:
+#    - task_modes (quick, standard, consult) là enum cố định trong lõi framework.
+#      Không thể xóa mode hoặc biến mode 'consult' thành mode sửa code (mutation_enabled luôn là false).
+#    - Thư mục framework 'agent-team/**' luôn được bảo vệ tuyệt đối ở cấp độ engine.
+# 3. Validation tách biệt:
+#    - Lệnh kiểm thử (tests, linter) thuộc về dự án đích, đã được chuyển sang 'project.yaml'.
+# ==============================================================================
+
 policy:
+  # ----------------------------------------------------------------------------
+  # 1. KIỂM SOÁT PHẠM VI SỬA ĐỔI (SCOPE CONTROL)
+  # ----------------------------------------------------------------------------
   scope_control:
+    # Số file tối đa mà một task được phép sửa đổi (tránh AI sửa lan man mất kiểm soát)
     max_files_per_task: 5
+
+    # Số file tối đa mà AI Writer được phép xin mở rộng thêm ngoài scope ban đầu
     max_scope_increase: 1
+
+    # Cho phép tạo file mới hay không (true = được tạo file mới trong scope cho phép)
     allow_new_files: true
-    new_files_only_in_scope: true # File tạo mới bắt buộc phải nằm trong task.scope đã duyệt
+
+    # Bắt buộc file tạo mới phải được khai báo rõ ràng trong danh sách task.scope
+    new_files_only_in_scope: true
+
+    # Cưỡng chế nghiêm ngặt: từ chối mọi patch can thiệp vào file ngoài scope
     strict_scope_enforcement: true
 
-  task_modes: # Phục vụ phân làn Quick Mode, Standard Mode và Consult Mode
+  # ----------------------------------------------------------------------------
+  # 2. THAM SỐ CÁC LÀN CHẠY TASK (TASK MODES)
+  # Các mode Quick, Standard, Consult là kiến trúc bất biến của Orchestrator.
+  # Người dùng có thể điều chỉnh thời gian timeout hoặc số file tối đa của từng mode.
+  # ----------------------------------------------------------------------------
+  task_modes:
+    # Chế độ Chạy Nhanh: Dành cho task nhỏ, sửa 1-3 file, bỏ qua Router & Reviewer để tiết kiệm token
     quick:
       max_files: 3
       max_runtime_sec: 180
       skip_router_and_reviewer: true
+
+    # Chế độ Tiêu Chuẩn: Dành cho task thông thường, đầy đủ quy trình kiểm duyệt
     standard:
       max_runtime_sec: 600
       skip_router_and_reviewer: false
+
+    # Chế độ Tư Vấn / Đọc Chỉ: Dành cho nghiên cứu, tra cứu kiến trúc, viết báo cáo Markdown.
+    # [LƯU Ý]: mutation_enabled luôn luôn bị khóa ở mức FALSE bởi Engine, không thể ghi code.
     consult:
       max_runtime_sec: 180
       skip_router_and_reviewer: true
       mutation_enabled: false
 
+  # ----------------------------------------------------------------------------
+  # 3. CỔNG PHÊ DUYỆT RỦI RO & REVIEW (APPROVAL GATES)
+  # ----------------------------------------------------------------------------
   approval_gates:
+    # Chế độ duyệt kế hoạch: "auto_if_small" (tự duyệt nếu task nhỏ) hoặc "always_manual"
     plan_approval_mode: "auto_if_small"
+
+    # Ngưỡng file để coi là task nhỏ (<= threshold sẽ được auto duyệt nếu rủi ro thấp)
     small_task_threshold_files: 3
+
+    # Có bật bước AI Reviewer (Claude/Opus) kiểm tra code sau khi Writer hoàn thành không
     require_code_review: true
-    review_min_risk_level: "high" # Chỉ gọi AI Reviewer (Opus) khi risk_level >= high (high/critical); low & medium dùng Validator 0-token
+
+    # Ngưỡng rủi ro tối thiểu để kích hoạt AI Reviewer: "high" (chỉ review task rủi ro cao/critical),
+    # giúp tiết kiệm token đáng kể vì các task low & medium đã có bộ kiểm tra 0-token (Validator)
+    review_min_risk_level: "high"
+
+    # Yêu cầu con người phê duyệt nếu phát hiện sửa đổi chéo vai trò / module nhạy cảm
     require_human_approval_for_cross_role_edit: true
 
+  # ----------------------------------------------------------------------------
+  # 4. CHÍNH SÁCH THỬ LẠI & PHANH NGÂN SÁCH (RETRY & ESCALATION)
+  # ----------------------------------------------------------------------------
   retry_and_escalation:
+    # Số lần AI Writer được phép thử sửa lại khi gặp lỗi test/validator
     max_retries_per_task: 3
+
+    # Số lần liên tiếp gặp CHÍNH XÁC một mã lỗi (tránh AI lặp vô tận một cách ngây ngô)
     abort_on_identical_error_count: 2
+
+    # Hành vi khi hết số lần retry: "mark_blocked_and_continue" (đánh dấu blocked và chuyển task tiếp)
     on_exhausted: "mark_blocked_and_continue"
+
+    # Phanh an toàn 1: Ngân sách token tối đa cho 1 task đơn lẻ
     token_budget_per_task: 150000
+
+    # Phanh an toàn 2: Tổng ngân sách token tối đa khi chạy chế độ xuyên đêm (unattended)
     night_token_budget_total: 3000000
 
+  # ----------------------------------------------------------------------------
+  # 5. RÀO CHẮN THỰC THI LỆNH (EXECUTION GUARDRAILS - HR-1 & HR-2)
+  # ----------------------------------------------------------------------------
   execution_guardrails:
+    # Bắt buộc mọi lệnh shell / CLI phải có thời gian timeout hữu hạn (chống treo tiến trình)
     enforce_command_timeouts: true
-    kill_process_tree_on_timeout: true # Diệt tận gốc tiến trình con trên Windows (taskkill /T /F)
+
+    # Diệt tận gốc toàn bộ cây tiến trình con khi timeout trên Windows (taskkill /T /F)
+    kill_process_tree_on_timeout: true
+
+    # Thời gian timeout mặc định cho các lệnh CLI (giây)
     default_cli_timeout_sec: 180
+
+    # Timeout kiểm tra sức khỏe cổng kết nối 9Router (giây)
     healthcheck_timeout_sec: 15
+
+    # Timeout kết nối mạng socket (giây)
     network_connect_timeout_sec: 5
+
+    # Thời gian tối đa cho 1 request mạng (giây)
     network_max_time_sec: 180
+
+    # Thời gian im lặng tối đa cho phép trước khi cảnh báo tiến trình có thể bị treo
     max_silence_duration_sec: 60
+
+    # Ưu tiên sử dụng MCP tools khi khả dụng
     prefer_mcp_tools: true
+
+    # Cấm tuyệt đối các lệnh chạy không giới hạn thời gian (chống sleep vô tận)
     ban_unbounded_commands: true
-    block_powershell_curl_alias: true # Bắt buộc dùng curl.exe hoặc native fetch có AbortSignal
-    strict_model_match: true # Chặn task nếu 9Router trả về model khác với model đã yêu cầu trong team.yaml
 
+    # Cấm alias 'curl' của PowerShell trên Windows (vì nó là Invoke-WebRequest dễ bị treo vĩnh viễn)
+    # Bắt buộc dùng 'curl.exe' có tham số --max-time rõ ràng
+    block_powershell_curl_alias: true
+
+    # Kiểm tra tính toàn vẹn model: từ chối tiếp tục nếu upstream trả về model sai lệch
+    strict_model_match: true
+
+  # ----------------------------------------------------------------------------
+  # 6. QUY TẮC QUẢN LÝ GIT (GIT HYGIENE)
+  # ----------------------------------------------------------------------------
   git_hygiene:
+    # Bắt buộc working tree phải sạch (clean) trước khi bắt đầu task
     require_clean_worktree_before_start: true
-    rollback_on_validation_fail: true
-    auto_commit_on_done: true
-    commit_message_prefix: "[AI-Task]"
 
-  # Chốt kiểm tra chất lượng tự động (0-Token Deterministic Quality Gate)
-  validation:
-    fast_checks:
-      - name: "tab_indentation_check"
-        run: ".\\.venv\\Scripts\\python.exe -m unittest tests/test_indentation.py"
-        timeout_sec: 15
-      - name: "agent_team_self_test"
-        run: "node agent-team/scripts/test-applier-v2.1.mjs"
-        timeout_sec: 10
-      - name: "agent_runtime_self_test"
-        run: "node agent-team/scripts/test-runtime-v3.mjs"
-        timeout_sec: 10
-      - name: "agent_cockpit_self_test"
-        run: "node agent-team/scripts/test-cockpit.mjs"
-        timeout_sec: 10
-    suite_checks:
-      - name: "unit_test_suite"
-        run: ".\\.venv\\Scripts\\python.exe -m unittest discover -s tests -v"
-        timeout_sec: 180
+    # Tự động rollback (git checkout/clean) trả lại trạng thái cũ nếu task thất bại validator
+    rollback_on_validation_fail: true
+
+    # Tự động tạo git commit khi task hoàn thành đạt 100% tiêu chí và vượt qua kiểm thử
+    auto_commit_on_done: true
+
+    # Tiền tố của commit message tự động do AI tạo ra
+    commit_message_prefix: "[AI-Task]"
