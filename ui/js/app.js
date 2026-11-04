@@ -102,6 +102,27 @@
     let csrfToken = null;
     let currentDraftTasks = [];
 
+    // Modal Task Detail Elements
+    const modalTaskDetailOverlay = document.getElementById('modal-task-detail-overlay');
+    const taskDetailHeaderId = document.getElementById('task-detail-header-id');
+    const taskDetailModeBadge = document.getElementById('task-detail-mode-badge');
+    const taskDetailRiskBadge = document.getElementById('task-detail-risk-badge');
+    const taskDetailStatusBadge = document.getElementById('task-detail-status-badge');
+    const btnCloseTaskDetail = document.getElementById('btn-close-task-detail');
+    const btnDismissTaskDetail = document.getElementById('btn-dismiss-task-detail');
+    const taskDetailTitle = document.getElementById('task-detail-title');
+    const taskDetailGoal = document.getElementById('task-detail-goal');
+    const taskDetailOwner = document.getElementById('task-detail-owner');
+    const taskDetailModel = document.getElementById('task-detail-model');
+    const taskDetailScopePills = document.getElementById('task-detail-scope-pills');
+    const taskDetailCriteriaList = document.getElementById('task-detail-criteria-list');
+    const taskDetailConstraintsList = document.getElementById('task-detail-constraints-list');
+    const btnCopyTaskYaml = document.getElementById('btn-copy-task-yaml');
+    const taskDetailRawYaml = document.getElementById('task-detail-raw-yaml');
+    const btnSaveTaskDetail = document.getElementById('btn-save-task-detail');
+    let currentViewingTaskId = null;
+    let currentViewingRawYaml = '';
+
     // Tab 3 Sessions Elements
     const sessionsList = document.getElementById('sessions-list');
     const sessionsCountBadge = document.getElementById('sessions-count-badge');
@@ -782,11 +803,23 @@
 
         const badges = document.createElement('div');
         badges.style.display = 'flex';
-        badges.style.gap = '4px';
+        badges.style.alignItems = 'center';
+        badges.style.gap = '6px';
+
+        if (t.model) {
+          const modelTag = document.createElement('span');
+          modelTag.className = 'tag';
+          modelTag.style.background = 'rgba(99, 102, 241, 0.15)';
+          modelTag.style.border = '1px solid rgba(99, 102, 241, 0.35)';
+          modelTag.style.color = '#a5b4fc';
+          modelTag.textContent = t.model.split('/').pop();
+          modelTag.title = `Chỉ định model: ${t.model}`;
+          badges.appendChild(modelTag);
+        }
 
         const modeBadge = document.createElement('span');
         modeBadge.className = 'tag tag-' + (t.mode === 'full' ? 'standard' : 'quick');
-        modeBadge.textContent = t.mode.toUpperCase();
+        modeBadge.textContent = (t.mode || 'quick').toUpperCase();
 
         const riskBadge = document.createElement('span');
         riskBadge.className = 'tag tag-' + (t.risk_level || 'low');
@@ -794,6 +827,57 @@
 
         badges.appendChild(modeBadge);
         badges.appendChild(riskBadge);
+
+        // Actions: Chi tiết & Xóa
+        const actions = document.createElement('div');
+        actions.className = 'draft-card-actions';
+
+        const btnDetail = document.createElement('button');
+        btnDetail.className = 'btn-draft-action';
+        btnDetail.textContent = '🔍 Chi Tiết';
+        btnDetail.title = 'Xem chi tiết file task YAML';
+        btnDetail.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openTaskDetailModal(t.task_id);
+        });
+
+        const btnDelete = document.createElement('button');
+        btnDelete.className = 'btn-draft-action btn-draft-delete';
+        btnDelete.textContent = '🗑️ Xóa';
+        btnDelete.title = 'Xóa vĩnh viễn file task này';
+        btnDelete.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (!confirm(`Bạn có chắc muốn xóa task "${t.task_id}" không?\nFile task YAML trong tasks/active/ sẽ bị xóa.`)) {
+            return;
+          }
+          try {
+            btnDelete.disabled = true;
+            btnDelete.textContent = 'Đang xóa...';
+            const res = window.CockpitApi?.deleteTask
+              ? await window.CockpitApi.deleteTask(t.task_id)
+              : await (await fetch('/api/task/delete', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-Dashboard-Token': csrfToken || ''
+                  },
+                  body: JSON.stringify({ task_id: t.task_id })
+                })).json();
+            if (!res.ok) throw new Error(res.error || 'Không thể xóa task');
+            currentDraftTasks = currentDraftTasks.filter(item => item.task_id !== t.task_id);
+            renderDraftTasks(currentDraftTasks);
+            fetchSnapshot();
+          } catch (err) {
+            alert('Lỗi xóa task: ' + err.message);
+            btnDelete.disabled = false;
+            btnDelete.textContent = '🗑️ Xóa';
+          }
+        });
+
+        actions.appendChild(btnDetail);
+        actions.appendChild(btnDelete);
+        badges.appendChild(actions);
+
         head.appendChild(idSpan);
         head.appendChild(badges);
 
@@ -808,7 +892,7 @@
         const crit = document.createElement('div');
         crit.className = 'draft-card-criteria';
         const critList = t.acceptance_criteria || [];
-        crit.textContent = 'Tiêu chí nghiệm thu: ' + critList.join(' • ');
+        crit.textContent = 'Tiêu chí nghiệm thu: ' + (critList.length > 0 ? critList.join(' • ') : '(None)');
 
         card.appendChild(head);
         card.appendChild(title);
@@ -818,6 +902,180 @@
       });
 
       btnApproveRun.disabled = false;
+    }
+
+    // ==============================================================================
+    // TASK DETAIL MODAL HANDLERS
+    // ==============================================================================
+    async function openTaskDetailModal(taskId) {
+      if (!modalTaskDetailOverlay) return;
+      modalTaskDetailOverlay.style.display = 'flex';
+      currentViewingTaskId = taskId;
+
+      // Loading placeholder
+      if (taskDetailHeaderId) taskDetailHeaderId.textContent = `Chi Tiết: ${taskId}`;
+      if (taskDetailTitle) taskDetailTitle.value = 'Đang tải thông tin task...';
+      if (taskDetailGoal) taskDetailGoal.value = '';
+      if (taskDetailOwner) taskDetailOwner.value = '';
+      if (taskDetailModel) taskDetailModel.value = '';
+      if (taskDetailScopePills) taskDetailScopePills.innerHTML = '';
+      if (taskDetailCriteriaList) taskDetailCriteriaList.innerHTML = '';
+      if (taskDetailConstraintsList) taskDetailConstraintsList.innerHTML = '';
+      if (taskDetailRawYaml) taskDetailRawYaml.textContent = 'Đang tải file YAML...';
+
+      try {
+        const res = window.CockpitApi?.getTaskDetail
+          ? await window.CockpitApi.getTaskDetail(taskId)
+          : await (await fetch(`/api/task/detail?id=${encodeURIComponent(taskId)}`)).json();
+
+        if (!res.ok) throw new Error(res.error || 'Không thể tải chi tiết task');
+        const t = res.task || {};
+        currentViewingRawYaml = res.raw_yaml || '';
+
+        if (taskDetailHeaderId) taskDetailHeaderId.textContent = `Chi Tiết: ${res.task_id || taskId}`;
+        if (taskDetailModeBadge) {
+          taskDetailModeBadge.textContent = (t.mode || 'quick').toUpperCase();
+          taskDetailModeBadge.className = 'tag tag-' + (t.mode === 'full' ? 'standard' : 'quick');
+        }
+        if (taskDetailRiskBadge) {
+          taskDetailRiskBadge.textContent = (t.risk_level || 'low').toUpperCase();
+          taskDetailRiskBadge.className = 'tag tag-' + (t.risk_level || 'low');
+        }
+        if (taskDetailStatusBadge) {
+          taskDetailStatusBadge.textContent = (t.status || 'draft_review').toUpperCase();
+        }
+        if (taskDetailTitle) taskDetailTitle.value = t.title || '';
+        if (taskDetailGoal) taskDetailGoal.value = t.goal || '';
+        if (taskDetailOwner) taskDetailOwner.value = t.owner || 'writer';
+        if (taskDetailModel) taskDetailModel.value = t.model || '(Mặc định theo team.yaml)';
+
+        // Scope pills
+        if (taskDetailScopePills) {
+          taskDetailScopePills.innerHTML = '';
+          const scopes = Array.isArray(t.scope) ? t.scope : [];
+          if (scopes.length === 0) {
+            taskDetailScopePills.innerHTML = '<span style="color:var(--text-muted);font-style:italic;font-size:11px;">(Chưa giới hạn scope)</span>';
+          } else {
+            scopes.forEach(sc => {
+              const pill = document.createElement('span');
+              pill.className = 'task-scope-pill';
+              pill.textContent = sc;
+              taskDetailScopePills.appendChild(pill);
+            });
+          }
+        }
+
+        // Criteria list
+        if (taskDetailCriteriaList) {
+          taskDetailCriteriaList.innerHTML = '';
+          const crits = Array.isArray(t.acceptance_criteria) ? t.acceptance_criteria : [];
+          crits.forEach(c => {
+            const li = document.createElement('li');
+            li.textContent = c;
+            taskDetailCriteriaList.appendChild(li);
+          });
+          if (crits.length === 0) {
+            taskDetailCriteriaList.innerHTML = '<li style="color:var(--text-muted);font-style:italic;">(Không có)</li>';
+          }
+        }
+
+        // Constraints list
+        if (taskDetailConstraintsList) {
+          taskDetailConstraintsList.innerHTML = '';
+          const cons = Array.isArray(t.constraints) ? t.constraints : [];
+          cons.forEach(c => {
+            const li = document.createElement('li');
+            li.textContent = c;
+            taskDetailConstraintsList.appendChild(li);
+          });
+          if (cons.length === 0) {
+            taskDetailConstraintsList.innerHTML = '<li style="color:var(--text-muted);font-style:italic;">(Không có)</li>';
+          }
+        }
+
+        // Raw YAML Viewer
+        if (taskDetailRawYaml) {
+          taskDetailRawYaml.textContent = currentViewingRawYaml;
+        }
+      } catch (err) {
+        if (taskDetailTitle) taskDetailTitle.value = `Lỗi tải task: ${err.message}`;
+        if (taskDetailRawYaml) taskDetailRawYaml.textContent = `Lỗi: ${err.message}`;
+      }
+    }
+
+    function closeTaskDetailModal() {
+      if (modalTaskDetailOverlay) {
+        modalTaskDetailOverlay.style.display = 'none';
+        currentViewingTaskId = null;
+        currentViewingRawYaml = '';
+      }
+    }
+
+    if (btnCloseTaskDetail) btnCloseTaskDetail.addEventListener('click', closeTaskDetailModal);
+    if (btnDismissTaskDetail) btnDismissTaskDetail.addEventListener('click', closeTaskDetailModal);
+    if (modalTaskDetailOverlay) {
+      modalTaskDetailOverlay.addEventListener('click', (e) => {
+        if (e.target === modalTaskDetailOverlay) closeTaskDetailModal();
+      });
+    }
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && modalTaskDetailOverlay && modalTaskDetailOverlay.style.display === 'flex') {
+        closeTaskDetailModal();
+      }
+    });
+
+    if (btnCopyTaskYaml) {
+      btnCopyTaskYaml.addEventListener('click', async () => {
+        if (!currentViewingRawYaml) return;
+        try {
+          await navigator.clipboard.writeText(currentViewingRawYaml);
+          const old = btnCopyTaskYaml.textContent;
+          btnCopyTaskYaml.textContent = '✓ Đã Copy!';
+          setTimeout(() => { btnCopyTaskYaml.textContent = old; }, 1500);
+        } catch {
+          alert('Không thể copy vào clipboard');
+        }
+      });
+    }
+
+    // ==============================================================================
+    // RESERVED HOOK: SỬA VÀ LƯU CHI TIẾT TASK (Chờ User giải thích quy trình)
+    // ==============================================================================
+    async function handleSaveTaskEdit(taskId, updatedTaskData = null, rawYaml = null) {
+      const tid = taskId || currentViewingTaskId;
+      if (!tid) throw new Error('Không xác định được task_id để lưu');
+      const res = window.CockpitApi?.saveTask
+        ? await window.CockpitApi.saveTask(tid, updatedTaskData, rawYaml)
+        : await (await fetch('/api/task/save', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Dashboard-Token': csrfToken || ''
+            },
+            body: JSON.stringify({ task_id: tid, task: updatedTaskData, raw_yaml: rawYaml })
+          })).json();
+      if (!res.ok) throw new Error(res.error || 'Không thể lưu task');
+      fetchSnapshot();
+      return res;
+    }
+    // Expose on window for programmatic call & future binding
+    window.handleSaveTaskEdit = handleSaveTaskEdit;
+
+    if (btnSaveTaskDetail) {
+      btnSaveTaskDetail.addEventListener('click', async () => {
+        try {
+          btnSaveTaskDetail.disabled = true;
+          btnSaveTaskDetail.textContent = 'Đang lưu...';
+          await handleSaveTaskEdit(currentViewingTaskId);
+          alert('Đã lưu thành công!');
+          closeTaskDetailModal();
+        } catch (err) {
+          alert('Lỗi lưu task: ' + err.message);
+        } finally {
+          btnSaveTaskDetail.disabled = false;
+          btnSaveTaskDetail.textContent = '💾 Lưu Thay Đổi';
+        }
+      });
     }
 
     // Approve & Run Action
@@ -1747,6 +2005,20 @@
 
         // 10. Task Queue List
         renderTaskQueue(data.queue || {});
+
+        // 10a. Auto-sync draft tasks in Cockpit (draft_review status)
+        const activeDrafts = (data.queue?.active || []).filter(t => t.status === 'draft_review');
+        if (currentDraftTasks.length === 0 && activeDrafts.length > 0) {
+          currentDraftTasks = activeDrafts;
+          renderDraftTasks(currentDraftTasks);
+        } else if (currentDraftTasks.length > 0) {
+          const activeIds = new Set((data.queue?.active || []).map(t => t.task_id));
+          const stillExisting = currentDraftTasks.filter(t => activeIds.has(t.task_id));
+          if (stillExisting.length !== currentDraftTasks.length) {
+            currentDraftTasks = stillExisting;
+            renderDraftTasks(currentDraftTasks);
+          }
+        }
 
         // 10b. Agent Sessions & Tool Receipts
         renderSessionsList(data.sessions || []);

@@ -1,0 +1,79 @@
+<!-- MODAL TASK DETAIL (Xem và chừa sẵn hook sửa/lưu chi tiết Task YAML) -->
+<div id="modal-task-detail-overlay" class="config-modal-backdrop" style="display: none;">
+  <div class="config-modal-dialog config-modal-dialog-pro task-detail-dialog">
+    <!-- Header -->
+    <div class="config-modal-header">
+      <div class="config-modal-title">
+        <span class="cfg-header-icon">📋</span>
+        <span class="cfg-header-text" id="task-detail-header-id">Chi Tiết Nhiệm Vụ</span>
+      </div>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <span id="task-detail-mode-badge" class="tag tag-quick">QUICK</span>
+        <span id="task-detail-risk-badge" class="tag tag-low">LOW</span>
+        <span id="task-detail-status-badge" class="tag tag-standard">DRAFT_REVIEW</span>
+        <button id="btn-close-task-detail" class="btn-modal-close" title="Đóng (Esc)">✕</button>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div class="config-modal-body task-detail-body">
+      <div class="task-detail-form-grid">
+        <div class="form-group full-width">
+          <label class="form-label">Tiêu Đề (Title):</label>
+          <input type="text" id="task-detail-title" class="task-input" readonly placeholder="Tiêu đề task...">
+        </div>
+
+        <div class="form-group full-width">
+          <label class="form-label">Mục Tiêu Cụ Thể (Goal):</label>
+          <textarea id="task-detail-goal" class="task-textarea" readonly rows="2" placeholder="Mục tiêu task..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Vai Trò (Owner):</label>
+          <input type="text" id="task-detail-owner" class="task-input" readonly value="writer">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Mô Hình Chỉ Định (Model Override):</label>
+          <input type="text" id="task-detail-model" class="task-input" readonly placeholder="(Mặc định từ team.yaml)">
+        </div>
+
+        <div class="form-group full-width">
+          <label class="form-label">Phạm Vi File Được Phép Sửa (Scope):</label>
+          <div id="task-detail-scope-pills" class="task-scope-pills"></div>
+        </div>
+
+        <div class="form-group full-width">
+          <label class="form-label">Tiêu Chí Nghiệm Thu (Acceptance Criteria):</label>
+          <ul id="task-detail-criteria-list" class="task-criteria-list"></ul>
+        </div>
+
+        <div class="form-group full-width">
+          <label class="form-label">Ràng Buộc Kỹ Thuật (Constraints):</label>
+          <ul id="task-detail-constraints-list" class="task-constraints-list"></ul>
+        </div>
+
+        <div class="form-group full-width">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="form-label" style="margin-bottom: 0;">Nội Dung File YAML Gốc (Task Contract):</label>
+            <button id="btn-copy-task-yaml" class="btn-ctrl" style="font-size: 11px;">📋 Copy YAML</button>
+          </div>
+          <pre id="task-detail-raw-yaml" class="task-raw-yaml-viewer"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer with save hook reserved -->
+    <div class="task-detail-footer">
+      <div style="font-size: 11px; color: var(--text-muted); font-style: italic;">
+        💡 Chế độ xem chi tiết task.
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button id="btn-save-task-detail" class="btn-save-cfg" style="display: none;">
+          <span>💾 Lưu Thay Đổi</span>
+        </button>
+        <button id="btn-dismiss-task-detail" class="btn-cancel-cfg">Đóng</button>
+      </div>
+    </div>
+  </div>
+</div>

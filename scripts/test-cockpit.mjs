@@ -129,6 +129,68 @@ async function runCockpitTests() {
       console.log('✓ Restored original team.yaml.');
     }
 
+    // Test 7: GET /api/task/detail, POST /api/task/save, POST /api/task/delete
+    console.log('7. Testing /api/task/detail, /api/task/save, /api/task/delete lifecycle...');
+    const testTaskId = `T-test-crud-${Date.now()}`;
+    const testTaskFile = path.resolve(ACTIVE_DIR, `${testTaskId}.yaml`);
+    fs.writeFileSync(testTaskFile, `task:\n  task_id: "${testTaskId}"\n  title: "Test CRUD Task"\n  status: "draft_review"\n  mode: "quick"\n  goal: "Verify CRUD API"\n`, 'utf8');
+
+    try {
+      // 7a. GET detail
+      const detailRes = await fetch(`http://127.0.0.1:${testPort}/api/task/detail?id=${encodeURIComponent(testTaskId)}`);
+      assert.strictEqual(detailRes.status, 200, 'GET /api/task/detail should return 200');
+      const detailData = await detailRes.json();
+      assert.ok(detailData.ok, 'detailData.ok should be true');
+      assert.strictEqual(detailData.task_id, testTaskId);
+      assert.strictEqual(detailData.task.title, 'Test CRUD Task');
+      assert.ok(detailData.raw_yaml.includes('Verify CRUD API'), 'raw_yaml should contain task content');
+      console.log('✓ /api/task/detail verified successfully.');
+
+      // 7b. POST save (editing task)
+      const saveRes = await fetch(`http://127.0.0.1:${testPort}/api/task/save`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Dashboard-Token': DASHBOARD_CSRF_TOKEN
+        },
+        body: JSON.stringify({
+          task_id: testTaskId,
+          raw_yaml: `task:\n  task_id: "${testTaskId}"\n  title: "Updated CRUD Task"\n  status: "draft_review"\n  mode: "quick"\n  goal: "Verify Save Hook"\n`
+        })
+      });
+      assert.strictEqual(saveRes.status, 200, 'POST /api/task/save should return 200');
+      const saveData = await saveRes.json();
+      assert.ok(saveData.ok, 'saveData.ok should be true');
+      const savedYaml = fs.readFileSync(testTaskFile, 'utf8');
+      assert.ok(savedYaml.includes('Updated CRUD Task'), 'File on disk must reflect saved content');
+      console.log('✓ /api/task/save verified successfully.');
+
+      // 7c. POST delete without CSRF token must be 403
+      const delUnauth = await fetch(`http://127.0.0.1:${testPort}/api/task/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: testTaskId })
+      });
+      assert.strictEqual(delUnauth.status, 403, 'Unauthorized /api/task/delete must be 403');
+
+      // 7d. POST delete with CSRF token deletes file
+      const delAuth = await fetch(`http://127.0.0.1:${testPort}/api/task/delete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Dashboard-Token': DASHBOARD_CSRF_TOKEN
+        },
+        body: JSON.stringify({ task_id: testTaskId })
+      });
+      assert.strictEqual(delAuth.status, 200, 'Authorized /api/task/delete must return 200');
+      const delData = await delAuth.json();
+      assert.ok(delData.ok, 'delData.ok should be true');
+      assert.strictEqual(fs.existsSync(testTaskFile), false, 'Task file must be deleted from disk');
+      console.log('✓ /api/task/delete verified successfully.');
+    } finally {
+      if (fs.existsSync(testTaskFile)) fs.unlinkSync(testTaskFile);
+    }
+
     console.log('\n=============================================');
     console.log('ALL COCKPIT & CSRF SECURITY TESTS PASSED! 🎯');
     console.log('=============================================');

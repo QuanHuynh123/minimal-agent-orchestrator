@@ -211,5 +211,147 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
     return true;
   }
 
+  // --- Task Operations: Detail, Delete, Save ---
+
+  if (req.method === 'GET' && url.pathname === '/api/task/detail') {
+    try {
+      const taskId = String(url.searchParams.get('id') || '').trim();
+      if (!taskId || taskId.includes('..') || taskId.includes('/') || taskId.includes('\\')) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: 'Invalid task id' }));
+        return true;
+      }
+      let foundTask = null;
+      let rawYaml = '';
+      if (fs.existsSync(tasksActiveDir)) {
+        const allFiles = fs.readdirSync(tasksActiveDir).filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
+        for (const af of allFiles) {
+          const fp = path.resolve(tasksActiveDir, af);
+          const rawContent = fs.readFileSync(fp, 'utf8');
+          const parsed = loadYamlSafe(fp);
+          const raw = (parsed?.task && typeof parsed.task === 'object') ? parsed.task : parsed;
+          if (raw?.task_id === taskId || raw?.id === taskId || af === `${taskId}.yaml` || af === `${taskId}.yml`) {
+            foundTask = raw;
+            rawYaml = rawContent;
+            break;
+          }
+        }
+      }
+      if (!foundTask) {
+        res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: `Task "${taskId}" not found in active queue.` }));
+        return true;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: true, task_id: taskId, task: foundTask, raw_yaml: rawYaml }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return true;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/task/delete') {
+    const auth = verifyCsrfAndOrigin(req);
+    if (!auth.ok) {
+      res.writeHead(auth.status, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: auth.error }));
+      return true;
+    }
+
+    try {
+      const body = await parseJsonBody(req);
+      const taskId = String(body.task_id || '').trim();
+      if (!taskId || taskId.includes('..') || taskId.includes('/') || taskId.includes('\\')) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: 'Invalid task_id' }));
+        return true;
+      }
+      let deleted = false;
+      const candidateFiles = [
+        path.resolve(tasksActiveDir, `${taskId}.yaml`),
+        path.resolve(tasksActiveDir, `${taskId}.yml`)
+      ];
+      for (const f of candidateFiles) {
+        if (fs.existsSync(f)) {
+          fs.unlinkSync(f);
+          deleted = true;
+          break;
+        }
+      }
+      if (!deleted && fs.existsSync(tasksActiveDir)) {
+        const allFiles = fs.readdirSync(tasksActiveDir).filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
+        for (const af of allFiles) {
+          const fp = path.resolve(tasksActiveDir, af);
+          const parsed = loadYamlSafe(fp);
+          const raw = (parsed?.task && typeof parsed.task === 'object') ? parsed.task : parsed;
+          if (raw?.task_id === taskId || raw?.id === taskId) {
+            fs.unlinkSync(fp);
+            deleted = true;
+            break;
+          }
+        }
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: true, deleted, task_id: taskId }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return true;
+  }
+
+  // Hook reserved for task editing & saving
+  if (req.method === 'POST' && url.pathname === '/api/task/save') {
+    const auth = verifyCsrfAndOrigin(req);
+    if (!auth.ok) {
+      res.writeHead(auth.status, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: auth.error }));
+      return true;
+    }
+
+    try {
+      const body = await parseJsonBody(req);
+      const taskId = String(body.task_id || '').trim();
+      if (!taskId || taskId.includes('..') || taskId.includes('/') || taskId.includes('\\')) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: 'Invalid task_id' }));
+        return true;
+      }
+      let targetPath = path.resolve(tasksActiveDir, `${taskId}.yaml`);
+      if (!fs.existsSync(targetPath) && fs.existsSync(tasksActiveDir)) {
+        const allFiles = fs.readdirSync(tasksActiveDir).filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
+        for (const af of allFiles) {
+          const fp = path.resolve(tasksActiveDir, af);
+          const parsed = loadYamlSafe(fp);
+          const raw = (parsed?.task && typeof parsed.task === 'object') ? parsed.task : parsed;
+          if (raw?.task_id === taskId || raw?.id === taskId) {
+            targetPath = fp;
+            break;
+          }
+        }
+      }
+      let yamlContent = '';
+      if (body.raw_yaml && typeof body.raw_yaml === 'string') {
+        yamlContent = body.raw_yaml;
+      } else if (body.task && typeof body.task === 'object') {
+        const existing = fs.existsSync(targetPath) ? loadYamlSafe(targetPath) : {};
+        const container = (existing?.task && typeof existing.task === 'object')
+          ? { task: { ...existing.task, ...body.task, updated_at: new Date().toISOString() } }
+          : { task: { ...body.task, updated_at: new Date().toISOString() } };
+        yamlContent = YAML.stringify(container);
+      } else {
+        throw new Error('Either raw_yaml or task object must be provided');
+      }
+      fs.writeFileSync(targetPath, yamlContent, 'utf8');
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: true, message: 'Task saved successfully', task_id: taskId }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return true;
+  }
+
   return false;
 }

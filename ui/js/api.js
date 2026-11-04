@@ -129,6 +129,43 @@
       const res = await request(`/api/session?id=${encodeURIComponent(sessionId)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch session`);
       return res.json();
+    },
+
+    async deleteTask(taskId) {
+      const res = await request('/api/task/delete', {
+        method: 'POST',
+        body: JSON.stringify({ task_id: taskId })
+      });
+      if (!res.ok) {
+        let errData;
+        try { errData = await res.json(); } catch {}
+        throw new Error(errData?.error || `HTTP ${res.status}: Failed to delete task`);
+      }
+      return res.json();
+    },
+
+    async getTaskDetail(taskId) {
+      const res = await request(`/api/task/detail?id=${encodeURIComponent(taskId)}`);
+      if (!res.ok) {
+        let errData;
+        try { errData = await res.json(); } catch {}
+        throw new Error(errData?.error || `HTTP ${res.status}: Failed to get task detail`);
+      }
+      return res.json();
+    },
+
+    // Reserved hook for editing and saving tasks
+    async saveTask(taskId, taskData = null, rawYaml = null) {
+      const res = await request('/api/task/save', {
+        method: 'POST',
+        body: JSON.stringify({ task_id: taskId, task: taskData, raw_yaml: rawYaml })
+      });
+      if (!res.ok) {
+        let errData;
+        try { errData = await res.json(); } catch {}
+        throw new Error(errData?.error || `HTTP ${res.status}: Failed to save task`);
+      }
+      return res.json();
     }
   };
 

@@ -1969,8 +1969,16 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
-      max-height: 260px;
+      max-height: 380px;
       overflow-y: auto;
+      padding-right: 4px;
+    }
+    .draft-cards-list::-webkit-scrollbar {
+      width: 5px;
+    }
+    .draft-cards-list::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
     }
     .draft-card {
       background: #141418;
@@ -2075,11 +2083,11 @@
 
     /* Bottom: Live Console Logs */
     .console-card {
-      flex: 0.85;
+      flex: 0.35;
       display: flex;
       flex-direction: column;
-      min-height: 140px;
-      max-height: 220px;
+      min-height: 95px;
+      max-height: 135px;
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -2161,4 +2169,124 @@
     .log-msg {
       color: #cbd5e1;
       flex: 1;
+    }
+
+    /* Task Card Action Buttons */
+    .draft-card-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .btn-draft-action {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      color: var(--text-secondary);
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-size: 10.5px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      user-select: none;
+    }
+    .btn-draft-action:hover {
+      background: rgba(255, 255, 255, 0.14);
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+    .btn-draft-delete:hover {
+      background: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+      border-color: rgba(239, 68, 68, 0.45);
+    }
+
+    /* Task Detail Modal Pro */
+    .task-detail-dialog {
+      max-width: 820px;
+      width: 90vw;
+      max-height: 85vh;
+    }
+    .task-detail-body {
+      overflow-y: auto;
+      max-height: calc(85vh - 125px);
+      padding: 16px 20px;
+    }
+    .task-detail-form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .task-detail-form-grid .full-width {
+      grid-column: 1 / -1;
+    }
+    .task-input {
+      width: 100%;
+      background: #101014;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text-primary);
+      font-size: 12px;
+      padding: 7px 10px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .task-textarea {
+      width: 100%;
+      background: #101014;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text-primary);
+      font-size: 12px;
+      padding: 7px 10px;
+      font-family: inherit;
+      box-sizing: border-box;
+      resize: vertical;
+    }
+    .task-scope-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 2px;
+    }
+    .task-scope-pill {
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.35);
+      color: #93c5fd;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+    .task-criteria-list, .task-constraints-list {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+    .task-raw-yaml-viewer {
+      background: #09090b;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #a7f3d0;
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin: 0;
+      box-sizing: border-box;
+    }
+    .task-detail-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      background: #131317;
+      border-radius: 0 0 10px 10px;
     }
