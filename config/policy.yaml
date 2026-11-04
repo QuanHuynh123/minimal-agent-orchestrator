@@ -6,7 +6,7 @@ policy:
     new_files_only_in_scope: true # File tạo mới bắt buộc phải nằm trong task.scope đã duyệt
     strict_scope_enforcement: true
 
-  task_modes: # Phục vụ phân làn Quick Mode vs Standard Mode
+  task_modes: # Phục vụ phân làn Quick Mode, Standard Mode và Consult Mode
     quick:
       max_files: 3
       max_runtime_sec: 180
@@ -14,6 +14,10 @@ policy:
     standard:
       max_runtime_sec: 600
       skip_router_and_reviewer: false
+    consult:
+      max_runtime_sec: 180
+      skip_router_and_reviewer: true
+      mutation_enabled: false
 
   approval_gates:
     plan_approval_mode: "auto_if_small"

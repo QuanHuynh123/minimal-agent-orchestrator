@@ -539,6 +539,89 @@ async function runOrchestrator() {
     });
 
     try {
+      task.mode = resolveTaskMode(task, policyConfig.policy);
+
+      // ==========================================
+      // CONSULTATION TRACK (Read-Only Advisory, Bypasses Mutation Gates)
+      // ==========================================
+      if (task.mode === 'consult') {
+        const consultRole = task.role || 'designer';
+        const roleCfg = teamConfig.roles?.[consultRole] || {};
+        const consultModel = task.model || roleCfg.default_model || roleCfg.model;
+        const promptText = task.goal || task.prompt || task.title || 'Review codebase and provide consultation.';
+
+        console.log(`[START] ${task.task_id} | Mode: consult | Role: ${consultRole} | Model: ${consultModel || 'default'} | Goal: ${sanitizeGoal(promptText)}`);
+
+        updateLiveStatus({
+          current_stage: 'consult',
+          stage_started_at: new Date().toISOString(),
+          roles_status: {
+            [consultRole]: { model: consultModel || 'default', status: 'working' }
+          }
+        });
+
+        const consultTimeoutSec = policyConfig.policy?.task_modes?.consult?.max_runtime_sec || 180;
+        const agentRes = await runAgent({
+          role: consultRole,
+          prompt: promptText,
+          sessionId: `${task.task_id}-consult`,
+          scope: Array.isArray(task.scope) ? task.scope : [],
+          attachments: Array.isArray(task.attachments) ? task.attachments : (task.image ? [task.image] : []),
+          modelOverride: consultModel,
+          timeoutMs: consultTimeoutSec * 1000,
+          repoRoot: REPO_ROOT
+        });
+
+        if (!agentRes.ok) {
+          blockReason = `Consultation agent failed: ${agentRes.error}`;
+          task.status = 'blocked';
+          throw new Error(blockReason);
+        }
+
+        const reportsDir = path.resolve(TEAM_DIR, 'state', 'reports');
+        if (!fs.existsSync(reportsDir)) {
+          fs.mkdirSync(reportsDir, { recursive: true });
+        }
+        const reportFile = `${task.task_id}-report.md`;
+        const reportPath = path.resolve(reportsDir, reportFile);
+        const receiptsSummary = (agentRes.tool_receipts && agentRes.tool_receipts.length > 0)
+          ? `\n\n## 3. Tool Receipts (${agentRes.tool_receipts.length})\n` + agentRes.tool_receipts.map(r => `- [Turn ${r.turn}] \`${r.tool}\`: ${JSON.stringify(r.summary)}`).join('\n')
+          : '';
+
+        const reportContent = [
+          `# Consultation Report: ${task.title || task.goal || task.task_id}`,
+          `- **Task ID:** \`${task.task_id}\``,
+          `- **Role:** \`${consultRole}\``,
+          `- **Model Used:** \`${agentRes.model_used || consultModel || 'default'}\``,
+          `- **Timestamp:** ${new Date().toISOString()}`,
+          `- **Turns Executed:** ${agentRes.turns_executed || 1}`,
+          '',
+          '## 1. Inquiry / Goal',
+          promptText,
+          '',
+          '## 2. Advisory & Findings',
+          agentRes.content || '(No textual content produced)',
+          receiptsSummary
+        ].join('\n');
+
+        fs.writeFileSync(reportPath, reportContent.trim() + '\n', 'utf8');
+
+        task.report_file = `agent-team/state/reports/${reportFile}`;
+        task.report_content = agentRes.content;
+        validationPassed = true;
+        actualModifiedFiles = [];
+        isTaskDone = true;
+        console.log(`[Consult] Report generated successfully: ${task.report_file}`);
+
+        updateLiveStatus({
+          roles_status: {
+            [consultRole]: { model: consultModel || 'default', status: 'done' }
+          }
+        });
+
+        continue;
+      }
+
       // ==========================================
       // OPTIONAL ROUTER PLANNER (For 'draft' tasks without scope)
       // ==========================================

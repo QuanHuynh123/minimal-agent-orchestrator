@@ -137,10 +137,13 @@ console.log('✓ Scope expansion limit, new_files_only_in_scope & high-risk esca
 // Test 6: Task Schema Normalization (task_id vs task.id) & Mode Resolution
 const legacyTask = normalizeTask({ task: { id: 'T-001', scope: ['core/a.py'] } });
 const flatTask = normalizeTask({ task_id: 'T-002', scope: ['core/a.py', 'core/b.py', 'core/c.py', 'core/d.py'] });
+const consultTask = normalizeTask({ task_id: 'T-003', mode: 'consult', role: 'designer', goal: 'Review layout' });
 assert.strictEqual(legacyTask.task_id, 'T-001');
 assert.strictEqual(legacyTask.id, 'T-001');
 assert.strictEqual(resolveTaskMode(legacyTask), 'quick');
 assert.strictEqual(resolveTaskMode(flatTask), 'standard');
+assert.strictEqual(resolveTaskMode(consultTask), 'consult');
+assert.strictEqual(shouldRunReviewerGate(consultTask, { task_modes: { consult: { skip_router_and_reviewer: true } } }, { reviewer: { enabled: true } }), false);
 assert.strictEqual(resolveEffectiveRisk(legacyTask), 'low');
 assert.strictEqual(resolveEffectiveRisk(flatTask), 'medium');
 assert.strictEqual(shouldRunReviewerGate({ ...legacyTask, mode: 'standard' }, { approval_gates: { require_code_review: true, review_min_risk_level: 'high' } }, { reviewer: { enabled: true } }), false);

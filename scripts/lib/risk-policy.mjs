@@ -30,7 +30,7 @@ export function shouldRunReviewerGate(task = {}, policy = {}, roles = {}) {
   }
   const mode = (task.mode || '').toLowerCase();
   const modeConfig = policy.task_modes?.[mode] || {};
-  const skipReviewer = modeConfig.skip_router_and_reviewer ?? (mode === 'quick' || mode === 'direct');
+  const skipReviewer = modeConfig.skip_router_and_reviewer ?? (mode === 'quick' || mode === 'direct' || mode === 'consult');
   const requireReview = policy.approval_gates?.require_code_review ?? true;
   if (skipReviewer || !requireReview) {
     return false;
@@ -44,7 +44,7 @@ export function shouldRunReviewerGate(task = {}, policy = {}, roles = {}) {
 
 export function resolveTaskMode(task, policy = {}) {
   const explicitMode = (task.mode || '').toLowerCase();
-  if (explicitMode === 'direct' || explicitMode === 'quick' || explicitMode === 'standard') {
+  if (explicitMode === 'direct' || explicitMode === 'quick' || explicitMode === 'standard' || explicitMode === 'consult') {
     return explicitMode;
   }
   const smallThreshold = policy.approval_gates?.small_task_threshold_files ?? 3;
