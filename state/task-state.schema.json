@@ -46,6 +46,7 @@
       "type": "string",
       "enum": ["router", "writer", "validator", "reviewer", "human"]
     },
+    "model": { "type": "string" },
     "goal": { "type": "string" },
     "scope": {
       "type": "array",

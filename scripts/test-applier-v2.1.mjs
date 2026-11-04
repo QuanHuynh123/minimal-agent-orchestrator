@@ -315,8 +315,9 @@ assert.ok(customRepoRoot.replace(/\\/g, '/').endsWith('/core'));
 
 // Test Goal Planner helpers
 assert.strictEqual(slugify('Tích Hợp PDF Export'), 'tich-hop-pdf-export');
-const jsonExtracted = extractJsonPayload('Here is the plan:\n```json\n{"tasks": [{"title": "Demo"}]}\n```');
+const jsonExtracted = extractJsonPayload('Here is the plan:\n```json\n{"tasks": [{"title": "Demo", "model": "kr/claude-sonnet-4.5-thinking"}]}\n```');
 assert.strictEqual(jsonExtracted.tasks[0].title, 'Demo');
+assert.strictEqual(jsonExtracted.tasks[0].model, 'kr/claude-sonnet-4.5-thinking');
 
 const matchExact = verifyResponseModel(
   'Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017',

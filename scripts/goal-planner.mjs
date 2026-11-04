@@ -83,6 +83,20 @@ export async function decomposeGoal(goal, options = {}) {
   const policyConfig = loadYamlSafe(path.resolve(TEAM_DIR, 'config', 'policy.local.yaml'))
     || loadYamlSafe(POLICY_CONFIG_FILE)
     || {};
+  const teamConfig = loadYamlSafe(path.resolve(TEAM_DIR, 'config', 'team.local.yaml'))
+    || loadYamlSafe(path.resolve(TEAM_DIR, 'config', 'team.yaml'))
+    || {};
+  const writerRole = teamConfig.roles?.writer || {};
+  const designerRole = teamConfig.roles?.designer || {};
+  const backendModel = writerRole.default_model || writerRole.model || 'deepseek-ai/deepseek-v4.1-flash-1017';
+  const frontendModel = designerRole.default_model || designerRole.model || 'kr/claude-sonnet-4.5-thinking';
+  const modelPool = Array.from(new Set([
+    backendModel,
+    frontendModel,
+    ...(Array.isArray(writerRole.models) ? writerRole.models : []),
+    ...(Array.isArray(designerRole.models) ? designerRole.models : [])
+  ].filter(Boolean)));
+
   const projectId = policyConfig.policy?.project_id || 'my-workspace';
   const repoRoot = options.repoRoot || resolveRepoRoot(policyConfig);
   const maxFilesPerTask = policyConfig.policy?.scope_control?.max_files_per_task || 5;
@@ -110,26 +124,36 @@ export async function decomposeGoal(goal, options = {}) {
     `REPOSITORY ARCHITECTURE CONTEXT:`,
     routerContext,
     ``,
+    `AVAILABLE WORKER MODELS:`,
+    `- Backend / Logic / Core / Tests: "${backendModel}"`,
+    `- Frontend / UI / UX / Styling / Web: "${frontendModel}"`,
+    `- Available Model Pool: [${modelPool.map(m => `"${m}"`).join(', ')}]`,
+    ``,
     `INSTRUCTIONS:`,
     `1. You are the AI Software Architect & Router. Inspect the codebase thoroughly using tools if needed (list_files, search_code, read_file).`,
     `2. Decompose the goal into 1 to 3 ATOMIC, sequential tasks (< 150 lines modified per task).`,
     `3. Every task MUST define an explicit "scope" of files (relative to repository root) that actually exist or will be created in allowed directories: [${allowedDirs.join(', ')}].`,
-    `4. Code edits in scope MUST preserve the exact indentation style (tabs or spaces) and coding conventions of the target files.`,
-    `5. Frontend/Web files in scope MUST mandate: "Zero-Trust Anti-XSS (chỉ dùng textContent hoặc escapeHtml, không gán raw innerHTML)".`,
-    `6. Every task MUST define at least 2 measurable, testable "acceptance_criteria".`,
-    `7. Output STRICT JSON conforming to the following schema with NO surrounding chatter:`,
+    `4. Model Assignment: Assign the exact "model" ID for each task based on its nature or explicit user request:`,
+    `   - For backend, database, APIs, core logic, or test files -> designate "${backendModel}".`,
+    `   - For UI, frontend, CSS, HTML, icon, layout, or visual styling -> designate "${frontendModel}".`,
+    `   - If user request specifically asks for a model (e.g. Gemini, DeepSeek, Claude), designate that matching model from the pool.`,
+    `5. Code edits in scope MUST preserve the exact indentation style (tabs or spaces) and coding conventions of the target files.`,
+    `6. Frontend/Web files in scope MUST mandate: "Zero-Trust Anti-XSS (chỉ dùng textContent hoặc escapeHtml, không gán raw innerHTML)".`,
+    `7. Every task MUST define at least 2 measurable, testable "acceptance_criteria".`,
+    `8. Output STRICT JSON conforming to the following schema with NO surrounding chatter:`,
     `{`,
     `  "tasks": [`,
     `    {`,
     `      "title": "Short descriptive title (Vietnamese or English)",`,
     `      "goal": "Precise goal describing what this atomic task achieves",`,
     `      "mode": "quick", // "quick" for single file/light edits, "standard" for complex logic`,
+    `      "model": "${backendModel}", // Designate exact model ID: "${backendModel}" for backend or "${frontendModel}" for UI`,
     `      "risk_level": "low", // "low", "medium", or "high"`,
     `      "scope": ["src/example.js", "tests/test_example.js"],`,
     `      "constraints": [`,
     `        "Giữ nguyên chuẩn thụt lề (indentation) của file gốc trong dự án",`,
     `        "Giữ nguyên tính tương thích ngược",`,
-    `        "Pass 100% test suite liên quan"` ,
+    `        "Pass 100% test suite liên quan"`,
     `      ],`,
     `      "acceptance_criteria": [`,
     `        "Cụ thể tiêu chí 1",`,
@@ -200,6 +224,10 @@ export async function decomposeGoal(goal, options = {}) {
             : [`Code changes pass tests and validator fast`]
         }
       };
+
+      if (rawTask.model && typeof rawTask.model === 'string' && rawTask.model.trim()) {
+        canonicalTask.task.model = rawTask.model.trim();
+      }
 
       if (!options.dryRun) {
         fs.mkdirSync(ACTIVE_TASKS_DIR, { recursive: true });

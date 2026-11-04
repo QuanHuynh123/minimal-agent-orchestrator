@@ -16,6 +16,7 @@ acceptance_criteria:
 # 2. CÁC TRƯỜNG TÙY CHỌN (OPTIONAL — CÓ GIÁ TRỊ MẶC ĐỊNH AN TOÀN)
 # ============================================================================
 mode: "quick" # "quick" (<=3 files, low/medium risk) | "standard" (đầy đủ quy trình có Reviewer) | "consult" (tư vấn/khảo sát kiến trúc, chỉ đọc không sửa code)
+model: "deepseek-ai/deepseek-v4.1-flash-1017" # Tùy chọn: chỉ định đích danh model cho task; nếu bỏ trống sẽ dùng model mặc định trong team.yaml
 risk_level: "low" # "low" | "medium" | "high" | "critical"
 force_ai_review: false # Đặt true nếu muốn ép chạy AI Reviewer ngay cả khi risk_level là low/medium
 constraints:

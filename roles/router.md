@@ -14,6 +14,7 @@ Bạn là Router của hệ thống điều phối AI Agent Squad. Nhiệm vụ 
     "Bước 1: Mô tả ngắn gọn",
     "Bước 2: Mô tả ngắn gọn"
   ],
+  "model": "deepseek-ai/deepseek-v4.1-flash-1017", // Tùy chọn: chỉ định model phù hợp tính chất task (backend/frontend) hoặc theo yêu cầu
   "scope": [
     "tests/test_example.py",
     "core/example.py"
