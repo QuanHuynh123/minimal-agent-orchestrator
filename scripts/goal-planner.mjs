@@ -81,14 +81,19 @@ export async function decomposeGoal(goal, options = {}) {
     return { ok: false, error: 'User goal cannot be empty' };
   }
 
-  const projectConfig = fs.existsSync(PROJECT_LOCAL_CONFIG_FILE)
-    ? loadYamlSafe(PROJECT_LOCAL_CONFIG_FILE)
-    : loadYamlSafe(PROJECT_CONFIG_FILE);
   const policyConfig = loadYamlSafe(POLICY_CONFIG_FILE);
-  const repoRoot = options.repoRoot || resolveRepoRoot(projectConfig);
-  const projectId = projectConfig.project?.id || 'my-workspace';
-  const allowedDirs = projectConfig.project?.allowed_dirs || ['src', 'lib', 'app', 'core', 'tests'];
+  const repoRoot = options.repoRoot || resolveRepoRoot();
   const maxFilesPerTask = policyConfig.policy?.scope_control?.max_files_per_task || 5;
+
+  // Auto-detect project directories (excluding hidden and internal folders)
+  let allowedDirs = ['*'];
+  try {
+    const entries = fs.readdirSync(repoRoot, { withFileTypes: true });
+    allowedDirs = entries
+      .filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules' && e.name !== 'agent-team')
+      .map(e => e.name);
+  } catch {}
+  if (allowedDirs.length === 0) allowedDirs = ['*'];
 
   const routerContext = buildRouterContext(allowedDirs, repoRoot, 300);
 

@@ -94,8 +94,22 @@ export function matchesPattern(filePath, pattern) {
   return normPath === normPat || normPath.endsWith('/' + normPat);
 }
 
+export const BUILTIN_PROTECTED_FILES = [
+  '**/.env*',
+  '.git/**',
+  'agent-team/scripts/**',
+  'agent-team/runtime/**',
+  'agent-team/config/**',
+  '**/*secret*',
+  '**/*keyring*'
+];
+
 export function checkForbidden(relPath, protectedFiles = [], taskForbidden = []) {
-  const allForbidden = [...(protectedFiles || []), ...(taskForbidden || [])];
+  const allForbidden = [
+    ...BUILTIN_PROTECTED_FILES,
+    ...(protectedFiles || []),
+    ...(taskForbidden || [])
+  ];
   for (const pat of allForbidden) {
     if (matchesPattern(relPath, pat)) {
       return { forbidden: true, pattern: pat };
@@ -105,7 +119,7 @@ export function checkForbidden(relPath, protectedFiles = [], taskForbidden = [])
 }
 
 export function checkAllowedDirs(relPath, allowedDirs = []) {
-  if (!allowedDirs || allowedDirs.length === 0) return true;
+  if (!allowedDirs || allowedDirs.length === 0 || allowedDirs.includes('*')) return true;
   const normPath = relPath.replace(/\\/g, '/').toLowerCase();
   return allowedDirs.some(dir => {
     const d = dir.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();

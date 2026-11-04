@@ -63,7 +63,7 @@ export function resolveApiKey(teamCfg = {}) {
   return process.env[envKeyName] || teamCfg?.providers?.local_9router?.default_key || 'sk-default';
 }
 
-export function validateConfig(teamCfg = {}, policyCfg = {}, projectCfg = {}) {
+export function validateConfig(teamCfg = {}, policyCfg = {}, projectCfg = null) {
   const errors = [];
   if (!teamCfg?.providers?.local_9router?.base_url) {
     errors.push('team.yaml: missing providers.local_9router.base_url');
@@ -71,12 +71,14 @@ export function validateConfig(teamCfg = {}, policyCfg = {}, projectCfg = {}) {
   if (!teamCfg?.roles?.writer?.model) {
     errors.push('team.yaml: missing roles.writer.model');
   }
-  const allowedDirs = projectCfg?.project?.allowed_dirs;
-  if (!Array.isArray(allowedDirs) || allowedDirs.length === 0) {
-    errors.push('project.yaml: project.allowed_dirs must be a non-empty array');
+  if (projectCfg && projectCfg.project && projectCfg.project.allowed_dirs) {
+    const allowedDirs = projectCfg.project.allowed_dirs;
+    if (!Array.isArray(allowedDirs)) {
+      errors.push('project.yaml: project.allowed_dirs must be an array');
+    }
   }
   const maxFiles = policyCfg?.policy?.scope_control?.max_files_per_task;
-  if (typeof maxFiles !== 'number' || maxFiles <= 0) {
+  if (maxFiles !== undefined && (typeof maxFiles !== 'number' || maxFiles <= 0)) {
     errors.push('policy.yaml: policy.scope_control.max_files_per_task must be a positive number');
   }
   return { ok: errors.length === 0, errors };

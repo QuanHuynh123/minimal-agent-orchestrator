@@ -51,3 +51,23 @@ policy:
     rollback_on_validation_fail: true
     auto_commit_on_done: true
     commit_message_prefix: "[AI-Task]"
+
+  # Chốt kiểm tra chất lượng tự động (0-Token Deterministic Quality Gate)
+  validation:
+    fast_checks:
+      - name: "tab_indentation_check"
+        run: ".\\.venv\\Scripts\\python.exe -m unittest tests/test_indentation.py"
+        timeout_sec: 15
+      - name: "agent_team_self_test"
+        run: "node agent-team/scripts/test-applier-v2.1.mjs"
+        timeout_sec: 10
+      - name: "agent_runtime_self_test"
+        run: "node agent-team/scripts/test-runtime-v3.mjs"
+        timeout_sec: 10
+      - name: "agent_cockpit_self_test"
+        run: "node agent-team/scripts/test-cockpit.mjs"
+        timeout_sec: 10
+    suite_checks:
+      - name: "unit_test_suite"
+        run: ".\\.venv\\Scripts\\python.exe -m unittest discover -s tests -v"
+        timeout_sec: 180

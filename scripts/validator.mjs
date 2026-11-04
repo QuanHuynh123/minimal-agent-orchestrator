@@ -86,10 +86,11 @@ export function checkCommandGuardrails(cmd = '', timeoutMs = 60000, guardrails =
  * Inspects git modified files and verifies none violate protected_files, allowed_dirs, or declared scope.
  */
 export function auditGitScope(declaredScope = [], options = {}) {
-  const projCfg = options.projectConfig || loadProjectConfig() || {};
+  const policyCfg = loadPolicyConfig()?.policy || loadPolicyConfig() || {};
+  const projCfg = options.projectConfig || {};
   const repoRoot = resolveRepoRoot(projCfg);
-  const allowedDirs = options.allowedDirs || projCfg.project?.allowed_dirs || [];
-  const protectedFiles = options.protectedFiles || projCfg.project?.protected_files || [];
+  const allowedDirs = options.allowedDirs || projCfg.project?.allowed_dirs || policyCfg.allowed_dirs || ['*'];
+  const protectedFiles = options.protectedFiles || projCfg.project?.protected_files || policyCfg.protected_files || [];
   const targetFilter = options.checkAllWorktree ? [] : declaredScope;
 
   const modified = options.modifiedFiles || getModifiedFiles(targetFilter);
@@ -233,13 +234,19 @@ export function runCommandAsync(cmd, cwd = REPO_ROOT, timeoutMs = 60000, guardra
 }
 
 export async function validateFast(projectConfig) {
-  const cfg = projectConfig || loadProjectConfig();
+  const cfg = projectConfig || loadProjectConfig() || loadPolicyConfig() || {};
   const repoRoot = resolveRepoRoot(cfg);
-  if (!cfg?.project?.validation?.fast_checks) {
+  const fastChecks = cfg?.project?.validation?.fast_checks
+    || cfg?.policy?.validation?.fast_checks
+    || cfg?.validation?.fast_checks
+    || loadPolicyConfig()?.policy?.validation?.fast_checks
+    || loadPolicyConfig()?.validation?.fast_checks;
+
+  if (!fastChecks || fastChecks.length === 0) {
     return { ok: true, message: 'No fast_checks defined.' };
   }
 
-  for (const item of cfg.project.validation.fast_checks) {
+  for (const item of fastChecks) {
     const res = await runCommandAsync(item.run, repoRoot, item.timeout_sec ? item.timeout_sec * 1000 : 30000);
     if (!res.ok) {
       const errCombined = `${res.stdout}\n${res.stderr}`.trim();
@@ -260,13 +267,19 @@ export async function validateFast(projectConfig) {
 }
 
 export async function validateSuite(projectConfig) {
-  const cfg = projectConfig || loadProjectConfig();
+  const cfg = projectConfig || loadProjectConfig() || loadPolicyConfig() || {};
   const repoRoot = resolveRepoRoot(cfg);
-  if (!cfg?.project?.validation?.suite_checks) {
+  const suiteChecks = cfg?.project?.validation?.suite_checks
+    || cfg?.policy?.validation?.suite_checks
+    || cfg?.validation?.suite_checks
+    || loadPolicyConfig()?.policy?.validation?.suite_checks
+    || loadPolicyConfig()?.validation?.suite_checks;
+
+  if (!suiteChecks || suiteChecks.length === 0) {
     return { ok: true, message: 'No suite_checks defined.' };
   }
 
-  for (const item of cfg.project.validation.suite_checks) {
+  for (const item of suiteChecks) {
     const res = await runCommandAsync(item.run, repoRoot, item.timeout_sec ? item.timeout_sec * 1000 : 120000);
     if (!res.ok) {
       const errCombined = `${res.stdout}\n${res.stderr}`.trim();
