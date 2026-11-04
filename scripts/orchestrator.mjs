@@ -297,7 +297,7 @@ async function runRouterPlanner(task) {
 }
 
 // 5b. Reviewer Gate (Executed only in 'standard' mode when require_code_review is true)
-async function runReviewerGate(task, scopedFiles, previousReviewIssues = []) {
+async function runReviewerGate(task, scopedFiles, previousReviewIssues = [], activeWriterModel = null) {
   const reviewerRole = teamConfig.roles?.reviewer || {};
   if (reviewerRole.enabled === false) {
     return { ok: true, skipped: true };
@@ -307,7 +307,7 @@ async function runReviewerGate(task, scopedFiles, previousReviewIssues = []) {
     return { ok: true, skipped: true };
   }
 
-  const reviewerModel = reviewerRole.model || teamConfig.roles?.writer?.model;
+  const reviewerModel = reviewerRole.model || activeWriterModel || teamConfig.roles?.writer?.model;
   if (!reviewerModel) {
     return { ok: false, error: 'Reviewer role has no model configured and no writer model to inherit' };
   }
@@ -324,7 +324,7 @@ async function runReviewerGate(task, scopedFiles, previousReviewIssues = []) {
     maxThinkingTokens: reviewerMaxThinking
   });
   if (!res.ok) {
-    return { ok: false, error: `Reviewer API error: ${res.error}`, usage: { prompt_tokens: 0, completion_tokens: 0 } };
+    return { ok: false, model: reviewerModel, error: `Reviewer API error: ${res.error}`, usage: { prompt_tokens: 0, completion_tokens: 0 } };
   }
 
   try {
@@ -333,6 +333,7 @@ async function runReviewerGate(task, scopedFiles, previousReviewIssues = []) {
     const isPassed = parsed.passed === true;
     return {
       ok: isPassed,
+      model: reviewerModel,
       reviewResult: parsed,
       error: isPassed ? null : `Reviewer rejected diff: ${(parsed.issues || []).join('; ') || 'Rubric check failed'}`,
       usage: res.usage
@@ -748,7 +749,9 @@ async function runOrchestrator() {
 
       // Baseline Fast Check Guard (Ensure repo is not already broken before Writer runs)
       const baselineCheck = await validateFast(projectConfig);
-      if (!baselineCheck.ok) {
+      if (baselineCheck.skipped) {
+        console.log(`[Validator] Baseline check: ${baselineCheck.message}`);
+      } else if (!baselineCheck.ok) {
         blockReason = `Baseline fast check failed before task start (${baselineCheck.checkName}): ${baselineCheck.errorCombined.slice(0, 300)}`;
         task.status = 'blocked';
         throw new Error(blockReason);
@@ -1066,18 +1069,24 @@ async function runOrchestrator() {
           continue;
         }
 
+        const isValidationSkipped = Boolean(fastVal.skipped && suiteVal.skipped);
         validationPassed = true;
-        task.validation_result = { passed: true };
+        task.validation_result = {
+          passed: !isValidationSkipped,
+          skipped: isValidationSkipped,
+          status: isValidationSkipped ? 'skipped' : 'passed',
+          note: isValidationSkipped ? 'No validation checks configured in project.yaml' : 'All validation checks passed'
+        };
 
         updateLiveStatus({
           roles_status: {
             writer: { model: writerModel, status: 'done' },
-            validator: { status: 'passed' },
+            validator: { status: isValidationSkipped ? 'skipped' : 'passed' },
             reviewer: { status: 'idle' }
           },
           scope_files: allTaskFiles.map(f => ({
             path: f,
-            status: 'validated'
+            status: isValidationSkipped ? 'applied' : 'validated'
           }))
         });
 
@@ -1096,7 +1105,8 @@ async function runOrchestrator() {
             }
           });
 
-          const revRes = await runReviewerGate(task, actualModifiedFiles, previousReviewIssues);
+          const revRes = await runReviewerGate(task, actualModifiedFiles, previousReviewIssues, writerModel);
+          const reviewerActualModel = revRes.model || effectiveReviewerModel;
           if (revRes.usage) {
             const rIn = revRes.usage.prompt_tokens || 0;
             const rOut = revRes.usage.completion_tokens || 0;
@@ -1116,7 +1126,7 @@ async function runOrchestrator() {
               roles_status: {
                 writer: { model: writerModel, status: 'done' },
                 validator: { status: 'passed' },
-                reviewer: { model: effectiveReviewerModel, status: 'rejected' }
+                reviewer: { model: reviewerActualModel, status: 'rejected' }
               }
             });
             const revHash = hashString(revRes.error);
@@ -1128,7 +1138,7 @@ async function runOrchestrator() {
             roles_status: {
               writer: { model: writerModel, status: 'done' },
               validator: { status: 'passed' },
-              reviewer: { model: effectiveReviewerModel, status: 'approved' }
+              reviewer: { model: reviewerActualModel, status: 'approved' }
             }
           });
         } else {

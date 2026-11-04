@@ -308,6 +308,10 @@ assert.strictEqual(skippedVal.ok, true);
 assert.strictEqual(skippedVal.skipped, true);
 assert.match(skippedVal.message, /No fast_checks defined/);
 
+// Test Repo Root resolution priority: projectConfig override vs fallback
+const customRepoRoot = resolveRepoRoot({ project: { repo_root: 'core' } });
+assert.ok(customRepoRoot.replace(/\\/g, '/').endsWith('/core'));
+
 const matchExact = verifyResponseModel(
   'Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017',
   'deepseek-ai/deepseek-v4.1-flash-1017'

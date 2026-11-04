@@ -11,11 +11,18 @@ export const TEAM_DIR = path.resolve(__dirname, '..');
 export function resolveRepoRoot(projectConfig = null) {
   let cfg = projectConfig;
   if (!cfg) {
-    const cfgPath = path.resolve(TEAM_DIR, 'config', 'project.yaml');
-    if (fs.existsSync(cfgPath)) {
+    const localCfgPath = path.resolve(TEAM_DIR, 'config', 'project.local.yaml');
+    if (fs.existsSync(localCfgPath)) {
       try {
-        cfg = YAML.parse(fs.readFileSync(cfgPath, 'utf8'));
+        cfg = YAML.parse(fs.readFileSync(localCfgPath, 'utf8'));
       } catch {}
+    } else {
+      const cfgPath = path.resolve(TEAM_DIR, 'config', 'project.yaml');
+      if (fs.existsSync(cfgPath)) {
+        try {
+          cfg = YAML.parse(fs.readFileSync(cfgPath, 'utf8'));
+        } catch {}
+      }
     }
   }
   const configuredRoot = cfg?.project?.repo_root || '..';

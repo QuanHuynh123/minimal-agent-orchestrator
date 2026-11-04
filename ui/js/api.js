@@ -56,11 +56,20 @@
     },
 
     async testModel(model) {
-      const res = await request('/api/test-model', {
-        method: 'POST',
-        body: JSON.stringify({ model })
-      });
-      return res.json();
+      try {
+        const res = await request('/api/test-model', {
+          method: 'POST',
+          body: JSON.stringify({ model })
+        });
+        if (!res.ok) {
+          let errData;
+          try { errData = await res.json(); } catch {}
+          return { ok: false, error: errData?.error || `HTTP ${res.status}` };
+        }
+        return await res.json();
+      } catch (err) {
+        return { ok: false, error: err.message };
+      }
     },
 
     async saveTeamConfig(payload) {
@@ -68,6 +77,11 @@
         method: 'POST',
         body: JSON.stringify(payload)
       });
+      if (!res.ok) {
+        let errData;
+        try { errData = await res.json(); } catch {}
+        throw new Error(errData?.error || `HTTP ${res.status}: Failed to save team config`);
+      }
       return res.json();
     },
 
@@ -76,6 +90,11 @@
         method: 'POST',
         body: JSON.stringify({ goal, ...options })
       });
+      if (!res.ok) {
+        let errData;
+        try { errData = await res.json(); } catch {}
+        throw new Error(errData?.error || `HTTP ${res.status}: Failed to decompose goal`);
+      }
       return res.json();
     },
 
@@ -84,6 +103,11 @@
         method: 'POST',
         body: JSON.stringify({ task_ids: taskIds })
       });
+      if (!res.ok) {
+        let errData;
+        try { errData = await res.json(); } catch {}
+        throw new Error(errData?.error || `HTTP ${res.status}: Failed to approve and start tasks`);
+      }
       return res.json();
     },
 
@@ -92,6 +116,11 @@
         method: 'POST',
         body: JSON.stringify({})
       });
+      if (!res.ok) {
+        let errData;
+        try { errData = await res.json(); } catch {}
+        throw new Error(errData?.error || `HTTP ${res.status}: Failed to stop orchestrator`);
+      }
       return res.json();
     },
 
