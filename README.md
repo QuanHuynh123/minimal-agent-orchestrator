@@ -14,16 +14,17 @@
 ## ⚡ Quickstart 30 Giây (Dành cho Người Mới)
 
 ### 1. Cài đặt & Chạy tự kiểm định
-Clone vào dự án phần mềm của bạn và chạy bộ test tự kiểm 0-token:
+Clone vào dự án phần mềm của bạn và chạy bộ test tự kiểm:
 ```bash
 git clone https://github.com/QuanHuynh123/minimal-agent-orchestrator.git agent-team
 cd agent-team
 npm install
 npm test
 ```
-*(Nếu cả 3 bộ test Applier, Runtime v3 và Cockpit đều báo PASS 100% $\rightarrow$ Hệ thống đã sẵn sàng!)*
+*   **Chạy kiểm thử Offline 0-Token:** Nếu chưa bật Router/LLM, chạy `npm run test:offline` để kiểm tra trọn vẹn 2 bộ lõi `Applier` và `Runtime v3` thuần túy ngoại tuyến.
+*   **Chạy kiểm thử Đầy đủ:** `npm test` sẽ chạy thêm bộ kiểm tra Web Cockpit server & CSRF security (kèm 1 ping kết nối Router).
 
-### 2. Cấu hình tối thiểu 1 Model (1-Model Minimal Setup)
+### 2. Cấu hình tối thiểu 1 Model (`config/team.yaml`)
 Mở file [`config/team.yaml`](config/team.yaml) và điền endpoint cổng LLM (hỗ trợ mọi nhà cung cấp chuẩn OpenAI-compatible như 9Router, OpenRouter, DeepSeek, Ollama, vLLM):
 ```yaml
 providers:
@@ -35,6 +36,12 @@ roles:
     model: "deepseek-ai/deepseek-v4.1-flash-1017" # Điền model của bạn
 ```
 *(Chỉ cần cấu hình duy nhất model cho `writer`, các role khác sẽ tự động kế thừa nếu bạn chưa bật multi-model).*
+
+### 3. Cấu hình Ranh giới Dự án (`config/project.yaml`)
+> **⚠️ LƯU Ý QUAN TRỌNG:** File `config/project.yaml` đi kèm là **cấu hình mẫu** cho dự án Python hiện tại. Trước khi chạy task cho dự án của bạn, hãy mở `config/project.yaml` và thay đổi:
+> - `allowed_dirs`: Thư mục mã nguồn AI được phép sửa (ví dụ: `src/`, `lib/`).
+> - `protected_files`: File nhạy cảm cấm sửa tự do (ví dụ: `package.json`, `.env*`).
+> - `validation`: Lệnh kiểm thử của dự án bạn (ví dụ: `npm test` hoặc `pytest`).
 
 ---
 
@@ -90,8 +97,6 @@ agent-team/
 ├── ONBOARDING.md              # Cẩm nang khởi tạo tối thiểu và chỉ thị cho AI Agent
 ├── package.json               # Các lệnh vận hành (dashboard, plan, agent, start, test)
 ├── README.md                  # Tài liệu kiến trúc và hướng dẫn sử dụng
-├── PHILOSOPHY.md              # Triết lý thiết kế 0-token và bảo vệ working tree
-├── BLUEPRINT.md               # Đặc tả chi tiết cơ chế bảo vệ và luồng dữ liệu
 ├── config/
 │   ├── team.yaml              # Cấu hình Provider (9Router/OpenAI), Role và Model
 │   ├── project.yaml           # Ranh giới dự án (allowed_dirs, protected_files, test commands)
@@ -115,7 +120,9 @@ agent-team/
 │   ├── active/                # Hàng đợi các task đang chờ duyệt (draft_review) hoặc sẵn sàng (ready)
 │   └── archive/               # Lưu trữ các task đã hoàn thành (done / blocked / failed)
 ├── ui/
-│   └── index.html             # Giao diện Web Cockpit Studio v3.0 (Tailwind + Bento Grid)
+│   ├── index.html             # Giao diện Web Cockpit Studio v3.0 (Bento Grid)
+│   ├── css/style.css          # Giao diện Modern Glassmorphism & Dark Mode (Vanilla CSS)
+│   └── js/                    # Client API & Render logic (CockpitApi, app.js)
 └── scripts/
     ├── goal-planner.mjs       # Bộ bóc tách Goal tự nhiên thành Task YAML nguyên tử
     ├── dashboard.mjs          # Máy chủ Web Cockpit (:4310) bảo mật CSRF & Lock Guard

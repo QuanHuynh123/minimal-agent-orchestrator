@@ -13,7 +13,7 @@ Tài liệu này được tách bạch thành **2 Phần độc lập**:
 
 Dành cho nhà phát triển mới clone thư mục `agent-team` vào dự án của mình và muốn bắt đầu làm việc ngay trong vòng 2 phút.
 
-## 1. Cài đặt & Kiểm thử 0-Token (30 giây)
+## 1. Cài đặt & Kiểm thử (30 giây)
 
 Mở Terminal tại thư mục `agent-team` và chạy:
 ```bash
@@ -22,21 +22,22 @@ cd agent-team
 npm install
 npm test
 ```
-*(Nếu cả 3 bài test Applier, Runtime v3 và Cockpit đều báo PASS 100% $\rightarrow$ Hệ thống sẵn sàng mà không tiêu tốn bất kỳ token LLM nào!)*
+*   **Kiểm thử hoàn toàn Offline 0-Token:** Nếu chưa bật Router/LLM, chạy `npm run test:offline` để kiểm tra trọn vẹn 2 bộ lõi `Applier` và `Runtime v3` mà không tiêu tốn token nào.
+*   **Kiểm thử Đầy đủ:** `npm test` sẽ chạy thêm bộ kiểm tra Web Cockpit server & CSRF security (kèm 1 ping nhỏ kiểm tra kết nối Router nếu đang mở).
 
 ---
 
 ## 2. Cấu hình Tối thiểu 1 Model (1-Model Minimal Setup)
 
-Bạn chỉ cần chỉnh sửa đúng 2 file cấu hình đơn giản:
+Bạn chỉ cần kiểm tra/chỉnh sửa đúng 2 file cấu hình đơn giản:
 
 ### A. Cổng kết nối LLM (`config/team.yaml`)
 Hỗ trợ mọi nhà cung cấp chuẩn OpenAI-compatible (9Router, OpenRouter, DeepSeek, Ollama, vLLM):
 ```yaml
 providers:
-  local_gateway:
+  local_9router:
     base_url: "http://127.0.0.1:20128/v1"
-    api_key_env: "LLM_API_KEY"  # Hoặc đặt biến môi trường LLM_API_KEY
+    api_key_env: "NINE_ROUTER_API_KEY"  # Hoặc "LLM_API_KEY"
 roles:
   writer:
     model: "deepseek-ai/deepseek-v4.1-flash-1017" # Model chính của bạn
@@ -44,20 +45,21 @@ roles:
 > **💡 Cơ chế Kế thừa 1-Model:** Bạn **chỉ cần cấu hình duy nhất model cho `writer`**. Các role khác (`router`, `reviewer`) sẽ tự động kế thừa model này nếu bạn chưa cần chia tách nhiều model khác nhau.
 
 ### B. Ranh giới Dự án (`config/project.yaml`)
-Chỉ định thư mục nào AI được phép sửa và lệnh kiểm thử tự động của dự án bạn:
+> **⚠️ LƯU Ý QUAN TRỌNG:** File `config/project.yaml` đi kèm là **cấu hình mẫu của dự án hiện tại**. Trước khi bắt đầu giao task, bạn hãy mở file này và thay đổi cho phù hợp với codebase của bạn:
 ```yaml
 project:
   id: "my-project"
   language: "typescript"
   allowed_dirs:
-    - "src"
-    - "tests"
+    - "src/"         # Thư mục chứa mã nguồn được phép sửa
+    - "tests/"       # Thư mục chứa bài test
   protected_files:
-    - "package.json"
+    - "package.json" # File nhạy cảm cấm AI tự ý sửa
   validation:
     fast_checks:
-      - name: "fast-unit-test"
-        run: "npm test" # Hoặc: pytest tests/, go test ./...
+      - name: "unit_tests"
+        run: "npm test" # Lệnh chạy test của dự án bạn (pytest, go test, npm test, etc.)
+        timeout_sec: 30
 ```
 
 ---
@@ -85,7 +87,7 @@ npm run agent -- --role writer --scope "src/auth.py" --prompt "Bổ sung kiểm 
 ```
 
 ### Cách dùng Lối vào 2: Autonomous Cockpit & Orchestrator
-#### Cách A: Dùng Web Cockpit (Khuyến nghị cho người mới)
+#### Cách A: Dùng Web Cockpit (Khuyến nghị số 1 cho người mới)
 ```bash
 npm run dashboard
 ```
@@ -93,14 +95,19 @@ npm run dashboard
 2. Chuyển sang Tab **`0. 🚀 Goal Studio & Cockpit`**.
 3. Nhập mục tiêu tính năng bằng ngôn ngữ tự nhiên $\rightarrow$ Bấm **`[Decompose Goal to Tasks]`**.
 4. AI Planner sẽ đọc codebase và tạo các task nháp ở trạng thái `draft_review`.
-5. Bạn kiểm tra lại các file trong `scope` $\rightarrow$ Bấm **`[Approve & Run Queue]`**. Tiến trình sẽ tự động chạy ngầm, kiểm thử và thông báo kết quả.
+5. Bạn kiểm tra lại các file trong `scope` $\rightarrow$ Bấm **`[Approve & Run Queue]`**. Bấm 1-chạm hệ thống sẽ tự động đổi `draft_review` sang `ready`, chạy ngầm, kiểm thử và báo cáo kết quả.
 
 #### Cách B: Dùng CLI
 ```bash
 # Bước 1: Bóc tách Goal thành Task YAML
 npm run plan -- "Tích hợp tính năng xuất báo cáo PDF cho module billing"
+# -> Lệnh này sẽ tạo file task trong thư mục tasks/active/ ở trạng thái 'draft_review'
 
-# Bước 2: Kiểm tra file trong tasks/active/ rồi chạy
+# Bước 2: Phê duyệt task để bảo vệ an toàn working tree
+# Mở file tasks/active/<task-id>.yaml, xem lại trường 'scope', rồi đổi:
+# status: "draft_review"  ->  status: "ready"
+
+# Bước 3: Khởi động Orchestrator để tự động viết code & kiểm thử
 npm start
 ```
 

@@ -9,6 +9,7 @@
     "plan": "node scripts/goal-planner.mjs",
     "dashboard": "node scripts/dashboard.mjs",
     "test": "node scripts/test-applier-v2.1.mjs && node scripts/test-runtime-v3.mjs && node scripts/test-cockpit.mjs",
+    "test:offline": "node scripts/test-applier-v2.1.mjs && node scripts/test-runtime-v3.mjs",
     "validate": "node scripts/validator.mjs",
     "git-guard": "node scripts/git-guard.mjs"
   },

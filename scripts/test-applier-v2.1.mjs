@@ -37,6 +37,7 @@ import {
   normalizeErrorForHash,
   validateFast
 } from './validator.mjs';
+import { slugify, extractJsonPayload } from './goal-planner.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -311,6 +312,11 @@ assert.match(skippedVal.message, /No fast_checks defined/);
 // Test Repo Root resolution priority: projectConfig override vs fallback
 const customRepoRoot = resolveRepoRoot({ project: { repo_root: 'core' } });
 assert.ok(customRepoRoot.replace(/\\/g, '/').endsWith('/core'));
+
+// Test Goal Planner helpers
+assert.strictEqual(slugify('Tích Hợp PDF Export'), 'tich-hop-pdf-export');
+const jsonExtracted = extractJsonPayload('Here is the plan:\n```json\n{"tasks": [{"title": "Demo"}]}\n```');
+assert.strictEqual(jsonExtracted.tasks[0].title, 'Demo');
 
 const matchExact = verifyResponseModel(
   'Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017',

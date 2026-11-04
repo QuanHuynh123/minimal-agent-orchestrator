@@ -3,7 +3,7 @@
 # ============================================================================
 task_id: "T-2026-11-02-001"
 title: "Mô tả ngắn gọn tiêu đề task (< 80 ký tự)"
-status: "ready" # Đặt "ready" khi đã có scope rõ ràng; "draft" nếu muốn Router tự lập scope
+status: "ready" # "ready" để chạy ngay; "draft_review" nếu muốn chờ con người duyệt trên Web Cockpit
 goal: "Mô tả cụ thể hàm/lớp cần thêm hoặc sửa (< 150 dòng code thay đổi mỗi task; nếu lớn hơn phải tách thành 001A, 001B)"
 scope:
   - "src/example.py"
@@ -15,7 +15,7 @@ acceptance_criteria:
 # ============================================================================
 # 2. CÁC TRƯỜNG TÙY CHỌN (OPTIONAL — CÓ GIÁ TRỊ MẶC ĐỊNH AN TOÀN)
 # ============================================================================
-mode: "quick" # "quick" (<=3 files, low/medium risk, 0-token Validator) | "standard" (bật Reviewer Gate khi risk >= high)
+mode: "quick" # "quick" (<=3 files, low/medium risk) | "standard" (đầy đủ quy trình có Reviewer) | "consult" (tư vấn/khảo sát kiến trúc, chỉ đọc không sửa code)
 risk_level: "low" # "low" | "medium" | "high" | "critical"
 force_ai_review: false # Đặt true nếu muốn ép chạy AI Reviewer ngay cả khi risk_level là low/medium
 constraints:

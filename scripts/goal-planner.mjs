@@ -35,7 +35,7 @@ function loadYamlSafe(filePath) {
   }
 }
 
-function slugify(text = '', maxLen = 30) {
+export function slugify(text = '', maxLen = 30) {
   return String(text)
     .toLowerCase()
     .normalize('NFD')
@@ -45,7 +45,7 @@ function slugify(text = '', maxLen = 30) {
     .slice(0, maxLen);
 }
 
-function extractJsonPayload(text = '') {
+export function extractJsonPayload(text = '') {
   if (!text || typeof text !== 'string') return null;
   // Try extracting from fenced markdown json blocks first
   const matchFenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
@@ -81,18 +81,24 @@ export async function decomposeGoal(goal, options = {}) {
     return { ok: false, error: 'User goal cannot be empty' };
   }
 
-  const policyConfig = loadYamlSafe(POLICY_CONFIG_FILE);
-  const repoRoot = options.repoRoot || resolveRepoRoot();
+  const policyConfig = loadYamlSafe(POLICY_CONFIG_FILE) || {};
+  const projectConfig = loadYamlSafe(path.resolve(TEAM_DIR, 'config', 'project.local.yaml'))
+    || loadYamlSafe(path.resolve(TEAM_DIR, 'config', 'project.yaml'))
+    || {};
+  const projectId = projectConfig.project?.id || 'my-workspace';
+  const repoRoot = options.repoRoot || resolveRepoRoot(projectConfig);
   const maxFilesPerTask = policyConfig.policy?.scope_control?.max_files_per_task || 5;
 
-  // Auto-detect project directories (excluding hidden and internal folders)
-  let allowedDirs = ['*'];
-  try {
-    const entries = fs.readdirSync(repoRoot, { withFileTypes: true });
-    allowedDirs = entries
-      .filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules' && e.name !== 'agent-team')
-      .map(e => e.name);
-  } catch {}
+  // Use configured allowed_dirs from project.yaml or auto-detect
+  let allowedDirs = projectConfig.project?.allowed_dirs || [];
+  if (!Array.isArray(allowedDirs) || allowedDirs.length === 0) {
+    try {
+      const entries = fs.readdirSync(repoRoot, { withFileTypes: true });
+      allowedDirs = entries
+        .filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules' && e.name !== 'agent-team')
+        .map(e => e.name);
+    } catch {}
+  }
   if (allowedDirs.length === 0) allowedDirs = ['*'];
 
   const routerContext = buildRouterContext(allowedDirs, repoRoot, 300);
