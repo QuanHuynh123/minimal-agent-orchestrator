@@ -10,7 +10,7 @@ providers:
     api_key_env: "NINE_ROUTER_API_KEY"
     default_key: "sk-default"
 
-# Cấu hình chuẩn 4 Vai Trò API 9Router + 1 Validator Cục Bộ
+# Cấu hình chuẩn Vai Trò API 9Router (gồm 2 Writer song song) + 1 Validator Cục Bộ
 roles:
   router:
     enabled: true
@@ -30,6 +30,19 @@ roles:
     display_name: "DeepSeek V4.1 Flash"
     model: "deepseek-ai/deepseek-v4.1-flash-1017"
     fallback_model: "ag/gemini-3.8-flash-medium"
+    temperature: 0.1
+    max_thinking_tokens: 200
+    output_format: "search_replace_blocks"
+    spec_file: "roles/writer.md"
+    allowed_actions: ["backend_write", "frontend_write", "read_scoped_files", "propose_patch"]
+    forbidden_actions: ["out_of_scope_edit", "unapproved_dependency"]
+
+  writer_gemini:
+    enabled: true
+    provider: "local_9router"
+    display_name: "Gemini 3.8 Flash"
+    model: "ag/gemini-3.8-flash-medium"
+    fallback_model: "deepseek-ai/deepseek-v4.1-flash-1017"
     temperature: 0.1
     max_thinking_tokens: 200
     output_format: "search_replace_blocks"

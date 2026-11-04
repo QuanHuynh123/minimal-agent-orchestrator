@@ -240,6 +240,7 @@
     const covPills = {
       router: document.getElementById('cov-pill-router'),
       writer: document.getElementById('cov-pill-writer'),
+      writer_gemini: document.getElementById('cov-pill-writer_gemini'),
       designer: document.getElementById('cov-pill-designer'),
       reviewer: document.getElementById('cov-pill-reviewer')
     };
@@ -402,7 +403,8 @@
             <select class="compact-role-select" data-idx="${idx}">
               <option value="standby" ${member.role === 'standby' ? 'selected' : ''}>💤 Dự Bị (Standby)</option>
               <option value="router" ${member.role === 'router' ? 'selected' : ''}>🧠 Router (Architect)</option>
-              <option value="writer" ${member.role === 'writer' ? 'selected' : ''}>⚡ Writer (Code Generator)</option>
+              <option value="writer" ${member.role === 'writer' ? 'selected' : ''}>⚡ Writer (DeepSeek V4.1)</option>
+              <option value="writer_gemini" ${member.role === 'writer_gemini' ? 'selected' : ''}>⚡ Writer (Gemini 3.8)</option>
               <option value="designer" ${member.role === 'designer' ? 'selected' : ''}>👁️ Designer (Visual Auditor)</option>
               <option value="reviewer" ${member.role === 'reviewer' ? 'selected' : ''}>🛡️ Reviewer (TechLead)</option>
             </select>
@@ -470,7 +472,8 @@
 
       const roleDisplayNames = {
         router: 'Router',
-        writer: 'Writer',
+        writer: 'Writer (DS)',
+        writer_gemini: 'Writer (Gemini)',
         designer: 'Designer',
         reviewer: 'Reviewer'
       };
