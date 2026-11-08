@@ -8,7 +8,7 @@ Khi soạn thảo tài liệu thiết kế, bạn cần trình bày bằng Markd
 1. **Kiến trúc & Luồng xử lý:** Sơ đồ logic tóm tắt cách thức các hàm/lớp tương tác.
 2. **Giao diện & Chữ ký hàm (Signatures & Contracts):** Tên hàm, tham số đầu vào, kiểu dữ liệu trả về, cấu trúc dữ liệu.
 3. **Các trường hợp biên & Ràng buộc (Edge Cases & Invariants):**
-   - Giữ nguyên chuẩn thụt lề (Indentation: 100% TAB cho file `.py`).
+   - Giữ nguyên chuẩn định dạng và thụt lề (indentation: tabs hoặc spaces) theo quy ước của từng file và constraints của dự án.
    - Giữ nguyên bảo mật (Zero-Trust Secret Management, Anti-XSS).
    - Xử lý lỗi (Exception handling, Timeouts).
 4. **Chỉ dẫn triển khai cho Coder:** Hướng dẫn từng bước cụ thể để Coder hiện thực hóa nhanh chóng.

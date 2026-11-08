@@ -48,7 +48,7 @@
       <div class="cockpit-hero">
         <div class="cockpit-hero-title-row">
           <span class="cockpit-title">Phân tích &amp; Bóc tách mục tiêu</span>
-          <span class="tag tag-model">Claude Sonnet 4.5</span>
+          <span class="tag tag-model" id="cockpit-router-model-tag">Router</span>
         </div>
         <p class="cockpit-desc">Nhập tính năng bạn muốn xây dựng bằng ngôn ngữ tự nhiên. Kiến trúc sư AI sẽ quét code thật để phân rã thành các task nguyên tử kèm Scope và Acceptance Criteria chuẩn.</p>
         <textarea id="inp-goal-text" class="goal-textarea" placeholder="Ví dụ: Thêm API kiểm tra trạng thái hệ thống kèm bộ unit test tương ứng..."></textarea>
@@ -60,7 +60,7 @@
         </div>
         <div class="cockpit-actions-row">
           <select id="sel-workflow-preset" class="cfg-search-input preset-select" title="Chế độ định tuyến Writer Hub (Auto Task-Demand × Squad hoặc Cưỡng bức Preset)">
-            <option value="auto">Auto Policy (Task-Demand × Squad)</option>
+            <option value="auto">Auto: Task-Demand × Squad</option>
             <option value="fast">Fast 1-Step (Bỏ qua Spec)</option>
             <option value="architect">Spec + Coder (Architect / Designer)</option>
             <option value="consult">Consult Only (Chỉ Tư Vấn)</option>

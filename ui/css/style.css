@@ -1244,7 +1244,9 @@ main.bento-container.sidebar-collapsed .left-col {
   margin-top: 3px;
 }
 .preset-select {
-  max-width: 260px;
+  flex: 0 1 280px;
+  min-width: 240px;
+  max-width: 300px;
   padding: 6px 10px;
   font-size: 11.5px;
   background: var(--bg-input);

@@ -120,7 +120,7 @@
                 <div class="policy-check-cmd-row">
                   <div class="policy-cmd-input-group">
                     <span class="cmd-prefix">$</span>
-                    <input type="text" id="cfg-fast-cmd" class="policy-cmd-input" value=".\.venv\Scripts\python.exe -m unittest tests/test_indentation.py" spellcheck="false" />
+                    <input type="text" id="cfg-fast-cmd" class="policy-cmd-input" placeholder="Lệnh kiểm tra nhanh (ví dụ: npm run lint hoặc python -m unittest)" spellcheck="false" />
                     <div class="timeout-wrap">
                       <span>Timeout:</span>
                       <input type="number" id="cfg-fast-timeout" class="policy-num-input" value="15" min="5" max="120" />
@@ -147,7 +147,7 @@
                 <div class="policy-check-cmd-row">
                   <div class="policy-cmd-input-group">
                     <span class="cmd-prefix">$</span>
-                    <input type="text" id="cfg-suite-cmd" class="policy-cmd-input" value=".\.venv\Scripts\python.exe -m unittest discover -s tests -v" spellcheck="false" />
+                    <input type="text" id="cfg-suite-cmd" class="policy-cmd-input" placeholder="Lệnh kiểm thử toàn diện (ví dụ: npm test hoặc python -m unittest)" spellcheck="false" />
                     <div class="timeout-wrap">
                       <span>Timeout:</span>
                       <input type="number" id="cfg-suite-timeout" class="policy-num-input" value="180" min="10" max="600" />
@@ -206,22 +206,14 @@
               <div class="policy-badges-block">
                 <span class="policy-sub-label">Thư mục được phép can thiệp (allowed_dirs):</span>
                 <div class="policy-badges-wrap" id="wrap-allowed-dirs">
-                  <span class="dir-badge">core/</span>
-                  <span class="dir-badge">ui/</span>
-                  <span class="dir-badge">ui_bridge/</span>
-                  <span class="dir-badge">ui_web/</span>
-                  <span class="dir-badge">tests/</span>
-                  <span class="dir-badge">docs/</span>
-                  <span class="dir-badge">artifacts/</span>
+                  <span class="dir-badge" style="opacity: 0.6;">(Đang đồng bộ từ policy.yaml...)</span>
                 </div>
               </div>
 
               <div class="policy-badges-block">
                 <span class="policy-sub-label">Tệp bảo vệ đặc biệt (protected_files - Cấm sửa đổi):</span>
                 <div class="policy-badges-wrap" id="wrap-protected-files">
-                  <span class="prot-badge">tests/test_indentation.py</span>
-                  <span class="prot-badge">package.json</span>
-                  <span class="prot-badge">requirements.txt</span>
+                  <span class="prot-badge" style="opacity: 0.6;">(Đang đồng bộ từ policy.yaml...)</span>
                 </div>
               </div>
             </div>

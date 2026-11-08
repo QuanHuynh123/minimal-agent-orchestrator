@@ -1671,6 +1671,10 @@
       if (squadModelRouter) {
         squadModelRouter.textContent = getCleanRoleModelText(rolesConfig.router, 'kr/claude-sonnet-4.5-thinking');
       }
+      const cockpitRouterTag = document.getElementById('cockpit-router-model-tag');
+      if (cockpitRouterTag) {
+        cockpitRouterTag.textContent = getCleanRoleModelText(rolesConfig.router, 'Router');
+      }
       if (squadStatusRouter) {
         if (!isRunning) {
           squadStatusRouter.textContent = 'IDLE';
@@ -2484,7 +2488,7 @@
             const diff = Math.floor((new Date(data.last_completed_task.completed_at).getTime() - new Date(data.last_completed_task.created_at).getTime()) / 1000);
             taskDurationStatic = Math.max(1, diff);
           } else {
-            taskDurationStatic = 97; // 1m 37s fallback for T-012
+            taskDurationStatic = null;
           }
         } else {
           taskDurationStatic = null;

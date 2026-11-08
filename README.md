@@ -103,13 +103,16 @@ agent-team/
 ├── roles/
 │   ├── router.md              # System prompt và JSON contract cho Router Agent
 │   ├── writer.md              # System prompt ép chuẩn SEARCH/REPLACE cho Writer
+│   ├── designer.md            # System prompt và tư vấn UI/UX Spec cho Designer
+│   ├── architect.md           # System prompt và tiêu chuẩn Technical Spec cho Architect
 │   └── reviewer.md            # System prompt và 4 tiêu chí Rubric cho Reviewer
 ├── runtime/                   # Agent Runtime Core v3.0 (Độc lập, có Tools & Trí nhớ)
 │   ├── index.mjs              # CLI & Programmatic API (runAgent)
 │   ├── provider-gateway.mjs   # Capability Matrix, HTTP Gateway & Dual Tool Parser
 │   ├── context-adapter.mjs    # Đôi Mắt: Mã hóa ảnh Vision Multimodal & File text
 │   ├── tool-runtime.mjs       # Đôi Tay: 5 Local Tools + CLI Shell Sandbox (Windows PowerShell)
-│   └── session-store.mjs      # Trí Nhớ: Persistent Sessions & Token Diet Compaction
+│   ├── session-store.mjs      # Trí Nhớ: Persistent Sessions & Token Diet Compaction
+│   └── repo-map.mjs           # Bản đồ cấu trúc Codebase AST & Symbol Indexing
 ├── state/
 │   ├── task-state.json        # Trạng thái vận hành ghi atomic (.tmp + rename)
 │   ├── morning-report.md      # Báo cáo tổng hợp tự động sau mỗi phiên chạy

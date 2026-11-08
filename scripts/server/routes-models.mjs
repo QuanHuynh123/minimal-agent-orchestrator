@@ -261,16 +261,18 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
 
       // Save 9Router Provider Base URL & Key if provided
       if (body.provider && typeof body.provider === 'object') {
-        if (!teamData.team) teamData.team = {};
-        if (!teamData.team.providers) teamData.team.providers = {};
-        if (!teamData.team.providers.local_9router) {
-          teamData.team.providers.local_9router = { type: 'openai_compatible' };
+        if (!teamData.providers) teamData.providers = {};
+        if (!teamData.providers.local_9router) {
+          teamData.providers.local_9router = { type: 'openai_compatible' };
         }
         if (body.provider.base_url) {
-          teamData.team.providers.local_9router.base_url = String(body.provider.base_url).trim();
+          teamData.providers.local_9router.base_url = String(body.provider.base_url).trim();
         }
         if (body.provider.default_key) {
-          teamData.team.providers.local_9router.default_key = String(body.provider.default_key).trim();
+          teamData.providers.local_9router.default_key = String(body.provider.default_key).trim();
+        }
+        if (teamData.team?.providers) {
+          delete teamData.team.providers;
         }
       }
 

@@ -214,13 +214,15 @@ export function resolveTaskMode(task, policy = {}) {
 }
 
 export function resolveApiKey(teamCfg = {}) {
-  const envKeyName = teamCfg?.providers?.local_9router?.api_key_env || 'NINE_ROUTER_API_KEY';
-  return process.env[envKeyName] || teamCfg?.providers?.local_9router?.default_key || 'sk-default';
+  const p = teamCfg?.providers?.local_9router || teamCfg?.team?.providers?.local_9router || {};
+  const envKeyName = p.api_key_env || 'NINE_ROUTER_API_KEY';
+  return process.env[envKeyName] || p.default_key || 'sk-default';
 }
 
 export function validateConfig(teamCfg = {}, policyCfg = {}, projectCfg = null) {
   const errors = [];
-  if (!teamCfg?.providers?.local_9router?.base_url) {
+  const p = teamCfg?.providers?.local_9router || teamCfg?.team?.providers?.local_9router;
+  if (!p?.base_url) {
     errors.push('team.yaml: missing providers.local_9router.base_url');
   }
   if (!teamCfg?.roles?.writer?.model) {

@@ -2,13 +2,9 @@ team:
   name: hybrid-agent-squad
   version: "3.1"
   single_writer_lock: true
-  providers:
-    local_9router:
-      type: openai_compatible
-      base_url: http://127.0.0.1:20128/v1
-      default_key: sk-default
 providers:
   local_9router:
+    type: openai_compatible
     base_url: http://127.0.0.1:20128/v1
     api_key_env: NINE_ROUTER_API_KEY
     default_key: sk-default

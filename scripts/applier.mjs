@@ -22,20 +22,6 @@ export function resolveRepoRoot(projectConfig = null) {
         try {
           cfg = YAML.parse(fs.readFileSync(policyPath, 'utf8'));
         } catch {}
-      } else {
-        const localCfgPath = path.resolve(TEAM_DIR, 'config', 'project.local.yaml');
-        if (fs.existsSync(localCfgPath)) {
-          try {
-            cfg = YAML.parse(fs.readFileSync(localCfgPath, 'utf8'));
-          } catch {}
-        } else {
-          const cfgPath = path.resolve(TEAM_DIR, 'config', 'project.yaml');
-          if (fs.existsSync(cfgPath)) {
-            try {
-              cfg = YAML.parse(fs.readFileSync(cfgPath, 'utf8'));
-            } catch {}
-          }
-        }
       }
     }
   }

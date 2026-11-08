@@ -313,12 +313,12 @@ export async function createSnapshot(paths = {}) {
   const policyYaml = loadYamlSafe(path.resolve(configDir, 'policy.yaml')) || {};
   const rawPolicy = policyYaml.policy || {};
   const project = {
-    id: rawPolicy.project_id || 'tool-download-workspace',
+    id: rawPolicy.project_id || 'workspace',
     language: rawPolicy.language || 'python',
     allowed_dirs: rawPolicy.scope_control?.allowed_dirs || ['*']
   };
   const policy = {
-    project_id: rawPolicy.project_id || 'tool-download-workspace',
+    project_id: rawPolicy.project_id || 'workspace',
     language: rawPolicy.language || 'python',
     scope_control: rawPolicy.scope_control || {},
     task_modes: rawPolicy.task_modes || {},
