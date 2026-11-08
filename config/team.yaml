@@ -1,107 +1,64 @@
-# ==============================================================================
-# 👥 AGENT TEAM & PROVIDERS CONFIGURATION (team.yaml)
-# ==============================================================================
-# MỤC ĐÍCH (PURPOSE):
-# - File 1 trong bộ 2 file cấu hình duy nhất của framework (team.yaml & policy.yaml).
-# - Dành cho: Cấu hình cổng kết nối LLM (OpenAI-compatible, 9Router, DeepSeek, vLLM, Ollama)
-#   và phân bổ các vai trò AI trong Squad (Writer, Router, Designer, Reviewer).
-#
-# NGUYÊN TẮC QUAN TRỌNG (KEY INVARIANTS):
-# 1. Cơ chế Kế thừa 1-Model (1-Model Minimal Setup):
-#    - Bạn chỉ bắt buộc phải điền model cho 'writer'.
-#    - Nếu chưa cấu hình model riêng cho 'router' hoặc 'reviewer', hệ thống sẽ tự động
-#      kế thừa model của 'writer' để bạn có thể chạy được ngay mà không cần nhiều model.
-# 2. Bảo mật Khóa API (Zero-Trust Secret Management):
-#    - Tuyệt đối không hardcode API key thật vào file này.
-#    - Luôn dùng 'api_key_env' để đọc từ biến môi trường hệ điều hành.
-# ==============================================================================
-
 team:
-  name: "hybrid-agent-squad"
-  version: "3.0"
+  name: hybrid-agent-squad
+  version: "3.1"
   single_writer_lock: true
-
-# ------------------------------------------------------------------------------
-# 1. ĐỊNH NGHĨA CỔNG KẾT NỐI AI GATEWAY (PROVIDERS)
-# ------------------------------------------------------------------------------
+  providers:
+    local_9router:
+      type: openai_compatible
+      base_url: http://127.0.0.1:20128/v1
+      default_key: sk-default
 providers:
   local_9router:
-    base_url: "http://127.0.0.1:20128/v1"
-    api_key_env: "NINE_ROUTER_API_KEY"
-    default_key: "sk-default"
-
-# ------------------------------------------------------------------------------
-# 2. PHÂN BỔ VAI TRÒ AI TRONG SQUAD (ROLES & MODEL POOL)
-# ------------------------------------------------------------------------------
+    base_url: http://127.0.0.1:20128/v1
+    api_key_env: NINE_ROUTER_API_KEY
+    default_key: sk-default
 roles:
-  # Vai trò 1: Router & Architect (Phân tích, bóc tách Goal thành các task atomic)
   router:
     enabled: true
-    provider: "local_9router"
-    display_name: "Claude Sonnet 4.5 Thinking"
-    model: "kr/claude-sonnet-4.5-thinking"
-    default_model: "kr/claude-sonnet-4.5-thinking"
+    provider: local_9router
+    display_name: Claude Sonnet 4.5 Thinking
+    model: kr/claude-sonnet-4.5-thinking
+    default_model: kr/claude-sonnet-4.5-thinking
     models:
-      - "kr/claude-sonnet-4.5-thinking"
+      - kr/claude-sonnet-4.5-thinking
     fallback_model: null
     temperature: 0.2
     max_thinking_tokens: 200
-    spec_file: "roles/router.md"
-    allowed_actions: ["ui_ux_design", "scope_routing", "task_planning"]
-    forbidden_actions: ["direct_write"]
-
-  # Vai trò 2: Writer (Kỹ sư lập trình chính, xuất code khối SEARCH/REPLACE chuẩn)
+    spec_file: roles/router.md
+    allowed_actions:
+      - ui_ux_design
+      - scope_routing
+      - task_planning
+    forbidden_actions:
+      - direct_write
   writer:
     enabled: true
-    provider: "local_9router"
-    display_name: "Code Generator Squad"
-    model: "deepseek-ai/deepseek-v4.1-flash-1017"
-    default_model: "deepseek-ai/deepseek-v4.1-flash-1017"
+    provider: local_9router
+    display_name: deepseek-v4.1-flash-1017
+    model: Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017
+    default_model: Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017
     models:
-      - "deepseek-ai/deepseek-v4.1-flash-1017"
-      - "ag/gemini-3.8-flash-medium"
-    fallback_model: "ag/gemini-3.8-flash-medium"
+      - Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017
+      - ag/gemini-3.8-flash-high
+    fallback_model: ag/gemini-3.8-flash-high
     temperature: 0.1
-    max_thinking_tokens: 200
-    output_format: "search_replace_blocks"
-    spec_file: "roles/writer.md"
-    allowed_actions: ["backend_write", "frontend_write", "read_scoped_files", "propose_patch"]
-    forbidden_actions: ["out_of_scope_edit", "unapproved_dependency"]
-
-  # Vai trò 3: Designer (Tư vấn UI/UX và thiết kế giao diện)
   designer:
     enabled: true
-    provider: "local_9router"
-    display_name: "Claude Sonnet 4.5 Thinking"
-    model: "kr/claude-sonnet-4.5-thinking"
-    default_model: "kr/claude-sonnet-4.5-thinking"
+    provider: local_9router
+    display_name: claude-sonnet-5-5-medium
+    model: ag/claude-sonnet-5-5-medium
+    default_model: ag/claude-sonnet-5-5-medium
     models:
-      - "kr/claude-sonnet-4.5-thinking"
-    fallback_model: null
-    temperature: 0.2
-    spec_file: "roles/designer.md"
-    allowed_actions: ["visual_audit", "ui_ux_spec", "read_scoped_files"]
-    forbidden_actions: ["direct_write", "apply_patch"]
-
-  # Vai trò 4: Reviewer (Kiểm duyệt code sau khi Writer hoàn thành, chỉ kích hoạt khi rủi ro cao)
-  reviewer:
-    enabled: true
-    provider: "local_9router"
-    display_name: "Claude Opus 5.5 High"
-    model: "ag/claude-opus-5-5-high"
-    default_model: "ag/claude-opus-5-5-high"
-    models:
-      - "ag/claude-opus-5-5-high"
+      - ag/claude-sonnet-5-5-medium
     fallback_model: null
     temperature: 0.1
-    spec_file: "roles/reviewer.md"
-    allowed_actions: ["review_diff", "approve", "reject"]
-    forbidden_actions: ["direct_write"]
-
-  # Vai trò 5: Deterministic Validator Guard (0-token gate, chạy fast_checks & suite_checks)
-  validator:
+  reviewer:
     enabled: true
-    type: "deterministic_script"
-    display_name: "Validator Guard"
-    script: "scripts/validator.mjs"
-    allowed_actions: ["fast_checks", "suite_checks", "scope_audit", "syntax_lint"]
+    provider: local_9router
+    display_name: claude-opus-5-5-medium
+    model: ag/claude-opus-5-5-medium
+    default_model: ag/claude-opus-5-5-medium
+    models:
+      - ag/claude-opus-5-5-medium
+    fallback_model: null
+    temperature: 0.1

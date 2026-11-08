@@ -1,14 +1,19 @@
 <header class="top-bar">
-    <div class="top-left">
-      <div class="brand-logo">
-        <span>⚡ 9Router Orchestrator</span>
-        <span class="brand-badge">v3.0 Neural Graph</span>
-      </div>
-      <div class="pill pill-project" id="pill-project">
-        <span>Project: <strong id="txt-project">my-workspace</strong></span>
-      </div>
+  <div class="top-left">
+    <div class="brand-logo">
+      <span class="brand-symbol">⌘</span>
+      <span class="brand-title">Mini</span>
+      <span class="brand-sub">Orchestrator</span>
+      <span class="brand-badge">Control Room</span>
     </div>
-    <div class="top-right">
+    <div class="pill pill-project" id="pill-project">
+      <span class="pill-label">Project</span>
+      <strong id="txt-project">my-workspace</strong>
+    </div>
+  </div>
+
+  <div class="top-right">
+    <div class="telemetry-group">
       <div class="pill pill-stage" id="pill-stage">
         <span class="dot" id="dot-stage"></span>
         <span id="txt-stage">Stage: IDLE</span>
@@ -21,71 +26,84 @@
         <span class="dot" id="dot-orchestrator"></span>
         <span id="txt-orchestrator">IDLE</span>
       </div>
-      <div class="pill" id="pill-tokens">
-        <span>Tokens In: <strong id="tok-in">0</strong> | Out: <strong id="tok-out">0</strong></span>
+      <div class="pill pill-tokens-cluster" id="pill-tokens" title="Session Token Usage (Input / Output / Prompt Cache Hit %)">
+        <span class="token-stat">In <strong id="tok-in">0</strong></span>
+        <span class="token-sep">/</span>
+        <span class="token-stat">Out <strong id="tok-out">0</strong></span>
+        <span class="token-sep">/</span>
+        <span class="token-stat">Cache <strong id="tok-cache">0%</strong></span>
       </div>
-      <div class="pill" id="pill-polling">
+      <div class="pill pill-polling" id="pill-polling">
         <span class="dot online"></span>
         <span id="txt-polling">1s Polling</span>
       </div>
-      <button id="btn-header-config" class="btn-header-config" title="Cài đặt Cấu hình & Đội ngũ AI (team.yaml & project.yaml)">
-        <span>⚙️</span>
-        <span>Cấu Hình</span>
-      </button>
     </div>
-  </header>
+    <button id="btn-header-config" class="btn-header-config" title="Cài đặt Cấu hình &amp; Đội ngũ AI (team.yaml &amp; policy.yaml)">
+      <span class="cfg-icon-svg">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </span>
+      <span>Cấu hình</span>
+    </button>
+  </div>
+</header>
 
-  <!-- 2. WATERFALL PIPELINE BAR (Thác Nước Cơ Khí + Vòng lặp Retry + Skip Logic) -->
-  <nav class="pipeline-strip">
+<!-- 2. WORKFLOW PIPELINE STRIP (Framed Cohesive Workflow Chain) -->
+<nav class="pipeline-strip">
+  <div class="pipeline-track">
     <div class="stage-item" id="step-preflight">
-      <span class="step-icon">○</span>
-      <span>0. Pre-Flight</span>
-      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+      <span class="step-icon"></span>
+      <span class="stage-name">Pre-Flight</span>
+      <span class="stage-timer" style="display: none;">0s</span>
     </div>
-    <span class="stage-connector">➔</span>
+    <span class="stage-connector"></span>
     <div class="stage-item" id="step-router">
-      <span class="step-icon">○</span>
-      <span id="txt-step-router">1. Router</span>
-      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+      <span class="step-icon"></span>
+      <span class="stage-name" id="txt-step-router">Router</span>
+      <span class="stage-timer" style="display: none;">0s</span>
     </div>
-    <span class="stage-connector">➔</span>
-    <div class="stage-item" id="step-writer">
-      <span class="step-icon">○</span>
-      <span>2. Writer</span>
+    <span class="stage-connector"></span>
+    <div class="stage-item" id="step-writer" title="Writer Hub: Lập spec và sinh code">
+      <span class="step-icon"></span>
+      <span class="stage-name" id="txt-step-writer">Writer Hub</span>
       <span class="stage-attempt-badge" id="writer-attempt-badge" style="display: none;">Att 1</span>
-      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+      <span class="stage-timer" style="display: none;">0s</span>
     </div>
-    <span class="stage-connector">➔</span>
-    <div class="stage-item" id="step-applier">
-      <span class="step-icon">○</span>
-      <span>3. Applier</span>
-      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+    <span class="stage-connector"></span>
+    <div class="stage-item" id="step-applier" title="Applier: Kiểm tra ranh giới bảo mật và ghi diff vào đĩa">
+      <span class="step-icon"></span>
+      <span class="stage-name">Applier</span>
+      <span class="stage-timer" style="display: none;">0s</span>
     </div>
-    <span class="stage-connector">➔</span>
+    <span class="stage-connector"></span>
     <div class="stage-item" id="step-validator">
-      <span class="step-icon">○</span>
-      <span>4. Validator</span>
-      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+      <span class="step-icon"></span>
+      <span class="stage-name">Validator</span>
+      <span class="stage-timer" style="display: none;">0s</span>
     </div>
-    <span class="stage-connector">➔</span>
+    <span class="stage-connector"></span>
     <div class="stage-item" id="step-reviewer">
-      <span class="step-icon">○</span>
-      <span id="txt-step-reviewer">4b. Review</span>
-      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+      <span class="step-icon"></span>
+      <span class="stage-name" id="txt-step-reviewer">Review</span>
+      <span class="stage-timer" style="display: none;">0s</span>
     </div>
-    <span class="stage-connector">➔</span>
+    <span class="stage-connector"></span>
     <div class="stage-item" id="step-git">
-      <span class="step-icon">○</span>
-      <span>5. Git</span>
-      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+      <span class="step-icon"></span>
+      <span class="stage-name">Git</span>
+      <span class="stage-timer" style="display: none;">0s</span>
     </div>
-    <span class="stage-connector">➔</span>
+    <span class="stage-connector"></span>
     <div class="stage-item" id="step-done">
-      <span class="step-icon">○</span>
-      <span>6. Done</span>
-      <span class="stage-timer" style="display: none;">⏱ 0s</span>
+      <span class="step-icon"></span>
+      <span class="stage-name">Done</span>
+      <span class="stage-timer" style="display: none;">0s</span>
     </div>
-    <div class="retry-loop-indicator" id="retry-loop-pill" style="display: none;">
-      <span>↻ Auto-Retry Loop (Attempt <strong id="retry-num">1</strong>)</span>
-    </div>
-  </nav>
+  </div>
+  <div class="retry-loop-indicator" id="retry-loop-pill" style="display: none;">
+    <span class="retry-spin-dot"></span>
+    <span>Auto-Retry (Attempt <strong id="retry-num">1</strong>)</span>
+  </div>
+</nav>

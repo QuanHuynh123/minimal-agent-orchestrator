@@ -31,6 +31,20 @@ allow_scope_expansion: false
 justification: ""
 approval: null # Khi risk_level >= high: { by: "human", scope_hash: "<sha1>" }
 
+# writer_hub_workflow: # (Tùy chọn) Quy trình phối hợp đa tầng trong Writer Hub (Architect -> Coder)
+#   - step: 1
+#     role: "architect"
+#     tier: "tier_1"
+#     action: "draft_spec"
+#     output_artifact: "artifacts/spec_cart.md"
+#     allow_skip_spec: true
+#   - step: 2
+#     role: "writer"
+#     tier: "tier_3"
+#     action: "apply_patch"
+#     inputs:
+#       - "artifacts/spec_cart.md"
+
 # ============================================================================
 # 3. CÁC TRƯỜNG NỘI BỘ DO ORCHESTRATOR TỰ GHI (KHÔNG CẦN ĐIỀN KHI TẠO TASK)
 # ============================================================================

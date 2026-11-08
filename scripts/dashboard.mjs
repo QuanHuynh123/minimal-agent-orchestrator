@@ -26,6 +26,8 @@ const UI_FILE = path.resolve(TEAM_DIR, 'ui', 'index.html');
 const UI_DIR = path.resolve(TEAM_DIR, 'ui');
 const CONFIG_DIR = path.resolve(TEAM_DIR, 'config');
 const TEAM_CONFIG_FILE = path.resolve(CONFIG_DIR, 'team.yaml');
+const POLICY_CONFIG_FILE = path.resolve(CONFIG_DIR, 'policy.yaml');
+const REPO_ROOT = path.resolve(TEAM_DIR, '..');
 const STATE_DIR = path.resolve(TEAM_DIR, 'state');
 const TASKS_ACTIVE_DIR = path.resolve(TEAM_DIR, 'tasks', 'active');
 const TASKS_ARCHIVE_DIR = path.resolve(TEAM_DIR, 'tasks', 'archive');
@@ -68,7 +70,9 @@ export const server = http.createServer(async (req, res) => {
 
   // 2. Models & Team Config APIs
   const handledModel = await handleModelsRoutes(req, res, url, {
-    TEAM_CONFIG_FILE
+    TEAM_CONFIG_FILE,
+    POLICY_CONFIG_FILE,
+    REPO_ROOT
   });
   if (handledModel) return;
 

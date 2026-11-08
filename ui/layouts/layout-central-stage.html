@@ -1,227 +1,199 @@
-<!-- Intelligent Failure Tail Error Callout (Only appears if error exists and task is not done) -->
-      <div class="error-banner" id="last-error-banner" style="display: none;">
-        <div class="error-banner-header">
-          <span class="error-banner-icon">⚠️</span>
-          <span class="error-banner-title" id="last-error-title">EXECUTION ERROR</span>
+<!-- Intelligent Failure Tail Error Callout -->
+<div class="error-banner" id="last-error-banner" style="display: none;">
+  <div class="error-banner-header">
+    <span class="error-banner-indicator"></span>
+    <span class="error-banner-title" id="last-error-title">EXECUTION ERROR</span>
+  </div>
+  <div class="error-banner-summary" id="last-error-summary"></div>
+  <pre class="error-banner-tail" id="last-error-tail"></pre>
+  <details class="error-banner-details" id="last-error-details">
+    <summary>View Full Raw Traceback</summary>
+    <pre class="error-banner-raw" id="last-error-raw"></pre>
+  </details>
+</div>
+
+<!-- Central Stage Card -->
+<div class="central-stage-card">
+  <div class="tab-header-bar">
+    <div class="tab-nav">
+      <button id="btn-toggle-sidebar" class="btn-sidebar-toggle collapsed" title="Mở / Đóng bảng điều khiển bên trái">
+        <span id="sidebar-toggle-icon">◧</span>
+        <span id="sidebar-toggle-label">Bảng bên</span>
+      </button>
+      <div class="tab-divider"></div>
+      <button class="tab-btn" id="tab-btn-cockpit">
+        <span>Goal Studio</span>
+      </button>
+      <button class="tab-btn active" id="tab-btn-topology">
+        <span>Topology</span>
+      </button>
+      <button class="tab-btn" id="tab-btn-output">
+        <span>Raw Output</span>
+      </button>
+      <button class="tab-btn" id="tab-btn-sessions">
+        <span>Sessions</span>
+      </button>
+    </div>
+    <div class="tab-meta-badges">
+      <span class="meta-item">Attempt <strong id="out-attempt-badge">1 / 3</strong></span>
+      <span class="meta-sep">•</span>
+      <span class="meta-item">Finish <strong id="out-finish-badge">N/A</strong></span>
+    </div>
+  </div>
+
+  <!-- TAB 0: GOAL STUDIO & COCKPIT -->
+  <div id="pane-cockpit" class="tab-pane">
+    <div class="cockpit-container">
+      <!-- Hero Command Box -->
+      <div class="cockpit-hero">
+        <div class="cockpit-hero-title-row">
+          <span class="cockpit-title">Phân tích &amp; Bóc tách mục tiêu</span>
+          <span class="tag tag-model">Claude Sonnet 4.5</span>
         </div>
-        <div class="error-banner-summary" id="last-error-summary"></div>
-        <pre class="error-banner-tail" id="last-error-tail"></pre>
-        <details class="error-banner-details" id="last-error-details">
-          <summary>View Full Raw Traceback</summary>
-          <pre class="error-banner-raw" id="last-error-raw"></pre>
-        </details>
+        <p class="cockpit-desc">Nhập tính năng bạn muốn xây dựng bằng ngôn ngữ tự nhiên. Kiến trúc sư AI sẽ quét code thật để phân rã thành các task nguyên tử kèm Scope và Acceptance Criteria chuẩn.</p>
+        <textarea id="inp-goal-text" class="goal-textarea" placeholder="Ví dụ: Thêm API kiểm tra trạng thái hệ thống kèm bộ unit test tương ứng..."></textarea>
+        <div class="chips-row">
+          <span class="chips-label">Gợi ý mẫu:</span>
+          <button class="chip-btn" data-goal="Bổ sung endpoint kiểm tra sức khỏe dịch vụ (Healthcheck API) và viết unit test tương ứng">Healthcheck API</button>
+          <button class="chip-btn" data-goal="Tối ưu cơ chế retry có backoff khi kết nối mạng bị gián đoạn và bổ sung test cases">Retry &amp; Backoff</button>
+          <button class="chip-btn" data-goal="Bổ sung bộ kiểm thử bảo mật Zero-Trust Anti-XSS và kiểm tra đầu vào cho giao diện">Security &amp; Anti-XSS</button>
+        </div>
+        <div class="cockpit-actions-row">
+          <select id="sel-workflow-preset" class="cfg-search-input preset-select" title="Chế độ định tuyến Writer Hub (Auto Task-Demand × Squad hoặc Cưỡng bức Preset)">
+            <option value="auto">Auto Policy (Task-Demand × Squad)</option>
+            <option value="fast">Fast 1-Step (Bỏ qua Spec)</option>
+            <option value="architect">Spec + Coder (Architect / Designer)</option>
+            <option value="consult">Consult Only (Chỉ Tư Vấn)</option>
+          </select>
+          <button id="btn-decompose-goal" class="btn-decompose">
+            <span id="spin-decompose" style="display: none;" class="dot running"></span>
+            <span id="txt-decompose-btn">Phân tích &amp; Lập kế hoạch</span>
+          </button>
+          <span id="lbl-decompose-status" class="decompose-status-hint"></span>
+        </div>
       </div>
 
-      <!-- Top Center: Central Stage Card (Tab 1: 9Router Topology, Tab 2: Raw Output) -->
-      <div class="central-stage-card">
-        <div class="tab-header-bar">
-          <div class="tab-nav">
-            <button id="btn-toggle-sidebar" class="btn-sidebar-toggle collapsed" title="Mở / Đóng bảng điều khiển bên trái">
-              <span id="sidebar-toggle-icon">◧</span>
-              <span id="sidebar-toggle-label">Bảng Bên</span>
-            </button>
-            <div class="tab-divider"></div>
-            <button class="tab-btn" id="tab-btn-cockpit">
-              <span>🚀 0. Goal Studio &amp; Cockpit</span>
-            </button>
-            <button class="tab-btn active" id="tab-btn-topology">
-              <span>🕸️ 1. 9Router AI Live Topology</span>
-            </button>
-            <button class="tab-btn" id="tab-btn-output">
-              <span>📄 2. Raw Output &amp; Diff Inspector</span>
-            </button>
-            <button class="tab-btn" id="tab-btn-sessions">
-              <span>🧠 3. Agent Sessions &amp; Tool Receipts</span>
-            </button>
+      <!-- Review Board: Draft Tasks -->
+      <div class="cockpit-review-board">
+        <div class="review-board-header">
+          <div class="review-title-group">
+            <span class="card-title">Kế hoạch chờ duyệt</span>
+            <span class="review-status-sub">draft_review • An toàn — chưa can thiệp code</span>
           </div>
-          <div class="tab-meta-badges">
-            <span>Attempt: <strong id="out-attempt-badge">1 / 3</strong></span>
-            <span>Reason: <strong id="out-finish-badge">N/A</strong></span>
+          <div class="review-actions-group">
+            <button id="btn-approve-run" class="btn-approve" disabled>
+              <span>Phê duyệt &amp; Khởi động</span>
+            </button>
+            <button id="btn-stop-orchestrator" class="btn-stop-orchestrator" style="display: none;">
+              <span>Dừng Squad</span>
+            </button>
           </div>
         </div>
-
-        <!-- TAB 0: GOAL STUDIO & COCKPIT -->
-        <div id="pane-cockpit" class="tab-pane">
-          <div class="cockpit-container">
-            <!-- Hero Command Box -->
-            <div class="cockpit-hero">
-              <div class="cockpit-hero-title-row">
-                <span class="cockpit-title">🎯 Phân Tích &amp; Bóc Tách Mục Tiêu Tự Động (AI Architect Planner)</span>
-                <span class="tag tag-quick" style="background: rgba(234, 88, 12, 0.15); border-color: var(--color-9router); color: var(--color-9router-light);">Claude Sonnet 4.5</span>
-              </div>
-              <p class="cockpit-desc">Nhập tính năng bạn muốn xây dựng bằng ngôn ngữ tự nhiên. Kiến trúc sư AI sẽ dùng công cụ đọc code thật để phân rã thành 1–3 Task nguyên tử có Scope và Acceptance Criteria rõ ràng.</p>
-              <textarea id="inp-goal-text" class="goal-textarea" placeholder="Ví dụ: Thêm API kiểm tra trạng thái hệ thống kèm bộ unit test đầy đủ..."></textarea>
-              <div class="chips-row">
-                <span class="chips-label">Gợi ý mẫu:</span>
-                <button class="chip-btn" data-goal="Bổ sung endpoint kiểm tra sức khỏe dịch vụ (Healthcheck API) và viết unit test tương ứng">⚡ Healthcheck API</button>
-                <button class="chip-btn" data-goal="Tối ưu cơ chế retry có backoff khi kết nối mạng bị gián đoạn và bổ sung test cases">🔄 Retry &amp; Backoff</button>
-                <button class="chip-btn" data-goal="Bổ sung bộ kiểm thử bảo mật Zero-Trust Anti-XSS và kiểm tra đầu vào cho giao diện">🛡️ Security &amp; Anti-XSS</button>
-              </div>
-              <div class="cockpit-actions-row">
-                <button id="btn-decompose-goal" class="btn-decompose">
-                  <span id="spin-decompose" style="display: none;" class="dot running"></span>
-                  <span id="txt-decompose-btn">🪄 Phân Tích &amp; Sinh Kế Hoạch (Router Agent)</span>
-                </button>
-                <span id="lbl-decompose-status" style="font-size: 11px; color: var(--text-muted); font-style: italic;"></span>
-              </div>
-            </div>
-
-            <!-- Review Board: Draft Tasks -->
-            <div class="cockpit-review-board">
-              <div class="review-board-header">
-                <div>
-                  <span class="card-title" style="font-size: 12px;">📋 Kế Hoạch Đã Bóc Tách Chờ Duyệt (Draft Tasks)</span>
-                  <span style="font-size: 10px; color: var(--text-muted); margin-left: 8px;">Trạng thái: draft_review (An toàn - Chưa can thiệp code)</span>
-                </div>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                  <button id="btn-approve-run" class="btn-approve" disabled>
-                    <span>✓ Phê Duyệt &amp; Khởi Động Đội Ngũ AI (Approve &amp; Run)</span>
-                  </button>
-                  <button id="btn-stop-orchestrator" class="btn-stop-orchestrator" style="display: none;">
-                    <span>🛑 Dừng Squad</span>
-                  </button>
-                </div>
-              </div>
-              <div id="list-draft-tasks" class="draft-cards-list">
-                <div style="color: var(--text-muted); font-size: 11px; font-style: italic; text-align: center; padding: 24px;">
-                  Chưa có kế hoạch nào. Hãy nhập mục tiêu ở trên và bấm "Phân Tích &amp; Sinh Kế Hoạch".
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- TAB 1: STANDARD WORKFLOW TOPOLOGY CANVAS (Interconnected Models Edition) -->
-        <div id="pane-topology" class="tab-pane active">
-          <div class="topology-canvas">
-            <!-- SVG Links Layer (Dynamic Responsive Direct Anchor Mesh) -->
-            <svg class="topology-links" id="topology-svg">
-              <!-- Sonnet 4.5 -> Gemini 3.8 Flash (Frontend/UI) -->
-              <path id="link-sonnet-gemini" class="link-path" />
-              <!-- Sonnet 4.5 -> DeepSeek V4.1 Flash (Backend/Core) -->
-              <path id="link-sonnet-deepseek" class="link-path" />
-              <!-- Gemini 3.8 Flash -> Validator Guard -->
-              <path id="link-gemini-validator" class="link-path" />
-              <!-- DeepSeek V4.1 Flash -> Validator Guard (Forward Search/Replace) -->
-              <path id="link-deepseek-validator" class="link-path" />
-              <!-- Validator Guard -> DeepSeek V4.1 Flash (Feedback Loop / Retry) -->
-              <path id="link-validator-deepseek" class="link-path" style="stroke-dasharray: 4 4;" />
-              <!-- Validator Guard -> Claude Opus 5.5 High (Review Gate) -->
-              <path id="link-validator-opus" class="link-path" />
-            </svg>
-
-            <!-- 1. Model: Claude Sonnet 4.5 Thinking (Plan & Spec) -->
-            <div class="ai-capsule-node node-sonnet" id="capsule-sonnet" title="Claude Sonnet 4.5 Thinking (Spec, Plan &amp; Scope Router)">
-              <div class="node-icon icon-sonnet">S</div>
-              <span class="node-label">Claude Sonnet 4.5 Thinking</span>
-              <div class="node-status-dot"></div>
-            </div>
-
-            <!-- 2. Model: Gemini 3.8 Flash (Frontend Writer / IDE Pair) -->
-            <div class="ai-capsule-node node-gemini" id="capsule-gemini" title="Gemini 3.8 Flash (Frontend Writer / IDE Pair Programmer)">
-              <div class="node-icon icon-gemini">G</div>
-              <span class="node-label">Gemini 3.8 Flash</span>
-              <div class="node-status-dot"></div>
-            </div>
-
-            <!-- 3. Model: DeepSeek V4.1 Flash (Backend Writer / Core) -->
-            <div class="ai-capsule-node node-deepseek" id="capsule-deepseek" title="DeepSeek V4.1 Flash (Backend Writer / Search-Replace Engine)">
-              <div class="node-icon icon-deepseek">D</div>
-              <span class="node-label">DeepSeek V4.1 Flash</span>
-              <div class="node-status-dot"></div>
-            </div>
-
-            <!-- 4. Engine: Validator Guard (Test Suite & Feedback Loop) -->
-            <div class="ai-capsule-node node-validator" id="capsule-validator" title="Validator Guard (TAB Check &amp; Test Suite Gate)">
-              <div class="node-icon icon-validator">🛡️</div>
-              <span class="node-label">Validator Guard</span>
-              <div class="node-status-dot"></div>
-            </div>
-
-            <!-- 5. Model: Claude Opus 5.5 High (Tech Lead Reviewer) -->
-            <div class="ai-capsule-node node-opus" id="capsule-opus" title="Claude Opus 5.5 High (High-Risk Diff Auditor)">
-              <div class="node-icon icon-opus">O</div>
-              <span class="node-label">Claude Opus 5.5 High</span>
-              <div class="node-status-dot"></div>
-            </div>
-          </div>
-
-          <!-- Telemetry Footer Bar -->
-          <footer class="telemetry-footer-bar">
-            <div class="telemetry-chips">
-              <div class="tel-chip">
-                <span>Model Verification:</span>
-                <strong id="tel-model-verify">Req == Resp ✓</strong>
-              </div>
-              <div class="tel-chip">
-                <span>Finish Reason:</span>
-                <strong id="tel-finish">stop ✓</strong>
-              </div>
-              <div class="tel-chip">
-                <span>Patch Payload:</span>
-                <strong id="tel-blocks">0 blocks</strong>
-              </div>
-              <div class="tel-chip">
-                <span>Attempt:</span>
-                <strong id="tel-attempt">1 / 3</strong>
-              </div>
-            </div>
-            <div id="tel-recovered-badge" class="tag tag-recovered" style="display: none;">
-              ✓ Auto-Recovered on Retry 1
-            </div>
-          </footer>
-        </div>
-
-        <!-- TAB 2: RAW OUTPUT & DIFF INSPECTOR -->
-        <div id="pane-output" class="tab-pane">
-          <div class="raw-inspector-pane">
-            <pre class="code-view" id="writer-output">(No writer output recorded yet)</pre>
-          </div>
-        </div>
-
-        <!-- TAB 3: AGENT SESSIONS & TOOL RECEIPTS -->
-        <div id="pane-sessions" class="tab-pane">
-          <div class="sessions-inspector-container">
-            <!-- Sidebar: Sessions List -->
-            <div class="sessions-sidebar">
-              <div class="sessions-sidebar-header">
-                <span>ACTIVE SESSIONS</span>
-                <span class="sessions-count-badge" id="sessions-count-badge">0</span>
-              </div>
-              <div class="sessions-list" id="sessions-list">
-                <!-- Dynamically populated -->
-              </div>
-            </div>
-            <!-- Main Content: Selected Session Details -->
-            <div class="session-detail-view" id="session-detail-view">
-              <div class="session-empty-state" id="session-empty-state">
-                <span>Select a session on the left to inspect memory &amp; tool receipts</span>
-              </div>
-              <div class="session-active-content" id="session-active-content" style="display: none;">
-                <!-- Header Info -->
-                <div class="session-detail-header">
-                  <div class="session-title-wrap">
-                    <span class="session-item-role" id="sess-role-pill">writer</span>
-                    <h4 class="session-id-title" id="sess-id-title">session_id</h4>
-                  </div>
-                  <div class="session-meta-chips">
-                    <span class="meta-chip">Model: <strong id="sess-model-text">...</strong></span>
-                    <span class="meta-chip">Msgs: <strong id="sess-msg-count">0</strong></span>
-                    <span class="meta-chip">Tools: <strong id="sess-tools-count">0</strong></span>
-                  </div>
-                </div>
-                <!-- Tool Receipts Timeline -->
-                <div class="session-section">
-                  <div class="session-section-title">🔧 Tool Receipts Audit</div>
-                  <div class="tool-receipts-timeline" id="sess-receipts-timeline"></div>
-                </div>
-                <!-- Trajectory Messages -->
-                <div class="session-section" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
-                  <div class="session-section-title">💬 Conversational Trajectory</div>
-                  <div class="session-messages-scroll" id="sess-messages-container"></div>
-                </div>
-              </div>
-            </div>
+        <div id="list-draft-tasks" class="draft-cards-list">
+          <div class="draft-empty-msg">
+            Chưa có kế hoạch nào. Hãy nhập mục tiêu ở trên và bấm "Phân tích &amp; Lập kế hoạch".
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- TAB 1: ADAPTIVE STAR TOPOLOGY CANVAS (ORCHESTRATOR HUB & DYNAMIC MODEL SPOKES) -->
+  <div id="pane-topology" class="tab-pane active">
+    <div class="topology-canvas" id="topology-canvas">
+      <!-- Radial SVG Links Layer (Orchestrator Center -> Dynamic Model Spokes) -->
+      <svg class="topology-links" id="topology-svg"></svg>
+
+      <!-- Central Hub: Mini Orchestrator -->
+      <div class="ai-capsule-node node-orchestrator-hub" id="capsule-hub" title="Mini Orchestrator (Adaptive State Engine &amp; Dynamic Dispatcher)">
+        <div class="node-icon icon-hub">⌘</div>
+        <div class="hub-label-group">
+          <span class="node-label hub-title">Mini Orchestrator</span>
+          <span class="hub-sub" id="hub-state-sub">State Hub • Idle</span>
+        </div>
+        <div class="node-status-dot"></div>
+      </div>
+
+      <!-- Dynamic Spoke Nodes (Sinh động 100% từ danh sách thành viên thực tế của team.yaml) -->
+      <div id="topology-spokes-container"></div>
+    </div>
+
+    <!-- Telemetry Footer Bar -->
+    <footer class="telemetry-footer-bar">
+      <div class="telemetry-chips">
+        <div class="tel-chip">
+          <span class="tel-chip-label">Verification</span>
+          <strong id="tel-model-verify">Req == Resp</strong>
+        </div>
+        <div class="tel-chip">
+          <span class="tel-chip-label">Finish</span>
+          <strong id="tel-finish">stop</strong>
+        </div>
+        <div class="tel-chip">
+          <span class="tel-chip-label">Patch</span>
+          <strong id="tel-blocks">0 blocks</strong>
+        </div>
+        <div class="tel-chip">
+          <span class="tel-chip-label">Attempt</span>
+          <strong id="tel-attempt">1 / 3</strong>
+        </div>
+      </div>
+      <div id="tel-recovered-badge" class="tag tag-recovered" style="display: none;">
+        Recovered on Retry 1
+      </div>
+    </footer>
+  </div>
+
+  <!-- TAB 2: RAW OUTPUT & DIFF INSPECTOR -->
+  <div id="pane-output" class="tab-pane">
+    <div class="raw-inspector-pane">
+      <pre class="code-view" id="writer-output">(No writer output recorded yet)</pre>
+    </div>
+  </div>
+
+  <!-- TAB 3: AGENT SESSIONS & TOOL RECEIPTS -->
+  <div id="pane-sessions" class="tab-pane">
+    <div class="sessions-inspector-container">
+      <!-- Sidebar: Sessions List -->
+      <div class="sessions-sidebar">
+        <div class="sessions-sidebar-header">
+          <span class="sessions-header-title">Active Sessions</span>
+          <span class="sessions-count-badge" id="sessions-count-badge">0</span>
+        </div>
+        <div class="sessions-list" id="sessions-list">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+      <!-- Main Content: Selected Session Details -->
+      <div class="session-detail-view" id="session-detail-view">
+        <div class="session-empty-state" id="session-empty-state">
+          <span>Select a session on the left to inspect memory &amp; tool receipts</span>
+        </div>
+        <div class="session-active-content" id="session-active-content" style="display: none;">
+          <!-- Header Info -->
+          <div class="session-detail-header">
+            <div class="session-title-wrap">
+              <span class="session-item-role" id="sess-role-pill">writer</span>
+              <h4 class="session-id-title" id="sess-id-title">session_id</h4>
+            </div>
+            <div class="session-meta-chips">
+              <span class="meta-chip">Model: <strong id="sess-model-text">...</strong></span>
+              <span class="meta-chip">Msgs: <strong id="sess-msg-count">0</strong></span>
+              <span class="meta-chip">Tools: <strong id="sess-tools-count">0</strong></span>
+            </div>
+          </div>
+          <!-- Tool Receipts Timeline -->
+          <div class="session-section">
+            <div class="session-section-title">Tool Receipts Audit</div>
+            <div class="tool-receipts-timeline" id="sess-receipts-timeline"></div>
+          </div>
+          <!-- Trajectory Messages -->
+          <div class="session-section session-section-trajectory">
+            <div class="session-section-title">Conversational Trajectory</div>
+            <div class="session-messages-scroll" id="sess-messages-container"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

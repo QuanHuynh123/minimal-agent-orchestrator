@@ -93,6 +93,26 @@
       "type": "array",
       "items": { "type": "string" }
     },
+    "writer_hub_workflow": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step", "role", "action"],
+        "properties": {
+          "step": { "type": "integer", "minimum": 1 },
+          "role": { "type": "string" },
+          "tier": { "type": "string" },
+          "action": { "type": "string", "enum": ["draft_spec", "apply_patch"] },
+          "inputs": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "output_artifact": { "type": "string" },
+          "allow_skip_spec": { "type": "boolean" },
+          "model": { "type": "string" }
+        }
+      }
+    },
     "acceptance_criteria": {
       "type": "array",
       "items": { "type": "string" },

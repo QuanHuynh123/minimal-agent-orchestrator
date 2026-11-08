@@ -17,6 +17,44 @@ import YAML from 'yaml';
 import { resolveRepoRoot } from './applier.mjs';
 import { buildRouterContext } from './orchestrator.mjs';
 import { runAgent } from '../runtime/index.mjs';
+import { analyzeTaskDemand, resolveWriterHubWorkflow } from './lib/risk-policy.mjs';
+
+/**
+ * 0-Token Deterministic Scope Verification:
+ * Checks whether planned scope files exist on disk (or have valid parent directories for new files)
+ * and warns if task goal expresses UI/UX intent without any frontend file in scope.
+ */
+export function verifyPlannedScope(scope = [], repoRoot = process.cwd(), demand = {}) {
+  const warnings = [];
+  const existingFiles = [];
+  const missingFiles = [];
+
+  for (const rel of (Array.isArray(scope) ? scope : [])) {
+    const full = path.resolve(repoRoot, rel);
+    if (fs.existsSync(full)) {
+      existingFiles.push(rel);
+    } else {
+      missingFiles.push(rel);
+    }
+  }
+
+  if (scope.length === 0 && demand.mode !== 'consult') {
+    warnings.push('Task scope is empty for a non-consult task.');
+  }
+  if (demand.hasUiIntent && !demand.hasFrontend && demand.mode !== 'consult') {
+    warnings.push('Goal mentions UI/UX keywords, but no frontend/UI file was included in task.scope.');
+  }
+  if (missingFiles.length > 0) {
+    warnings.push(`New or non-existent files in scope: ${missingFiles.join(', ')}`);
+  }
+
+  return {
+    ok: warnings.length === 0,
+    existingFiles,
+    missingFiles,
+    warnings
+  };
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -101,46 +139,51 @@ export async function decomposeGoal(goal, options = {}) {
   }
   if (allowedDirs.length === 0) allowedDirs = ['*'];
 
-  const routerContext = buildRouterContext(allowedDirs, repoRoot, 300);
+  // Deterministic intent classification (Zero-LLM Heuristic Guard)
+  const isConsultIntent = /(tư vấn|khảo sát|nghiên cứu|đánh giá|hỏi ý kiến|thảo luận|so sánh|consult|research|advisory|evaluate)/i.test(cleanGoal);
 
-  const prompt = [
+  const teamConfig = loadYamlSafe(path.resolve(TEAM_DIR, 'config', 'team.yaml')) || {};
+  const roles = teamConfig.roles || {};
+  const availableModelsList = [];
+  for (const [rKey, rCfg] of Object.entries(roles)) {
+    if (rCfg?.model && !availableModelsList.includes(rCfg.model)) {
+      availableModelsList.push(rCfg.model);
+    }
+    if (rCfg?.fallback_model && !availableModelsList.includes(rCfg.fallback_model)) {
+      availableModelsList.push(rCfg.fallback_model);
+    }
+    if (Array.isArray(rCfg?.models)) {
+      for (const m of rCfg.models) {
+        if (m && !availableModelsList.includes(m)) availableModelsList.push(m);
+      }
+    }
+  }
+
+  if (availableModelsList.length === 0) {
+    return {
+      ok: false,
+      error: 'Đội ngũ AI chưa có model nào được cấu hình trong team.yaml! Vui lòng bấm biểu tượng Cài đặt (góc trên bên phải) để thêm model vào đội ngũ trước khi phân tích mục tiêu.'
+    };
+  }
+
+  const userPromptParts = [
     `USER GOAL:`,
-    `"${cleanGoal}"`,
-    ``,
-    `REPOSITORY ARCHITECTURE CONTEXT:`,
-    routerContext,
-    ``,
-    `INSTRUCTIONS:`,
-    `1. You are the AI Software Architect & Router. Inspect the codebase thoroughly using tools if needed (list_files, search_code, read_file).`,
-    `2. Decompose the goal into 1 to 3 ATOMIC, sequential tasks (< 150 lines modified per task).`,
-    `3. Every task MUST define an explicit "scope" of files (relative to repository root) that actually exist or will be created in allowed directories: [${allowedDirs.join(', ')}].`,
-    `4. If the user request explicitly specifies a model (e.g. Gemini, DeepSeek, Claude...), assign that designated model to the "model" field. Otherwise, omit "model".`,
-    `5. Code edits in scope MUST preserve the exact indentation style (tabs or spaces) and coding conventions of the target files.`,
-    `6. Frontend/Web files in scope MUST mandate: "Zero-Trust Anti-XSS (chỉ dùng textContent hoặc escapeHtml, không gán raw innerHTML)".`,
-    `7. Every task MUST define at least 2 measurable, testable "acceptance_criteria".`,
-    `8. Output STRICT JSON conforming to the following schema with NO surrounding chatter:`,
-    `{`,
-    `  "tasks": [`,
-    `    {`,
-    `      "title": "Short descriptive title (Vietnamese or English)",`,
-    `      "goal": "Precise goal describing what this atomic task achieves",`,
-    `      "mode": "quick", // "quick" for single file/light edits, "standard" for complex logic`,
-    `      "model": null, // (Optional) Specific model if requested by user, or null/omitted`,
-    `      "risk_level": "low", // "low", "medium", or "high"`,
-    `      "scope": ["src/example.js", "tests/test_example.js"],`,
-    `      "constraints": [`,
-    `        "Giữ nguyên chuẩn thụt lề (indentation) của file gốc trong dự án",`,
-    `        "Giữ nguyên tính tương thích ngược",`,
-    `        "Pass 100% test suite liên quan"`,
-    `      ],`,
-    `      "acceptance_criteria": [`,
-    `        "Cụ thể tiêu chí 1",`,
-    `        "Cụ thể tiêu chí 2"`,
-    `      ]`,
-    `    }`,
-    `  ]`,
-    `}`
-  ].join('\n');
+    `"${cleanGoal}"`
+  ];
+
+  if (isConsultIntent) {
+    userPromptParts.push(
+      `DIRECTIVE: User intent is architectural consultation / research. You MUST set "mode": "consult" (read-only advisory, no file mutation).`
+    );
+  }
+
+  userPromptParts.push(
+    `ALLOWED DIRECTORIES: [${allowedDirs.join(', ')}]`,
+    `AVAILABLE SQUAD MODELS: [${availableModelsList.join(', ')}]. If user asked for a model, match to this exact list; otherwise leave "model": null.`,
+    `INSTRUCTION: Inspect the repository using your available tools (list_files, search_code, read_file, get_repo_map) if needed, then output strict JSON matching the schema in your system instructions.`
+  );
+
+  const prompt = userPromptParts.join('\n\n');
 
   try {
     const sessionSafeId = `planner-${Date.now().toString(36)}`;
@@ -184,27 +227,68 @@ export async function decomposeGoal(goal, options = {}) {
         .filter(s => s.length > 0 && !s.startsWith('/') && !s.includes('..'))
         .slice(0, maxFilesPerTask);
 
-      const normalizedMode = rawTask.mode === 'full' ? 'standard' : (['quick', 'standard'].includes(rawTask.mode) ? rawTask.mode : 'quick');
+      const validModes = ['quick', 'standard', 'consult'];
+      const rawMode = String(rawTask.mode || '').toLowerCase();
+      let declaredMode = validModes.includes(rawMode) ? rawMode : 'quick';
+      if (rawMode === 'full') declaredMode = 'standard';
+      if (isConsultIntent) declaredMode = 'consult';
+
+      const draftSeed = {
+        task_id: taskId,
+        title,
+        goal: String(rawTask.goal || title).trim(),
+        mode: declaredMode,
+        risk_level: ['low', 'medium', 'high', 'critical'].includes(rawTask.risk_level) ? rawTask.risk_level : 'low',
+        scope: validScope,
+        attachments: options.images || []
+      };
+
+      // Enforce max(declared, computed) for risk_level and mode via analyzeTaskDemand
+      const demand = analyzeTaskDemand(draftSeed, policyConfig);
+      const effectiveMode = demand.mode;
+      const effectiveRisk = demand.riskLevel;
+      const scopeVerification = verifyPlannedScope(validScope, repoRoot, demand);
+
+      const taskRole = effectiveMode === 'consult'
+        ? (rawTask.role || (String(rawTask.model || '').toLowerCase().includes('opus') ? 'reviewer' : 'designer'))
+        : 'writer';
+
       const canonicalTask = {
         task: {
           task_id: taskId,
           project_id: projectId,
           title,
-          goal: String(rawTask.goal || title).trim(),
-          mode: normalizedMode,
-          risk_level: ['low', 'medium', 'high', 'critical'].includes(rawTask.risk_level) ? rawTask.risk_level : 'low',
-          owner: 'writer',
+          goal: draftSeed.goal,
+          mode: effectiveMode,
+          risk_level: effectiveRisk,
+          owner: taskRole,
           status: 'draft_review', // Human-in-the-loop gate: awaits approval before running
           scope: validScope,
+          ...(scopeVerification.warnings.length > 0 ? { scope_warnings: scopeVerification.warnings } : {}),
           constraints: Array.isArray(rawTask.constraints) ? rawTask.constraints : [],
           acceptance_criteria: Array.isArray(rawTask.acceptance_criteria) && rawTask.acceptance_criteria.length > 0
             ? rawTask.acceptance_criteria
-            : [`Code changes pass tests and validator fast`]
+            : (effectiveMode === 'consult' ? ['Cung cấp báo cáo tư vấn kiến trúc rõ ràng', 'Đánh giá các giải pháp tham khảo'] : [`Code changes pass tests and validator fast`])
         }
       };
 
+      if (effectiveMode === 'consult') {
+        canonicalTask.task.role = taskRole;
+      }
+
       if (rawTask.model && typeof rawTask.model === 'string' && rawTask.model.trim()) {
         canonicalTask.task.model = rawTask.model.trim();
+      } else if (effectiveMode === 'consult' && (taskRole === 'reviewer' || /opus/i.test(cleanGoal))) {
+        canonicalTask.task.model = 'ag/claude-opus-5-5-high';
+      }
+
+      if (rawTask.manual_workflow_override && Array.isArray(rawTask.writer_hub_workflow) && rawTask.writer_hub_workflow.length > 0) {
+        canonicalTask.task.writer_hub_workflow = rawTask.writer_hub_workflow;
+      } else {
+        const computedWf = resolveWriterHubWorkflow(canonicalTask.task, teamConfig, policyConfig, options.preset || 'auto');
+        if (computedWf.length > 0) {
+          canonicalTask.task.writer_hub_workflow = computedWf;
+        }
       }
 
       if (!options.dryRun) {

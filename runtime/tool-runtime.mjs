@@ -10,8 +10,11 @@ import { exec } from 'node:child_process';
 import { applyEdits, normalizeOrThrow, resolveRepoRoot } from '../scripts/applier.mjs';
 import { validateFast, validateSuite } from '../scripts/validator.mjs';
 import { isForbiddenAttachment } from './context-adapter.mjs';
+import { generateRepoMap } from './repo-map.mjs';
 
 export const MAX_READ_LINES = 300;
+export const MAX_READ_BYTES = 32768; // 32 KB hard ceiling per read_file call
+export const MAX_SINGLE_LINE_CHARS = 4096; // Cắt dòng đơn lẻ quá dài (minified files)
 export const MAX_SEARCH_RESULTS = 50;
 
 /**
@@ -143,6 +146,31 @@ export const TOOL_SCHEMAS = {
         required: ['command']
       }
     }
+  },
+
+  get_repo_map: {
+    type: 'function',
+    function: {
+      name: 'get_repo_map',
+      description: 'Generate a concise structural skeleton map of classes, functions, and cross-file references across workspace files, ranked by relevance keywords.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Keywords or symbols to rank relevant files/classes/functions first (e.g. "downloader subtitle", "eraser").'
+          },
+          dir: {
+            type: 'string',
+            description: 'Optional directory name to restrict search (e.g. "core", "ui_bridge").'
+          },
+          max_chars: {
+            type: 'number',
+            description: 'Maximum characters returned (default: 3500, ~800 tokens).'
+          }
+        }
+      }
+    }
   }
 };
 
@@ -267,27 +295,56 @@ export function toolReadFile(repoRoot, args = {}, context = {}) {
     const raw = fs.readFileSync(fullPath, 'utf8');
     const lines = raw.split(/\r?\n/);
     const startLine = Math.max(1, parseInt(args.start_line, 10) || 1);
-    const endLine = Math.min(lines.length, parseInt(args.end_line, 10) || (startLine + MAX_READ_LINES - 1));
 
     if (startLine > lines.length) {
       return { ok: false, error: `start_line (${startLine}) exceeds total file lines (${lines.length})` };
     }
 
-    const requestedCount = endLine - startLine + 1;
-    if (requestedCount > MAX_READ_LINES) {
-      return { ok: false, error: `Maximum read window is ${MAX_READ_LINES} lines per call (requested ${requestedCount})` };
+    // Zero-Error Clamping: clamp end_line to MAX_READ_LINES window without throwing
+    const rawEnd = parseInt(args.end_line, 10);
+    const requestedEnd = isNaN(rawEnd) ? (startLine + MAX_READ_LINES - 1) : rawEnd;
+    const effectiveEndLine = Math.min(lines.length, Math.min(requestedEnd, startLine + MAX_READ_LINES - 1));
+
+    let actualEndLine = startLine - 1;
+    let accumulatedBytes = 0;
+    const numberedLines = [];
+
+    for (let i = startLine - 1; i < effectiveEndLine; i++) {
+      let lineText = lines[i];
+      if (lineText.length > MAX_SINGLE_LINE_CHARS) {
+        lineText = lineText.slice(0, MAX_SINGLE_LINE_CHARS) + ' [... line truncated ...]';
+      }
+      const lineEntry = `${i + 1}: ${lineText}`;
+      const lineBytes = Buffer.byteLength(lineEntry + '\n', 'utf8');
+
+      if (numberedLines.length > 0 && accumulatedBytes + lineBytes > MAX_READ_BYTES) {
+        break;
+      }
+      numberedLines.push(lineEntry);
+      accumulatedBytes += lineBytes;
+      actualEndLine = i + 1;
     }
 
-    const sliced = lines.slice(startLine - 1, endLine);
-    const numbered = sliced.map((l, idx) => `${startLine + idx}: ${l}`).join('\n');
+    const hasMore = actualEndLine < lines.length;
+    const isPartial = hasMore || startLine > 1;
+    let finalContent = numberedLines.join('\n');
+    let navigationHint = null;
+
+    if (isPartial && numberedLines.length > 0) {
+      navigationHint = `[Showing lines ${startLine}-${actualEndLine} of ${lines.length} (${accumulatedBytes} bytes). To continue reading, call read_file with start_line=${actualEndLine + 1}]`;
+      finalContent = `${navigationHint}\n${finalContent}`;
+    }
 
     return {
       ok: true,
       file: safeRel,
       total_lines: lines.length,
       start_line: startLine,
-      end_line: endLine,
-      content: numbered
+      end_line: actualEndLine,
+      total_bytes: accumulatedBytes,
+      truncated: hasMore,
+      navigation_hint: navigationHint,
+      content: finalContent
     };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -422,6 +479,22 @@ export function toolRunCommand(repoRoot, args = {}) {
 }
 
 /**
+ * Structural Repo-Map tool handler
+ */
+export function toolGetRepoMap(repoRoot, args = {}) {
+  const allowedDirs = args.dir ? [args.dir] : [];
+  const mapStr = generateRepoMap(repoRoot, {
+    allowedDirs,
+    query: args.query || '',
+    maxChars: Math.min(args.max_chars || 3500, 8000)
+  });
+  return {
+    ok: true,
+    map: mapStr || '(No matching symbols found)'
+  };
+}
+
+/**
  * Universal Tool Dispatcher with RBAC Guard
  */
 export async function executeTool(toolName, args = {}, context = {}) {
@@ -444,6 +517,8 @@ export async function executeTool(toolName, args = {}, context = {}) {
       return toolSearchCode(repoRoot, args);
     case 'read_file':
       return toolReadFile(repoRoot, args, context);
+    case 'get_repo_map':
+      return toolGetRepoMap(repoRoot, args);
     case 'apply_patch':
       return toolApplyPatch(repoRoot, args, context);
     case 'run_validator':

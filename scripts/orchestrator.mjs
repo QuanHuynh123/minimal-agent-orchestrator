@@ -31,7 +31,9 @@ import {
   buildScopedFilesContext,
   formatValidationErrorForRetry,
   buildRouterContext,
-  buildReviewerPrompt
+  buildReviewerPrompt,
+  buildConsolidatedSpecsContext,
+  generateRepoMap
 } from './lib/context-builders.mjs';
 
 import {
@@ -43,7 +45,9 @@ import {
   resolveTaskMode,
   resolveApiKey,
   validateConfig,
-  verifyResponseModel
+  verifyResponseModel,
+  resolveThinkingBudget,
+  resolveWriterHubWorkflow
 } from './lib/risk-policy.mjs';
 
 import {
@@ -73,6 +77,7 @@ export {
   formatValidationErrorForRetry,
   buildRouterContext,
   buildReviewerPrompt,
+  generateRepoMap,
   DEFAULT_POLICY_CONFIG,
   mergePolicyWithDefaults,
   RISK_LEVEL_RANK,
@@ -82,6 +87,7 @@ export {
   resolveApiKey,
   validateConfig,
   verifyResponseModel,
+  resolveWriterHubWorkflow,
   isProcessAlive,
   sanitizeTaskState,
   computeScopeHash
@@ -150,7 +156,7 @@ export let liveStatus = {
   queue_stats: { active: 0, completed: 0, blocked: 0 },
   last_error: null,
   raw_log_path: null,
-  tokens: { task_input: 0, task_output: 0, session_input: 0, session_output: 0 },
+  tokens: { task_input: 0, task_output: 0, session_input: 0, session_output: 0, session_cached: 0, cache_hit_pct: 0 },
   updated_at: new Date().toISOString()
 };
 
@@ -499,6 +505,16 @@ async function runOrchestrator() {
     }
   }
 
+  // Pre-flight Squad Check: Ensure team.yaml has at least one active model
+  const activeRolesCount = Object.keys(teamConfig.roles || {}).filter(k => teamConfig.roles[k]?.enabled !== false && teamConfig.roles[k]?.model).length;
+  if (taskFiles.length > 0 && activeRolesCount === 0) {
+    const errSquad = 'Đội ngũ AI trong team.yaml rỗng (chưa cấu hình model nào)! Vui lòng mở giao diện Cấu hình để thêm thành viên trước khi chạy.';
+    console.error(`[Orchestrator] Pre-flight squad check FAILED: ${errSquad}`);
+    updateLiveStatus({ active: false, current_stage: 'blocked', last_error: errSquad });
+    releaseLock();
+    process.exit(1);
+  }
+
   for (const tFile of taskFiles) {
     const totalSessionTokens = (state.metrics.total_input_tokens || 0) + (state.metrics.total_output_tokens || 0);
     if (totalSessionTokens >= nightTokenBudgetTotal) {
@@ -609,6 +625,19 @@ async function runOrchestrator() {
           blockReason = `Consultation agent failed: ${agentRes.error}`;
           task.status = 'blocked';
           throw new Error(blockReason);
+        }
+
+        if (agentRes.usage) {
+          const rIn = agentRes.usage.prompt_tokens || 0;
+          const rOut = agentRes.usage.completion_tokens || 0;
+          const rCached = agentRes.usage.cached_tokens || 0;
+          taskTokensUsed += rIn + rOut;
+          state.metrics.total_input_tokens = (state.metrics.total_input_tokens || 0) + rIn;
+          state.metrics.total_output_tokens = (state.metrics.total_output_tokens || 0) + rOut;
+          state.metrics.total_cached_tokens = (state.metrics.total_cached_tokens || 0) + rCached;
+          if (rCached > 0) {
+            console.log(`[Consult Cache] Prompt: ${rIn} | Cached: ${rCached} (Hit: ${(agentRes.usage.cache_hit_ratio * 100).toFixed(1)}%) | Completion: ${rOut}`);
+          }
         }
 
         const reportsDir = path.resolve(TEAM_DIR, 'state', 'reports');
@@ -888,148 +917,392 @@ async function runOrchestrator() {
           maxFilesPerTask
         });
 
-        const userMessage = [
-          `TASK ID: ${task.task_id}`,
-          `EXECUTION MODE: ${task.mode}`,
-          `GOAL: ${task.goal || task.title}`,
-          `ALLOWED SCOPE: ${task.scope.join(', ')}`,
-          `CONSTRAINTS: ${(task.constraints || []).join(', ')}`,
-          `ACCEPTANCE CRITERIA: ${task.acceptance_criteria.join('; ')}`,
-          `CURRENT SCOPED FILE CONTENTS:\n${scopedFilesContext}`,
-          task.last_error
-            ? `PREVIOUS ATTEMPT FAILED WITH ERROR:\n${task.last_error}\nPlease fix the issue. Think briefly (<100 words) and output exact SEARCH/REPLACE blocks.`
-            : 'Please generate the exact code modifications to fulfill the goal. Think briefly (<100 words) and immediately output the SEARCH/REPLACE blocks.'
-        ].join('\n\n');
-
-        let writerRes;
+        // Inject concise neighboring symbol map for architectural awareness
+        let neighborRepoMap = '';
         try {
-          const agentRes = await runAgent({
-            role: 'writer',
-            prompt: userMessage,
-            sessionId: `${task.task_id}-writer`,
-            scope: task.scope || [],
-            attachments: task.attachments || [],
-            modelOverride: writerModel,
-            maxTurns: 4,
-            timeoutMs: (task.mode === 'quick' ? 90 : 180) * 1000,
-            repoRoot: REPO_ROOT
+          const taskKeywords = extractTaskKeywords(task);
+          neighborRepoMap = generateRepoMap(REPO_ROOT, {
+            query: taskKeywords,
+            maxChars: 2500
           });
+        } catch {}
 
-          if (agentRes.ok) {
-            writerRes = {
-              ok: true,
-              content: agentRes.content || '',
-              rawContent: agentRes.content || '',
-              rawReasoning: '',
-              finishReason: 'stop',
-              usage: { prompt_tokens: 0, completion_tokens: 0 },
-              modelUsed: agentRes.model_used || writerModel,
-              responseModel: agentRes.model_used || writerModel,
-              modelMatched: true
-            };
-          } else {
-            console.warn(`[Writer Runtime] Agent run returned error: ${agentRes.error}. Falling back to call9Router...`);
-            writerRes = await call9Router(writerModel, writerSystemRole, userMessage, 16384, writerFallback, writerTemp, {
-              maxThinkingTokens: writerMaxThinking
+        // ====================================================================
+        // WRITER HUB: Dynamic Multi-Tier Forward-Only Execution
+        // (Step 1: Architect/Designer draft_spec -> Step 2A/2B: Scoped Bucket apply_patch)
+        // ====================================================================
+        const workflowSteps = Array.isArray(task.writer_hub_workflow) && task.writer_hub_workflow.length > 0
+          ? task.writer_hub_workflow
+          : resolveWriterHubWorkflow(task, teamConfig, policyConfig);
+        const generatedArtifacts = [];
+
+        // 1. Execute upstream spec drafting steps (if declared in workflow)
+        for (const wfStep of workflowSteps) {
+          if (wfStep.action === 'draft_spec') {
+            const stepRole = wfStep.role || 'architect';
+            const roleCfg = teamConfig.roles?.[stepRole] || {};
+            const stepModel = wfStep.model || roleCfg.default_model || roleCfg.model || writerModel;
+            const stepThinking = resolveThinkingBudget(task.risk_level, stepModel, roleCfg);
+            const targetArtifact = wfStep.output_artifact || `artifacts/${task.task_id}_${stepRole}_spec.md`;
+            const artFullPath = path.resolve(REPO_ROOT, targetArtifact);
+
+            console.log(`[Writer Hub] Step ${wfStep.step || 1}: Role "${stepRole}" (${stepModel}) drafting spec -> ${targetArtifact}...`);
+
+            updateLiveStatus({
+              roles_status: {
+                ...liveStatus.roles_status,
+                [stepRole]: { model: stepModel, status: 'working' }
+              }
+            });
+
+            const specPromptParts = [
+              `TASK ID: ${task.task_id} (Step ${wfStep.step || 1}: ${stepRole})`,
+              `ROLE ARCHETYPE: ${stepRole.toUpperCase()}${wfStep.spec_focus ? ` (Focus: ${wfStep.spec_focus})` : ''}`,
+              `GOAL: ${task.goal || task.title}`,
+              `ALLOWED SCOPE: ${task.scope.join(', ')}`,
+              `CONSTRAINTS: ${(task.constraints || []).join(', ')}`,
+              `ACCEPTANCE CRITERIA: ${task.acceptance_criteria.join('; ')}`
+            ];
+
+            if (Array.isArray(wfStep.inputs) && wfStep.inputs.length > 0) {
+              const upstreamSpecs = buildConsolidatedSpecsContext(wfStep.inputs, REPO_ROOT);
+              if (upstreamSpecs && upstreamSpecs.trim()) {
+                specPromptParts.push(`UPSTREAM ARCHITECTURAL CONTRACT (Must Align 100%):\n${upstreamSpecs.trim()}`);
+              }
+            }
+
+            if (neighborRepoMap && neighborRepoMap.trim()) {
+              specPromptParts.push(`NEIGHBORING CODEBASE SKELETON (Symbols & Signatures for Reference):\n${neighborRepoMap.trim()}`);
+            }
+            specPromptParts.push(`CURRENT SCOPED FILE CONTENTS:\n${scopedFilesContext}`);
+
+            if (wfStep.allow_skip_spec) {
+              specPromptParts.push(
+                `FAST-EXIT OPTION: If the goal and scope are already completely self-evident and unambiguous, you MAY skip drafting a lengthy spec. Respond immediately with 'SKIP_SPEC: <1-sentence reason>'. Keep thinking brief (<50 words).`
+              );
+            } else {
+              specPromptParts.push(
+                `Please draft a concise, clear technical specification in Markdown detailing architecture, contracts, and implementation steps for the Coder.`
+              );
+            }
+
+            const specUserMessage = specPromptParts.join('\n\n');
+            let specRes;
+
+            try {
+              const agentRes = await runAgent({
+                role: stepRole,
+                prompt: specUserMessage,
+                sessionId: `${task.task_id}-${stepRole}-step${wfStep.step || 1}`,
+                scope: task.scope || [],
+                images: task.attachments || task.images || [],
+                modelOverride: stepModel,
+                maxTurns: 3,
+                timeoutMs: (task.mode === 'quick' ? 60 : 120) * 1000,
+                repoRoot: REPO_ROOT,
+                maxThinkingTokens: stepThinking
+              });
+
+              if (agentRes.ok) {
+                specRes = {
+                  ok: true,
+                  content: agentRes.content || '',
+                  usage: agentRes.usage || { prompt_tokens: 0, completion_tokens: 0 }
+                };
+                if (agentRes.usage) {
+                  const sIn = agentRes.usage.prompt_tokens || 0;
+                  const sOut = agentRes.usage.completion_tokens || 0;
+                  const sCached = agentRes.usage.cached_tokens || 0;
+                  taskTokensUsed += sIn + sOut;
+                  state.metrics.total_input_tokens = (state.metrics.total_input_tokens || 0) + sIn;
+                  state.metrics.total_output_tokens = (state.metrics.total_output_tokens || 0) + sOut;
+                  state.metrics.total_cached_tokens = (state.metrics.total_cached_tokens || 0) + sCached;
+                  if (sCached > 0) {
+                    console.log(`[Spec Cache] Prompt: ${sIn} | Cached: ${sCached} (Hit: ${(agentRes.usage.cache_hit_ratio * 100).toFixed(1)}%) | Completion: ${sOut}`);
+                  }
+                }
+              } else {
+                const specRoleFile = roleCfg.spec_file || `roles/${stepRole}.md`;
+                const specSysRole = fs.existsSync(path.resolve(TEAM_DIR, specRoleFile))
+                  ? fs.readFileSync(path.resolve(TEAM_DIR, specRoleFile), 'utf8')
+                  : `You are the ${stepRole} agent. Draft clear technical specs in Markdown.`;
+                specRes = await call9Router(stepModel, specSysRole, specUserMessage, 8192, null, 0.2, {
+                  maxThinkingTokens: stepThinking
+                });
+              }
+            } catch (err) {
+              console.warn(`[Writer Hub] Error during ${stepRole} runAgent: ${err.message}`);
+              specRes = { ok: false, error: err.message };
+            }
+
+            if (specRes.ok && specRes.content) {
+              fs.mkdirSync(path.dirname(artFullPath), { recursive: true });
+              const isSkip = specRes.content.trim().startsWith('SKIP_SPEC');
+              if (isSkip) {
+                console.log(`[Writer Hub] Fast-exit triggered for ${stepRole}: ${specRes.content.slice(0, 150)}`);
+                fs.writeFileSync(artFullPath, `# Specification Skipped (Fast-Exit)\n${specRes.content.trim()}\n`, 'utf8');
+              } else {
+                console.log(`[Writer Hub] Spec artifact successfully written: ${targetArtifact}`);
+                fs.writeFileSync(artFullPath, specRes.content.trim() + '\n', 'utf8');
+              }
+              generatedArtifacts.push(targetArtifact);
+            } else {
+              console.warn(`[Writer Hub] Role ${stepRole} failed to draft spec: ${specRes.error || 'Empty response'}. Continuing workflow.`);
+            }
+
+            updateLiveStatus({
+              roles_status: {
+                ...liveStatus.roles_status,
+                [stepRole]: { model: stepModel, status: 'done' }
+              }
             });
           }
-        } catch (agentErr) {
-          console.warn(`[Writer Runtime] Exception during runAgent: ${agentErr.message}. Falling back to call9Router...`);
-          writerRes = await call9Router(writerModel, writerSystemRole, userMessage, 16384, writerFallback, writerTemp, {
-            maxThinkingTokens: writerMaxThinking
-          });
         }
 
-        if (!writerRes.ok) {
-          console.error(`[Writer] API error: ${writerRes.error}`);
-          task.last_error = writerRes.error;
-          updateLiveStatus({
-            roles_status: {
-              writer: { model: writerModel, status: 'error' },
-              validator: { status: 'idle' },
-              reviewer: { status: 'idle' }
-            },
-            last_error: writerRes.error
-          });
-          retries++;
-          continue;
+        // 2. Execute Coder Patch Buckets (Single Merged Step OR Step 2A Backend -> AST Bridge -> Step 2B Frontend)
+        let patchSteps = workflowSteps.filter(s => s.action === 'apply_patch');
+        if (patchSteps.length === 0) {
+          patchSteps = [{
+            step: 1,
+            role: 'writer',
+            model: writerModel,
+            domain: 'fullstack',
+            action: 'apply_patch',
+            sub_scope: task.scope || [],
+            inputs: generatedArtifacts
+          }];
         }
 
-        const rawLogPath = saveWriterRawOutput(task.task_id, retries + 1, writerRes);
+        let patchPipelineFailed = false;
+        let shouldBreakRetryLoop = false;
+        let lastActiveWriterModel = writerModel;
+        const cumulativeModified = new Set();
 
-        const inputTok = writerRes.usage?.prompt_tokens || 0;
-        const outputTok = writerRes.usage?.completion_tokens || 0;
-        taskTokensUsed += inputTok + outputTok;
-        state.metrics.total_input_tokens = (state.metrics.total_input_tokens || 0) + inputTok;
-        state.metrics.total_output_tokens = (state.metrics.total_output_tokens || 0) + outputTok;
+        for (let pIdx = 0; pIdx < patchSteps.length; pIdx++) {
+          const coderStep = patchSteps[pIdx];
+          const stepRole = coderStep.role || 'writer';
+          const stepDomain = coderStep.domain || 'fullstack';
+          const stepScope = Array.isArray(coderStep.sub_scope) && coderStep.sub_scope.length > 0
+            ? coderStep.sub_scope
+            : (task.scope || []);
 
-        updateLiveStatus({
-          raw_log_path: rawLogPath,
-          roles_status: {
-            writer: { model: writerModel, status: 'done' },
-            validator: { status: 'idle' },
-            reviewer: { status: 'idle' }
-          },
-          tokens: {
-            task_input: taskTokensUsed,
-            task_output: 0,
-            session_input: state.metrics.total_input_tokens || 0,
-            session_output: state.metrics.total_output_tokens || 0
+          const inputArtifacts = coderStep.inputs || (generatedArtifacts.length > 0 ? generatedArtifacts : []);
+          let specsDossier = '';
+          if (inputArtifacts.length > 0) {
+            specsDossier = buildConsolidatedSpecsContext(inputArtifacts, REPO_ROOT);
           }
-        });
 
-        // Step A.5: Unconditional Truncation Guard (when finish_reason === 'length')
-        // Even if output was cut cleanly between two SEARCH/REPLACE blocks, applying partial blocks risks committing half a feature.
-        if (writerRes.finishReason === 'length') {
-          const searchCount = (writerRes.content.match(/<<<<<<< SEARCH/g) || []).length;
-          const replaceCount = (writerRes.content.match(/>>>>>>> REPLACE/g) || []).length;
-          const truncErr = `Writer output truncated at max_tokens=16384 (finish_reason="length", ${searchCount} SEARCH / ${replaceCount} REPLACE blocks). Refusing to apply partial output; emit smaller/more concise blocks or split task.${rawLogPath ? ` (raw output: ${path.relative(REPO_ROOT, rawLogPath)})` : ''}`;
-          console.warn(`[Writer] ${truncErr}`);
-          const failAction = handleStageFailure('apply', truncErr, hashString('truncated_output_length'));
-          if (failAction.shouldBreak) break;
-          continue;
-        }
+          const activeWriterModel = coderStep.model || writerModel;
+          lastActiveWriterModel = activeWriterModel;
+          const coderThinking = resolveThinkingBudget(task.risk_level, activeWriterModel, writerRole);
 
-        // Step B: 8-Step Applier Pipeline
-        updateLiveStatus({
-          current_stage: 'applier',
-          stage_started_at: new Date().toISOString()
-        });
+          const stepScopedContext = (stepScope.length === (task.scope || []).length)
+            ? scopedFilesContext
+            : buildScopedFilesContext(stepScope, REPO_ROOT, { ...task, scope: stepScope }, {
+                tokenBudgetPerTask,
+                maxFilesPerTask
+              });
 
-        const applyRes = applyEdits(writerRes.content, task, {
-          allowedDirs,
-          protectedFiles,
-          maxScopeIncrease,
-          allowNewFiles,
-          newFilesOnlyInScope,
-          repoRoot: REPO_ROOT
-        });
-
-        if (!applyRes.ok) {
-          const truncHint = writerRes.finishReason === 'length'
-            ? ' [OUTPUT TRUNCATED AT max_tokens=16384 — Task is too large for 1 pass; split into smaller tasks (<150 lines)]'
-            : '';
-          const fullApplyErr = `${applyRes.error}${truncHint}${rawLogPath ? ` (raw output saved: ${path.relative(REPO_ROOT, rawLogPath)})` : ''}`;
-          console.warn(`[Applier] ${fullApplyErr}`);
-          if (writerRes.content) {
-            console.warn(`[Applier Output Preview]:\n${writerRes.content.slice(0, 500)}`);
+          // Live AST Bridge: If Step 2B (Frontend) follows Step 2A (Backend), extract updated signatures from Step 2A files
+          let updatedBackendBridgeMap = '';
+          if (Array.isArray(coderStep.inject_updated_repo_map_from) && coderStep.inject_updated_repo_map_from.length > 0) {
+            try {
+              updatedBackendBridgeMap = generateRepoMap(REPO_ROOT, {
+                query: coderStep.inject_updated_repo_map_from,
+                maxChars: 2000
+              });
+            } catch {}
           }
-          if (applyRes.security || applyRes.noRetry) {
-            blockReason = fullApplyErr;
-            task.status = 'blocked';
-            rollback(getRollbackTargets());
-            activeRollbackTargets = [];
+
+          const userMessageParts = [
+            `TASK ID: ${task.task_id}${patchSteps.length > 1 ? ` (Bucket ${pIdx + 1}/${patchSteps.length}: ${stepDomain.toUpperCase()})` : ''}`,
+            `EXECUTION MODE: ${task.mode}`,
+            `GOAL: ${task.goal || task.title}`,
+            `ALLOWED BUCKET SCOPE (ONLY modify these files in this step): ${stepScope.join(', ')}`,
+            `CONSTRAINTS: ${(task.constraints || []).join(', ')}`,
+            `ACCEPTANCE CRITERIA: ${task.acceptance_criteria.join('; ')}`
+          ];
+
+          if (updatedBackendBridgeMap && updatedBackendBridgeMap.trim()) {
+            userMessageParts.push(`UPDATED BACKEND CONTRACT (Live AST Signatures written in Step 2A — match these 100%):\n${updatedBackendBridgeMap.trim()}`);
+          } else if (neighborRepoMap && neighborRepoMap.trim()) {
+            userMessageParts.push(`NEIGHBORING CODEBASE SKELETON (Symbols & Signatures for Reference):\n${neighborRepoMap.trim()}`);
+          }
+
+          if (specsDossier && specsDossier.trim()) {
+            userMessageParts.push(`DESIGN SPECIFICATIONS & ARCHITECTURAL DOSSIER:\n${specsDossier.trim()}`);
+          }
+
+          userMessageParts.push(`CURRENT SCOPED FILE CONTENTS:\n${stepScopedContext}`);
+
+          userMessageParts.push(
+            task.last_error
+              ? `PREVIOUS ATTEMPT FAILED WITH ERROR:\n${task.last_error}\nPlease fix the issue. Think briefly (<100 words) and output exact SEARCH/REPLACE blocks for files in [${stepScope.join(', ')}].`
+              : `Please generate the exact code modifications for [${stepScope.join(', ')}] to fulfill the goal. Think briefly (<100 words) and immediately output the SEARCH/REPLACE blocks.`
+          );
+
+          const userMessage = userMessageParts.join('\n\n');
+
+          let writerRes;
+          try {
+            const agentRes = await runAgent({
+              role: stepRole,
+              prompt: userMessage,
+              sessionId: `${task.task_id}-${stepRole}${patchSteps.length > 1 ? `-${stepDomain}` : ''}`,
+              scope: stepScope,
+              images: task.attachments || task.images || [],
+              modelOverride: activeWriterModel,
+              maxTurns: 4,
+              timeoutMs: (task.mode === 'quick' ? 90 : 180) * 1000,
+              repoRoot: REPO_ROOT,
+              maxThinkingTokens: coderThinking
+            });
+
+            if (agentRes.ok) {
+              writerRes = {
+                ok: true,
+                content: agentRes.content || '',
+                rawContent: agentRes.content || '',
+                rawReasoning: '',
+                finishReason: 'stop',
+                usage: agentRes.usage || { prompt_tokens: 0, completion_tokens: 0 },
+                modelUsed: agentRes.model_used || activeWriterModel,
+                responseModel: agentRes.model_used || activeWriterModel,
+                modelMatched: true
+              };
+            } else {
+              console.warn(`[Writer Runtime] Agent run returned error: ${agentRes.error}. Falling back to call9Router...`);
+              writerRes = await call9Router(activeWriterModel, writerSystemRole, userMessage, 16384, writerFallback, writerTemp, {
+                maxThinkingTokens: coderThinking
+              });
+            }
+          } catch (agentErr) {
+            console.warn(`[Writer Runtime] Exception during runAgent: ${agentErr.message}. Falling back to call9Router...`);
+            writerRes = await call9Router(activeWriterModel, writerSystemRole, userMessage, 16384, writerFallback, writerTemp, {
+              maxThinkingTokens: coderThinking
+            });
+          }
+
+          if (!writerRes.ok) {
+            console.error(`[Writer] API error: ${writerRes.error}`);
+            task.last_error = writerRes.error;
+            updateLiveStatus({
+              roles_status: {
+                writer: { model: activeWriterModel, status: 'error' },
+                validator: { status: 'idle' },
+                reviewer: { status: 'idle' }
+              },
+              last_error: writerRes.error
+            });
+            retries++;
+            patchPipelineFailed = true;
             break;
           }
 
-          const applyHash = hashString(applyRes.error);
-          const failAction = handleStageFailure('apply', fullApplyErr, applyHash);
-          if (failAction.shouldBreak) break;
+          const rawLogPath = saveWriterRawOutput(task.task_id, retries + 1, writerRes);
+
+          const inputTok = writerRes.usage?.prompt_tokens || 0;
+          const outputTok = writerRes.usage?.completion_tokens || 0;
+          const cachedTok = writerRes.usage?.cached_tokens || 0;
+          taskTokensUsed += inputTok + outputTok;
+          state.metrics.total_input_tokens = (state.metrics.total_input_tokens || 0) + inputTok;
+          state.metrics.total_output_tokens = (state.metrics.total_output_tokens || 0) + outputTok;
+          state.metrics.total_cached_tokens = (state.metrics.total_cached_tokens || 0) + cachedTok;
+          if (cachedTok > 0) {
+            console.log(`[Writer Cache] Prompt: ${inputTok} | Cached: ${cachedTok} (Hit: ${((writerRes.usage.cache_hit_ratio || 0) * 100).toFixed(1)}%) | Completion: ${outputTok}`);
+          }
+
+          const totalSessIn = state.metrics.total_input_tokens || 0;
+          const totalSessCached = state.metrics.total_cached_tokens || 0;
+          const sessCacheHitPct = totalSessIn > 0
+            ? Math.round((totalSessCached / totalSessIn) * 1000) / 10
+            : 0;
+
+          updateLiveStatus({
+            raw_log_path: rawLogPath,
+            roles_status: {
+              writer: { model: activeWriterModel, status: 'done' },
+              validator: { status: 'idle' },
+              reviewer: { status: 'idle' }
+            },
+            tokens: {
+              task_input: taskTokensUsed,
+              task_output: 0,
+              session_input: totalSessIn,
+              session_output: state.metrics.total_output_tokens || 0,
+              session_cached: totalSessCached,
+              cache_hit_pct: sessCacheHitPct
+            }
+          });
+
+          // Step A.5: Unconditional Truncation Guard (when finish_reason === 'length')
+          if (writerRes.finishReason === 'length') {
+            const searchCount = (writerRes.content.match(/<<<<<<< SEARCH/g) || []).length;
+            const replaceCount = (writerRes.content.match(/>>>>>>> REPLACE/g) || []).length;
+            const truncErr = `Writer output truncated at max_tokens=16384 (finish_reason="length", ${searchCount} SEARCH / ${replaceCount} REPLACE blocks). Refusing to apply partial output; emit smaller/more concise blocks or split task.${rawLogPath ? ` (raw output: ${path.relative(REPO_ROOT, rawLogPath)})` : ''}`;
+            console.warn(`[Writer] ${truncErr}`);
+            const failAction = handleStageFailure('apply', truncErr, hashString('truncated_output_length'));
+            patchPipelineFailed = true;
+            shouldBreakRetryLoop = failAction.shouldBreak;
+            break;
+          }
+
+          // Step B: 8-Step Applier Pipeline (Scoped to current bucket stepScope)
+          updateLiveStatus({
+            current_stage: 'applier',
+            stage_started_at: new Date().toISOString()
+          });
+
+          const scopedSubTask = { ...task, scope: stepScope };
+          const applyRes = applyEdits(writerRes.content, scopedSubTask, {
+            allowedDirs,
+            protectedFiles,
+            maxScopeIncrease,
+            allowNewFiles,
+            newFilesOnlyInScope,
+            repoRoot: REPO_ROOT
+          });
+
+          if (!applyRes.ok) {
+            const truncHint = writerRes.finishReason === 'length'
+              ? ' [OUTPUT TRUNCATED AT max_tokens=16384 — Task is too large for 1 pass; split into smaller tasks (<150 lines)]'
+              : '';
+            const fullApplyErr = `${applyRes.error}${truncHint}${rawLogPath ? ` (raw output saved: ${path.relative(REPO_ROOT, rawLogPath)})` : ''}`;
+            console.warn(`[Applier] ${fullApplyErr}`);
+            if (writerRes.content) {
+              console.warn(`[Applier Output Preview]:\n${writerRes.content.slice(0, 500)}`);
+            }
+            if (applyRes.security || applyRes.noRetry) {
+              blockReason = fullApplyErr;
+              task.status = 'blocked';
+              rollback(getRollbackTargets());
+              activeRollbackTargets = [];
+              patchPipelineFailed = true;
+              shouldBreakRetryLoop = true;
+              break;
+            }
+
+            const applyHash = hashString(applyRes.error);
+            const failAction = handleStageFailure('apply', fullApplyErr, applyHash);
+            patchPipelineFailed = true;
+            shouldBreakRetryLoop = failAction.shouldBreak;
+            break;
+          }
+
+          if (Array.isArray(applyRes.scope_expansions) && applyRes.scope_expansions.length > 0) {
+            task.scope_expansions = Array.from(new Set([...(task.scope_expansions || []), ...applyRes.scope_expansions]));
+          }
+          for (const modFile of (applyRes.modified || [])) {
+            cumulativeModified.add(modFile);
+          }
+        }
+
+        if (patchPipelineFailed) {
+          if (shouldBreakRetryLoop) break;
           continue;
         }
 
-        task.scope_expansions = applyRes.scope_expansions || task.scope_expansions;
-        const allTaskFiles = Array.from(new Set([...task.scope, ...(task.scope_expansions || []), ...(applyRes.modified || [])]));
+        const allTaskFiles = Array.from(new Set([...task.scope, ...(task.scope_expansions || []), ...cumulativeModified]));
         actualModifiedFiles = getModifiedFiles(allTaskFiles);
         activeRollbackTargets = getRollbackTargets();
 
@@ -1110,11 +1383,12 @@ async function runOrchestrator() {
           }))
         });
 
-        // Step E: Risk-Gated & Mode-Based Reviewer Gate
-        // Only invokes AI Reviewer (Opus) when risk_level >= review_min_risk_level ('high'/'critical') or force_ai_review: true
-        if (shouldRunReviewerGate(task, policyConfig.policy, teamConfig.roles)) {
+        // Step E: Risk-Gated & Mode-Based Reviewer Gate (with Anti-Self-Review Invariant)
+        // Only invokes AI Reviewer when risk_level >= review_min_risk_level ('high'/'critical') or force_ai_review: true,
+        // and when Reviewer model is distinct from the active Writer model.
+        if (shouldRunReviewerGate(task, policyConfig.policy, teamConfig.roles, lastActiveWriterModel)) {
           task.status = 'reviewing';
-          const effectiveReviewerModel = teamConfig.roles?.reviewer?.model || writerModel;
+          const effectiveReviewerModel = teamConfig.roles?.reviewer?.model || teamConfig.roles?.techlead?.model || writerModel;
           updateLiveStatus({
             current_stage: 'reviewer',
             stage_started_at: new Date().toISOString(),

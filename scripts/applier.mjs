@@ -178,7 +178,15 @@ export function computeDeterministicRisk(scope = []) {
     'auth',
     'secret',
     'migration',
-    'infra'
+    'infra',
+    'package.json',
+    'package-lock.json',
+    'requirements.txt',
+    'pyproject.toml',
+    'cargo.toml',
+    'go.mod',
+    'dockerfile',
+    'docker-compose'
   ];
   const isHigh = scope.some(item => {
     const s = (item || '').toLowerCase().replace(/\\/g, '/');
@@ -253,6 +261,13 @@ export function parseSearchReplaceBlocks(content) {
     }
   }
 
+  if (state !== 'IDLE') {
+    blocks.dangling = {
+      state,
+      file: currentFile || 'unknown'
+    };
+  }
+
   return blocks;
 }
 
@@ -282,8 +297,15 @@ export function applyEdits(rawOutput, task = {}, options = {}) {
   const allowExpansion = Boolean(task.allow_scope_expansion || task.cross_role_edit);
   const existingExpansions = task.scope_expansions || [];
 
-  // BƯỚC 1: Parse blocks
+  // BƯỚC 1: Parse blocks & Detect Truncated/Dangling Blocks (Provider-Agnostic Truncation Guard)
   const blocks = parseSearchReplaceBlocks(rawOutput);
+  if (blocks.dangling) {
+    return {
+      ok: false,
+      truncated: true,
+      error: `Truncated/dangling SEARCH-REPLACE block detected in "${blocks.dangling.file}" (unclosed ${blocks.dangling.state} block without >>>>>>> REPLACE). Refusing to apply partial output.`
+    };
+  }
   if (blocks.length === 0) {
     return {
       ok: false,
@@ -438,10 +460,10 @@ export function applyEdits(rawOutput, task = {}, options = {}) {
       }
 
       if (!normSearch) {
-        if (fileExists) {
+        if (fileExists && currentContent.trim().length > 0) {
           return {
             ok: false,
-            error: `Block ${i + 1} for "${relPath}": Empty SEARCH block is only permitted when creating a new file.`
+            error: `Block ${i + 1} for "${relPath}": Empty SEARCH block is only permitted when creating a new file or editing an empty file.`
           };
         }
         currentContent = normReplace;

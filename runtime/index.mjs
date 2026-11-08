@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 
 import { resolveRepoRoot } from '../scripts/applier.mjs';
+import { loadProjectConventions } from '../scripts/lib/context-builders.mjs';
 import { buildUserMessage } from './context-adapter.mjs';
 import { callModelEndpoint, getModelCapabilities } from './provider-gateway.mjs';
 import { compactMessagesForContext, loadSession, saveSession } from './session-store.mjs';
@@ -22,6 +23,34 @@ export const ROLES_DIR = path.resolve(TEAM_DIR, 'roles');
 export const CONFIG_FILE = path.resolve(TEAM_DIR, 'config', 'team.yaml');
 
 export const MAX_AGENT_TOOL_TURNS = 4; // Hard ceiling to prevent infinite tool loops
+
+/**
+ * Strips verbose inline <think>...</think> tags from older assistant turns,
+ * preserving thought_signature for model reasoning continuity while saving 70% context.
+ * SPEC Section 3.2.
+ */
+export function stripOldInlineThinking(messages = [], keepRecentTurns = 1) {
+  if (!Array.isArray(messages) || messages.length === 0) return messages;
+  const assistantIndices = [];
+  for (let idx = 0; idx < messages.length; idx++) {
+    if (messages[idx]?.role === 'assistant') {
+      assistantIndices.push(idx);
+    }
+  }
+  const cutoffIdx = assistantIndices.length > keepRecentTurns
+    ? assistantIndices[assistantIndices.length - keepRecentTurns]
+    : -1;
+
+  for (let idx = 0; idx < messages.length; idx++) {
+    const msg = messages[idx];
+    if (msg?.role === 'assistant' && idx < cutoffIdx && typeof msg.content === 'string') {
+      if (/<think>[\s\S]*?<\/think>/i.test(msg.content)) {
+        msg.content = msg.content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      }
+    }
+  }
+  return messages;
+}
 
 /**
  * Loads team role & provider configuration from team.yaml.
@@ -48,20 +77,23 @@ export function loadRoleConfig(roleName = 'designer', customTeamCfg = null) {
   const roleCfg = roles[roleName] || {};
 
   // Resolve default tools by role archetype
-  let defaultTools = ['read_file', 'list_files', 'search_code'];
+  let defaultTools = ['read_file', 'list_files', 'search_code', 'get_repo_map'];
   let fallbackDefaultModel = writerCfg.model || 'kr/claude-sonnet-4.5-thinking';
 
-  if (roleName === 'writer' || roleName === 'backend_writer') {
-    defaultTools = ['read_file', 'list_files', 'search_code', 'apply_patch', 'run_validator', 'run_command'];
+  if (roleName === 'writer' || roleName === 'backend_writer' || roleName === 'frontend_writer') {
+    defaultTools = ['read_file', 'list_files', 'search_code', 'get_repo_map', 'apply_patch', 'run_validator', 'run_command'];
     fallbackDefaultModel = writerCfg.model || 'deepseek-ai/deepseek-v4.1-flash-1017';
   } else if (roleName === 'designer') {
-    defaultTools = ['read_file', 'list_files', 'search_code', 'run_command'];
+    defaultTools = ['read_file', 'list_files', 'search_code', 'get_repo_map', 'run_command'];
     fallbackDefaultModel = roles.router?.model || writerCfg.model || 'kr/claude-sonnet-4.5-thinking';
-  } else if (roleName === 'reviewer') {
-    defaultTools = ['read_file', 'search_code'];
-    fallbackDefaultModel = writerCfg.model || 'ag/claude-opus-5-5-high';
+  } else if (roleName === 'reviewer' || roleName === 'techlead') {
+    defaultTools = ['read_file', 'list_files', 'search_code', 'get_repo_map'];
+    fallbackDefaultModel = roles.reviewer?.model || writerCfg.model || 'ag/claude-opus-5-5-high';
+  } else if (roleName === 'architect') {
+    defaultTools = ['read_file', 'list_files', 'search_code', 'get_repo_map'];
+    fallbackDefaultModel = roles.architect?.model || roles.router?.model || writerCfg.model || 'kr/claude-sonnet-4.5-thinking';
   } else if (roleName === 'debugger') {
-    defaultTools = ['read_file', 'list_files', 'search_code', 'run_command'];
+    defaultTools = ['read_file', 'list_files', 'search_code', 'get_repo_map', 'run_command'];
     fallbackDefaultModel = roles.router?.model || writerCfg.model || 'kr/claude-sonnet-4.5-thinking';
   }
 
@@ -69,11 +101,14 @@ export function loadRoleConfig(roleName = 'designer', customTeamCfg = null) {
     ? roleCfg.model
     : fallbackDefaultModel;
 
+  const roleModelsList = Array.isArray(roleCfg.models) ? roleCfg.models.filter(Boolean) : [];
+  const secondaryRoleModel = roleModelsList.find(m => m !== resolvedModel) || null;
+
   return {
     name: roleName,
     display_name: roleCfg.display_name || roleName,
     model: resolvedModel,
-    fallback_model: roleCfg.fallback_model || writerCfg.fallback_model || writerCfg.model || null,
+    fallback_model: roleCfg.fallback_model || secondaryRoleModel || writerCfg.fallback_model || writerCfg.model || null,
     allowed_tools: roleCfg.allowed_tools || defaultTools,
     allowed_scope: roleCfg.allowed_scope || [],
     temperature: roleCfg.temperature ?? 0.2,
@@ -83,16 +118,28 @@ export function loadRoleConfig(roleName = 'designer', customTeamCfg = null) {
 }
 
 /**
- * Loads system prompt markdown for role
+ * Loads system prompt markdown for role and appends selectively filtered host project conventions
+ * (placed inside system prompt to leverage Cache Breakpoint #2).
  */
-export function loadRoleSystemPrompt(roleName) {
+export function loadRoleSystemPrompt(roleName, repoRoot = null, options = {}) {
   const roleFile = path.resolve(ROLES_DIR, `${roleName}.md`);
+  let basePrompt = `You are a specialized ${roleName} agent operating within a software repository. You have access to tools to inspect files and propose exact modifications.`;
   if (fs.existsSync(roleFile)) {
     try {
-      return fs.readFileSync(roleFile, 'utf8');
+      basePrompt = fs.readFileSync(roleFile, 'utf8');
     } catch {}
   }
-  return `You are a specialized ${roleName} agent operating within a software repository. You have access to tools to inspect files and propose exact modifications.`;
+
+  if (repoRoot) {
+    const conventions = loadProjectConventions(repoRoot, {
+      role: roleName,
+      projectRulesFiles: options.projectRulesFiles || null
+    });
+    if (conventions) {
+      return `${basePrompt.trim()}\n\n${conventions}`;
+    }
+  }
+  return basePrompt;
 }
 
 /**
@@ -106,10 +153,12 @@ export async function runAgent(options = {}) {
     images = [],
     files = [],
     scope = [],
-    model: modelOverride = null,
+    model = null,
+    modelOverride = null,
     timeoutMs = 90000,
     repoRoot = resolveRepoRoot(),
-    maxTurns = MAX_AGENT_TOOL_TURNS
+    maxTurns = MAX_AGENT_TOOL_TURNS,
+    maxThinkingTokens = null
   } = options;
 
   if (!prompt && images.length === 0 && files.length === 0) {
@@ -118,15 +167,15 @@ export async function runAgent(options = {}) {
 
   // 1. Resolve Role Config
   const roleConfig = loadRoleConfig(role);
-  const activeModel = modelOverride || roleConfig.model;
+  const activeModel = modelOverride || model || roleConfig.model;
   const capabilities = getModelCapabilities(activeModel);
 
   // 2. Load or Restore Session
   const session = loadSession(sessionId, role, activeModel);
   const sessionSafeId = session.session_id;
 
-  // 3. Prepare System Prompt & Tool Schemas
-  const systemPromptText = loadRoleSystemPrompt(role);
+  // 3. Prepare System Prompt (Role Prompt + Selective Host Project Conventions) & Tool Schemas
+  const systemPromptText = loadRoleSystemPrompt(role, repoRoot);
   const toolSchemas = getAvailableToolSchemas(roleConfig.allowed_tools);
 
   // 4. Build User Message Payload (with Vision / Text File Attachments)
@@ -143,13 +192,20 @@ export async function runAgent(options = {}) {
     return { ok: false, error: `Context adapter error: ${attErr.message}` };
   }
 
-  // Assemble message history with compaction
-  const history = compactMessagesForContext(session.messages || []);
+  // Assemble message history with atomic turn-preserving compaction (using Epoch Watermark to preserve KV Cache)
+  const history = compactMessagesForContext(session.messages || [], 2, { useEpochWatermark: true });
   const messages = [
     { role: 'system', content: systemPromptText },
     ...history,
     userMessage
   ];
+
+  // Token budget estimation & transparency logging
+  const estTotalTokens = Math.ceil(JSON.stringify(messages).length / 3.5);
+  const sysTokens = Math.ceil(systemPromptText.length / 3.5);
+  const userTokens = Math.ceil(JSON.stringify(userMessage).length / 3.5);
+  const histTokens = Math.ceil(JSON.stringify(history).length / 3.5);
+  console.log(`[Context Budget] Payload: ~${estTotalTokens} tokens (System: ${sysTokens} | History: ${histTokens} | User: ${userTokens}) for role="${role}"`);
 
   // 5. Bounded Tool Execution Loop
   let currentTurn = 0;
@@ -158,8 +214,20 @@ export async function runAgent(options = {}) {
   let finalContent = '';
   let modelUsed = activeModel;
 
+  const accumulatedUsage = {
+    prompt_tokens: 0,
+    uncached_input_tokens: 0,
+    cached_tokens: 0,
+    completion_tokens: 0,
+    total_tokens: 0,
+    cache_hit_ratio: 0
+  };
+
   while (currentTurn < maxTurns) {
     currentTurn++;
+
+    // SPEC Section 3.2: Strip verbose inline thinking from older assistant turns before sending
+    stripOldInlineThinking(messages, 1);
 
     const callRes = await callModelEndpoint({
       model: activeModel,
@@ -169,24 +237,37 @@ export async function runAgent(options = {}) {
       temperature: roleConfig.temperature,
       timeoutMs,
       baseUrl: roleConfig.base_url,
-      apiKey: roleConfig.api_key
+      apiKey: roleConfig.api_key,
+      maxThinkingTokens
     });
 
     if (!callRes.ok) {
       return {
         ok: false,
         error: `Agent call failed on turn ${currentTurn}: ${callRes.error}`,
-        session_id: sessionSafeId
+        session_id: sessionSafeId,
+        usage: accumulatedUsage
       };
+    }
+
+    if (callRes.usage) {
+      accumulatedUsage.prompt_tokens += callRes.usage.prompt_tokens || 0;
+      accumulatedUsage.uncached_input_tokens += callRes.usage.uncached_input_tokens || 0;
+      accumulatedUsage.cached_tokens += callRes.usage.cached_tokens || 0;
+      accumulatedUsage.completion_tokens += callRes.usage.completion_tokens || 0;
+      accumulatedUsage.total_tokens += callRes.usage.total_tokens || 0;
     }
 
     modelUsed = callRes.model_used;
     const toolCalls = callRes.tool_calls || [];
 
-    // Push assistant response to conversational trajectory
+    // Push assistant response to conversational trajectory, preserving thought_signature
     const assistantMsg = {
       role: 'assistant',
-      content: callRes.content || ''
+      content: callRes.content || '',
+      ...(callRes.reasoning_content ? { reasoning_content: callRes.reasoning_content } : {}),
+      ...(callRes.thought_signature ? { thought_signature: callRes.thought_signature } : {}),
+      ...(callRes.thinking_blocks ? { thinking_blocks: callRes.thinking_blocks } : {})
     };
     if (toolCalls.length > 0) {
       assistantMsg.tool_calls = toolCalls.map(tc => ({
@@ -195,7 +276,9 @@ export async function runAgent(options = {}) {
         function: {
           name: tc.name,
           arguments: JSON.stringify(tc.arguments)
-        }
+        },
+        ...(tc.thought_signature ? { thought_signature: tc.thought_signature } : {}),
+        ...(tc.provider_specific_fields ? { provider_specific_fields: tc.provider_specific_fields } : {})
       }));
     }
     messages.push(assistantMsg);
@@ -243,7 +326,7 @@ export async function runAgent(options = {}) {
   // 5b. Final Synthesis Turn: If maxTurns reached through tool calls and finalContent is still empty,
   // invoke model once more WITHOUT tools so it can synthesize its findings and output SEARCH/REPLACE blocks.
   if (!finalContent && currentTurn >= maxTurns) {
-    const synthesisPrompt = (role === 'writer' || role === 'backend_writer')
+    const synthesisPrompt = (role === 'writer' || role === 'backend_writer' || role === 'frontend_writer')
       ? 'All tool investigations are complete. Based on what you observed from the tools, immediately provide your final response containing the exact <<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE blocks to fulfill the task. Do not call any more tools.'
       : 'All tool investigations are complete. Based on what you observed from the tools, please provide your final response now.';
 
@@ -260,12 +343,20 @@ export async function runAgent(options = {}) {
       temperature: roleConfig.temperature,
       timeoutMs,
       baseUrl: roleConfig.base_url,
-      apiKey: roleConfig.api_key
+      apiKey: roleConfig.api_key,
+      maxThinkingTokens
     });
 
     if (synthRes.ok) {
       finalContent = synthRes.content || '';
       modelUsed = synthRes.model_used || modelUsed;
+      if (synthRes.usage) {
+        accumulatedUsage.prompt_tokens += synthRes.usage.prompt_tokens || 0;
+        accumulatedUsage.uncached_input_tokens += synthRes.usage.uncached_input_tokens || 0;
+        accumulatedUsage.cached_tokens += synthRes.usage.cached_tokens || 0;
+        accumulatedUsage.completion_tokens += synthRes.usage.completion_tokens || 0;
+        accumulatedUsage.total_tokens += synthRes.usage.total_tokens || 0;
+      }
       messages.push({
         role: 'assistant',
         content: finalContent
@@ -289,6 +380,10 @@ export async function runAgent(options = {}) {
   session.model = modelUsed;
   saveSession(session);
 
+  if (accumulatedUsage.prompt_tokens > 0) {
+    accumulatedUsage.cache_hit_ratio = Number((accumulatedUsage.cached_tokens / accumulatedUsage.prompt_tokens).toFixed(4));
+  }
+
   return {
     ok: true,
     role,
@@ -296,7 +391,8 @@ export async function runAgent(options = {}) {
     session_id: sessionSafeId,
     turns_executed: currentTurn,
     tool_receipts: turnReceipts,
-    content: finalContent
+    content: finalContent,
+    usage: accumulatedUsage
   };
 }
 

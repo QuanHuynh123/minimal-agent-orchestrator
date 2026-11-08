@@ -280,6 +280,9 @@ export function scanTaskDir(dirPath) {
         model: raw.model || null,
         acceptance_criteria: Array.isArray(raw.acceptance_criteria) ? raw.acceptance_criteria : [],
         constraints: Array.isArray(raw.constraints) ? raw.constraints : [],
+        writer_hub_workflow: Array.isArray(raw.writer_hub_workflow) ? raw.writer_hub_workflow : [],
+        task_demand: raw.task_demand || null,
+        scope_warnings: Array.isArray(raw.scope_warnings) ? raw.scope_warnings : [],
         retries: raw.retries || 0,
         commit_hash: raw.commit_hash || null,
         created_at: raw.created_at || null,
@@ -308,13 +311,22 @@ export async function createSnapshot(paths = {}) {
   const roles = teamYaml.roles || {};
 
   const policyYaml = loadYamlSafe(path.resolve(configDir, 'policy.yaml')) || {};
+  const rawPolicy = policyYaml.policy || {};
   const project = {
-    id: 'tool-download-workspace',
-    allowed_dirs: ['*']
+    id: rawPolicy.project_id || 'tool-download-workspace',
+    language: rawPolicy.language || 'python',
+    allowed_dirs: rawPolicy.scope_control?.allowed_dirs || ['*']
   };
   const policy = {
-    task_modes: policyYaml.policy?.task_modes || {},
-    approval_gates: policyYaml.policy?.approval_gates || {}
+    project_id: rawPolicy.project_id || 'tool-download-workspace',
+    language: rawPolicy.language || 'python',
+    scope_control: rawPolicy.scope_control || {},
+    task_modes: rawPolicy.task_modes || {},
+    approval_gates: rawPolicy.approval_gates || {},
+    retry_and_escalation: rawPolicy.retry_and_escalation || {},
+    execution_guardrails: rawPolicy.execution_guardrails || {},
+    git_hygiene: rawPolicy.git_hygiene || {},
+    validation: rawPolicy.validation || { fast_checks: [], suite_checks: [] }
   };
 
   // 2. Orchestrator Process & Lock
@@ -351,7 +363,7 @@ export async function createSnapshot(paths = {}) {
     queue_stats: { active: 0, completed: 0, blocked: 0 },
     last_error: null,
     raw_log_path: null,
-    tokens: { task_input: 0, task_output: 0, session_input: 0, session_output: 0 },
+    tokens: { task_input: 0, task_output: 0, session_input: 0, session_output: 0, session_cached: 0, cache_hit_pct: 0 },
     recent_logs: [],
     updated_at: null
   };
@@ -359,7 +371,14 @@ export async function createSnapshot(paths = {}) {
   if (fs.existsSync(liveStatusFile)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(liveStatusFile, 'utf8'));
-      liveStatus = { ...liveStatus, ...parsed };
+      liveStatus = {
+        ...liveStatus,
+        ...parsed,
+        tokens: {
+          ...liveStatus.tokens,
+          ...(parsed.tokens || {})
+        }
+      };
     } catch {}
   }
 
@@ -449,6 +468,7 @@ export async function createSnapshot(paths = {}) {
       started_at: orchestratorLock?.started_at || null
     },
     router_health: routerHealth,
+    router_provider: teamYaml.team?.providers?.local_9router || { base_url: 'http://127.0.0.1:20128/v1', default_key: 'sk-default' },
     roles,
     policy,
     live_status: liveStatus,

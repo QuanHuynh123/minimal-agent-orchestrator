@@ -1,10 +1,15 @@
 <!-- Bottom: Live Console Logs -->
-      <div class="console-card">
-        <div class="console-header">
-          <span class="card-title">Live Console Logs</span>
-          <div class="console-controls">
-            <input type="text" class="filter-input" id="log-filter" placeholder="Filter logs...">
-            <button class="btn-ctrl" id="btn-pause-log">⏸ Pause</button>
-            <button class="btn-ctrl" id="btn-clear-log">Clear</button>
-          </div>
-        </div>
+<div class="console-card">
+  <div class="console-header">
+    <div class="console-title-wrap">
+      <span class="console-dot"></span>
+      <span class="card-title">Console Output</span>
+    </div>
+    <div class="console-controls">
+      <input type="text" class="filter-input" id="log-filter" placeholder="Lọc log...">
+      <button class="btn-ctrl" id="btn-pause-log">Pause</button>
+      <button class="btn-ctrl" id="btn-clear-log">Clear</button>
+    </div>
+  </div>
+  <div class="console-body" id="console-logs"></div>
+</div>

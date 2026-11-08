@@ -102,8 +102,14 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
         return true;
       }
 
-      console.log(`[Dashboard API] Decomposing goal with Router Agent: "${goal}"...`);
-      const decompRes = await decomposeGoal(goal, { dryRun: false });
+      const preset = String(body.preset || 'auto').trim();
+      const modeOverride = preset === 'consult' ? 'consult' : (body.mode || null);
+      console.log(`[Dashboard API] Decomposing goal with Router Agent (preset=${preset}): "${goal}"...`);
+      const decompRes = await decomposeGoal(goal, {
+        dryRun: false,
+        preset,
+        mode: modeOverride
+      });
       res.writeHead(decompRes.ok ? 200 : 500, {
         'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-cache'

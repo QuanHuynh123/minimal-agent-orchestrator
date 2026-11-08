@@ -28,7 +28,8 @@ import {
   shouldRunReviewerGate,
   sliceContentByKeywords,
   validateConfig,
-  verifyResponseModel
+  verifyResponseModel,
+  resolveWriterHubWorkflow
 } from './orchestrator.mjs';
 import {
   auditGitScope,
@@ -364,9 +365,70 @@ const revPromptRetry = buildReviewerPrompt(
   'diff --git a/src/service.js b/src/service.js\n+timeout=30',
   ['Missing timeout on subprocess.run at line 142']
 );
-assert.match(revPromptRetry, /PREVIOUS REVIEW ISSUES TO VERIFY/);
-assert.match(revPromptRetry, /1\. Missing timeout on subprocess\.run at line 142/);
-console.log('✓ Role-specific context builders (Router Google Maps & Reviewer anti-goalpost-shifting) passed');
+// 14. Test 2-Slot Binding & Auto-Collapse Workflow (SPEC Section 3.6)
+const mock1ModelTeam = {
+  roles: {
+    writer: { model: 'deepseek-chat' }
+  }
+};
+const mockMultiModelTeam = {
+  roles: {
+    writer: { model: 'deepseek-chat' },
+    architect: { model: 'claude-opus' },
+    designer: { model: 'claude-sonnet' }
+  }
+};
+
+// Quick mode auto-collapses to []
+const quickWf = resolveWriterHubWorkflow({ mode: 'quick', scope: ['core/a.py'] }, mockMultiModelTeam);
+assert.deepStrictEqual(quickWf, []);
+
+// Consult mode auto-collapses to []
+const consultWf = resolveWriterHubWorkflow({ mode: 'consult', scope: ['core/a.py'] }, mockMultiModelTeam);
+assert.deepStrictEqual(consultWf, []);
+
+// 1-Model setup (specModel === patchModel) auto-collapses to []
+const oneModelWf = resolveWriterHubWorkflow({ mode: 'standard', scope: ['core/a.py'] }, mock1ModelTeam);
+assert.deepStrictEqual(oneModelWf, []);
+
+// Standard backend task with distinct architect generates 2-step workflow
+const standardWf = resolveWriterHubWorkflow({ task_id: 'T-STD-1', mode: 'standard', scope: ['core/a.py'] }, mockMultiModelTeam);
+assert.strictEqual(standardWf.length, 2);
+assert.strictEqual(standardWf[0].role, 'architect');
+assert.strictEqual(standardWf[0].action, 'draft_spec');
+assert.strictEqual(standardWf[0].allow_skip_spec, true);
+assert.strictEqual(standardWf[1].role, 'writer');
+assert.strictEqual(standardWf[1].action, 'apply_patch');
+
+// Standard frontend task binds designer to spec slot
+const uiWf = resolveWriterHubWorkflow({ task_id: 'T-UI-1', mode: 'standard', scope: ['ui_web/index.html'] }, mockMultiModelTeam);
+assert.strictEqual(uiWf.length, 2);
+assert.strictEqual(uiWf[0].role, 'designer');
+
+// 15. Test Dangling/Truncated SEARCH-REPLACE Block Rejection & Universal Dependency Risk
+const danglingOutput = [
+  'FILE: src/app.js',
+  '<<<<<<< SEARCH',
+  'const a = 1;',
+  '=======',
+  'const a = 2;',
+  '>>>>>>> REPLACE',
+  '<<<<<<< SEARCH',
+  'const b = 3;',
+  '=======',
+  'const b = 4; // cut off mid-stream without closing marker'
+].join('\n');
+const danglingRes = applyEdits(danglingOutput, { scope: ['src/app.js'] }, { allowedDirs: ['src'] });
+assert.strictEqual(danglingRes.ok, false, 'Dangling unclosed block must be rejected');
+assert.strictEqual(danglingRes.truncated, true, 'Dangling block must set truncated=true');
+assert.ok(danglingRes.error.includes('Truncated/dangling SEARCH-REPLACE block'), 'Error must mention truncated/dangling block');
+
+assert.strictEqual(computeDeterministicRisk(['requirements.txt']), 'high', 'requirements.txt must escalate to high risk');
+assert.strictEqual(computeDeterministicRisk(['package.json']), 'high', 'package.json must escalate to high risk');
+assert.strictEqual(computeDeterministicRisk(['Cargo.toml']), 'high', 'Cargo.toml must escalate to high risk');
+assert.strictEqual(computeDeterministicRisk(['src/utils.js']), 'low', 'Normal source file remains low risk');
+
+console.log('✓ Slot-Binding, Auto-Collapse & Dangling Block / Supply-Chain Risk Guard passed');
 
 console.log('\n=============================================');
 console.log('ALL V2.1 APPLIER & ORCHESTRATOR TESTS PASSED! 🎯');

@@ -17,10 +17,12 @@
     const txtOrchestrator = document.getElementById('txt-orchestrator');
     const tokIn = document.getElementById('tok-in');
     const tokOut = document.getElementById('tok-out');
+    const tokCache = document.getElementById('tok-cache');
     const txtPolling = document.getElementById('txt-polling');
 
     // Waterfall Pipeline Elements
     const txtStepRouter = document.getElementById('txt-step-router');
+    const txtStepWriter = document.getElementById('txt-step-writer');
     const txtStepReviewer = document.getElementById('txt-step-reviewer');
     const writerAttemptBadge = document.getElementById('writer-attempt-badge');
     const retryLoopPill = document.getElementById('retry-loop-pill');
@@ -52,10 +54,12 @@
     const squadStatusRouter = document.getElementById('squad-status-router');
     const squadModelWriter = document.getElementById('squad-model-writer');
     const squadStatusWriter = document.getElementById('squad-status-writer');
-    const squadStatusFrontend = document.getElementById('squad-status-frontend');
+    const squadModelDesigner = document.getElementById('squad-model-designer');
+    const squadStatusDesigner = document.getElementById('squad-status-designer');
     const squadStatusValidator = document.getElementById('squad-status-validator');
     const squadModelReviewer = document.getElementById('squad-model-reviewer');
     const squadStatusReviewer = document.getElementById('squad-status-reviewer');
+    const squadActiveModeTag = document.getElementById('squad-active-mode-tag');
 
     const scopeFilesList = document.getElementById('scope-files-list');
     const scopeCount = document.getElementById('scope-count');
@@ -92,6 +96,7 @@
 
     // Tab 0 Cockpit Elements
     const inpGoalText = document.getElementById('inp-goal-text');
+    const selWorkflowPreset = document.getElementById('sel-workflow-preset');
     const btnDecomposeGoal = document.getElementById('btn-decompose-goal');
     const txtDecomposeBtn = document.getElementById('txt-decompose-btn');
     const spinDecompose = document.getElementById('spin-decompose');
@@ -139,19 +144,11 @@
     let currentSelectedSessionId = null;
     let cachedSessionsList = [];
 
-    // Standard Workflow SVG Links & Model Capsules
-    const linkSonnetGemini = document.getElementById('link-sonnet-gemini');
-    const linkSonnetDeepseek = document.getElementById('link-sonnet-deepseek');
-    const linkGeminiValidator = document.getElementById('link-gemini-validator');
-    const linkDeepseekValidator = document.getElementById('link-deepseek-validator');
-    const linkValidatorDeepseek = document.getElementById('link-validator-deepseek');
-    const linkValidatorOpus = document.getElementById('link-validator-opus');
-
-    const capsuleSonnet = document.getElementById('capsule-sonnet');
-    const capsuleGemini = document.getElementById('capsule-gemini');
-    const capsuleDeepseek = document.getElementById('capsule-deepseek');
-    const capsuleValidator = document.getElementById('capsule-validator');
-    const capsuleOpus = document.getElementById('capsule-opus');
+    // Adaptive Dynamic Star Topology Elements
+    const topologySvg = document.getElementById('topology-svg');
+    const topologySpokesContainer = document.getElementById('topology-spokes-container');
+    const capsuleHub = document.getElementById('capsule-hub');
+    const hubStateSub = document.getElementById('hub-state-sub');
 
     // Telemetry Footer
     const telModelVerify = document.getElementById('tel-model-verify');
@@ -201,12 +198,46 @@
     tabBtnOutput.addEventListener('click', () => switchTab('output'));
     tabBtnSessions.addEventListener('click', () => switchTab('sessions'));
 
-    // Config Modal Overlay Handlers (Hiện tab đè phủ toàn màn hình khi bấm nút Cấu Hình)
+    // Config Modal Overlay Handlers & Tab Switching
+    let activeConfigTab = 'team';
+    const cfgNavTabs = document.querySelectorAll('.cfg-nav-tab');
+    const cfgPanelTeam = document.getElementById('cfg-panel-team');
+    const cfgPanelProject = document.getElementById('cfg-panel-project');
+    const txtBtnSaveConfig = document.getElementById('txt-btn-save-config');
+    let currentPolicyConfig = null;
+
+    function switchConfigTab(tabName) {
+      activeConfigTab = tabName;
+      cfgNavTabs.forEach(t => {
+        if (t.dataset.tab === tabName) {
+          t.classList.add('active');
+        } else {
+          t.classList.remove('active');
+        }
+      });
+      if (tabName === 'team') {
+        if (cfgPanelTeam) cfgPanelTeam.style.display = 'flex';
+        if (cfgPanelProject) cfgPanelProject.style.display = 'none';
+        if (txtBtnSaveConfig) txtBtnSaveConfig.textContent = 'Lưu cấu hình (team.yaml)';
+      } else {
+        if (cfgPanelTeam) cfgPanelTeam.style.display = 'none';
+        if (cfgPanelProject) cfgPanelProject.style.display = 'flex';
+        if (txtBtnSaveConfig) txtBtnSaveConfig.textContent = 'Lưu chính sách (policy.yaml)';
+        loadPolicyData();
+      }
+    }
+
+    cfgNavTabs.forEach(tab => {
+      tab.addEventListener('click', () => switchConfigTab(tab.dataset.tab));
+    });
+
     function openConfigModal() {
       if (modalConfigOverlay) {
         modalConfigOverlay.style.display = 'flex';
-        initSquadFromConfig();
+        switchConfigTab(activeConfigTab);
+        initSquadFromConfig(true);
         load9RouterModels();
+        loadPolicyData();
       }
     }
     function closeConfigModal() {
@@ -258,6 +289,12 @@
     const spinSaveConfig = document.getElementById('spin-save-config');
     const cfgSaveStatusMsg = document.getElementById('cfg-save-status-msg');
 
+    const cfg9RouterUrl = document.getElementById('cfg-9router-url');
+    const cfg9RouterKey = document.getElementById('cfg-9router-key');
+    const btnReconnect9router = document.getElementById('btn-reconnect-9router');
+    const spinReconnect = document.getElementById('spin-reconnect');
+    const routerConnStatusBadge = document.getElementById('router-conn-status-badge');
+
     const covPills = {
       router: document.getElementById('cov-pill-router'),
       writer: document.getElementById('cov-pill-writer'),
@@ -272,12 +309,17 @@
         return;
       }
       if (spinRefreshModels) spinRefreshModels.style.display = 'inline-block';
+      if (spinReconnect) spinReconnect.style.display = 'inline-block';
       if (cfgModelsCountText) cfgModelsCountText.textContent = 'Đang tải...';
 
+      const customUrl = (cfg9RouterUrl?.value || '').trim();
+      const customKey = (cfg9RouterKey?.value || '').trim();
+      let queryStr = '';
+      if (customUrl) queryStr += `?url=${encodeURIComponent(customUrl)}`;
+      if (customKey) queryStr += `${queryStr ? '&' : '?'}key=${encodeURIComponent(customKey)}`;
+
       try {
-        const data = window.CockpitApi?.fetchModels
-          ? await window.CockpitApi.fetchModels()
-          : await (await fetch('/api/models')).json();
+        const data = await (await fetch(`/api/models${queryStr}`)).json();
 
         if (data.ok && Array.isArray(data.models)) {
           available9RouterModels = data.models;
@@ -286,7 +328,11 @@
           }
           if (cfgRouterBadge) {
             cfgRouterBadge.className = 'cfg-router-status-pill';
-            cfgRouterBadge.textContent = `🟢 9Router :20128 (${data.models.length} models)`;
+            cfgRouterBadge.textContent = `9Router :20128 (${data.models.length} models)`;
+          }
+          if (routerConnStatusBadge) {
+            routerConnStatusBadge.className = 'router-conn-status online';
+            routerConnStatusBadge.textContent = `✓ Đã kết nối (${data.models.length} models)`;
           }
           renderModelPool();
         } else {
@@ -294,28 +340,37 @@
         }
       } catch (err) {
         if (cfgModelsCountText) cfgModelsCountText.textContent = 'Lỗi kết nối';
+        if (routerConnStatusBadge) {
+          routerConnStatusBadge.className = 'router-conn-status offline';
+          routerConnStatusBadge.textContent = '✕ Lỗi kết nối';
+        }
         if (cfgRouterBadge) {
           cfgRouterBadge.className = 'cfg-router-status-pill';
           cfgRouterBadge.style.color = '#f87171';
           cfgRouterBadge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
-          cfgRouterBadge.textContent = '🔴 9Router: ' + err.message;
+          cfgRouterBadge.textContent = '9Router: ' + err.message;
         }
         if (modelPoolGrid) {
           modelPoolGrid.innerHTML = `
             <div style="padding: 16px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 6px; font-size: 11.5px; color: #fca5a5;">
-              <strong>⚠️ Chú ý:</strong> ${escapeHtml(err.message)}<br/>
+              <strong>Chú ý:</strong> ${escapeHtml(err.message)}<br/>
               <span style="font-size: 11px; opacity: 0.8; margin-top: 4px; display: inline-block;">Gợi ý: Nếu bạn vừa cập nhật code, hãy bấm <code>Ctrl + C</code> trong terminal đang chạy Dashboard và chạy lại: <code>node agent-team/scripts/dashboard.mjs</code></span>
             </div>
           `;
         }
       } finally {
         if (spinRefreshModels) spinRefreshModels.style.display = 'none';
+        if (spinReconnect) spinReconnect.style.display = 'none';
       }
     }
 
+    if (btnReconnect9router) {
+      btnReconnect9router.addEventListener('click', () => load9RouterModels(true));
+    }
+
     // Khởi tạo squadMembers từ snapshot config hiện có
-    function initSquadFromConfig() {
-      if (squadMembers.length > 0) {
+    function initSquadFromConfig(force = false) {
+      if (squadMembers.length > 0 && !force) {
         renderSquadPersonnel();
         return;
       }
@@ -323,15 +378,16 @@
       const roles = currentSquadRolesConfig || {};
 
       for (const [rKey, rSpec] of Object.entries(roles)) {
-        if (!rSpec) continue;
+        if (!rSpec || rSpec.enabled === false) continue;
         const modelsList = Array.isArray(rSpec.models) && rSpec.models.length > 0
           ? rSpec.models
           : (rSpec.model ? [rSpec.model] : []);
 
         modelsList.forEach(mId => {
+          if (!mId) return;
           initial.push({
             model: mId,
-            name: mId.split('/').pop() || mId,
+            name: rSpec.display_name || mId.split('/').pop() || mId,
             role: rKey,
             latency_ms: null,
             status: 'ready'
@@ -339,12 +395,7 @@
         });
       }
 
-      if (initial.length === 0) {
-        initial.push({ model: 'kr/claude-sonnet-4.5-thinking', name: 'Claude Sonnet 4.5 Thinking', role: 'router', latency_ms: null });
-        initial.push({ model: 'Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017', name: 'DeepSeek V4.1 Flash', role: 'writer', latency_ms: null });
-        initial.push({ model: 'ag/claude-opus-5-5-high', name: 'Claude Opus 5.5 High', role: 'reviewer', latency_ms: null });
-      }
-
+      // Khi team.yaml rỗng hoặc không có vai trò nào, giữ nguyên mảng rỗng để phản ánh trung thực trạng thái
       squadMembers = initial;
       renderSquadPersonnel();
       renderModelPool();
@@ -400,15 +451,15 @@
           </div>
           <div class="compact-right">
             <select class="compact-role-select" data-idx="${idx}">
-              <option value="standby" ${member.role === 'standby' ? 'selected' : ''}>💤 Dự Bị (Standby)</option>
-              <option value="router" ${member.role === 'router' ? 'selected' : ''}>🧠 Router (Architect &amp; Planner)</option>
-              <option value="writer" ${member.role === 'writer' ? 'selected' : ''}>⚡ Writer (Code Generator)</option>
-              <option value="designer" ${member.role === 'designer' ? 'selected' : ''}>👁️ Designer (Visual Auditor)</option>
-              <option value="reviewer" ${member.role === 'reviewer' ? 'selected' : ''}>🛡️ Reviewer (TechLead Reviewer)</option>
+              <option value="standby" ${member.role === 'standby' ? 'selected' : ''}>Dự Bị (Standby)</option>
+              <option value="router" ${member.role === 'router' ? 'selected' : ''}>Router (Architect &amp; Planner)</option>
+              <option value="writer" ${member.role === 'writer' ? 'selected' : ''}>Writer (Code Generator)</option>
+              <option value="designer" ${member.role === 'designer' ? 'selected' : ''}>Designer (Visual Auditor)</option>
+              <option value="reviewer" ${member.role === 'reviewer' ? 'selected' : ''}>Reviewer (TechLead Reviewer)</option>
             </select>
             ${latencyBadgeHtml}
             <button class="btn-compact-test btn-test-member" data-idx="${idx}" title="Đo độ trễ mạng thực tế">
-              <span>⚡ Test</span>
+              <span>Test</span>
             </button>
             <button class="btn-compact-remove" data-idx="${idx}" title="Gỡ khỏi đội ngũ">✕</button>
           </div>
@@ -451,9 +502,17 @@
       squadMembersList.querySelectorAll('.btn-compact-remove').forEach(btn => {
         btn.addEventListener('click', () => {
           const idx = parseInt(btn.dataset.idx, 10);
+          const removed = squadMembers[idx];
           squadMembers.splice(idx, 1);
           renderSquadPersonnel();
           renderModelPool();
+          if (cfgSaveStatusMsg) {
+            cfgSaveStatusMsg.textContent = `● Đã gỡ "${removed?.name || 'thành viên'}". Nhấn "Lưu cấu hình (team.yaml)" để lưu vào đĩa.`;
+            cfgSaveStatusMsg.style.color = '#f59e0b';
+          }
+          if (txtBtnSaveConfig) {
+            txtBtnSaveConfig.textContent = 'Lưu cấu hình (team.yaml) ●';
+          }
         });
       });
 
@@ -539,11 +598,11 @@
           </div>
           <div class="pool-card-actions">
             <button class="btn-pool-test" data-model="${escapeHtml(m.id)}">
-              <span>⚡ Test</span>
+              <span>Test</span>
               <span class="pool-test-lbl"></span>
             </button>
             ${isAdded
-              ? '<span class="btn-pool-added-badge">✓ Đã trong đội</span>'
+              ? '<span class="btn-pool-added-badge">Đã trong đội</span>'
               : `<button class="btn-pool-add" data-model="${escapeHtml(m.id)}" data-name="${escapeHtml(m.name)}">+ Thêm Vào Đội</button>`
             }
           </div>
@@ -629,10 +688,279 @@
       btnRefreshModels.addEventListener('click', () => load9RouterModels(true));
     }
 
-    // Save Team Config Event
+    // =========================================================
+    // POLICY HUB: POLICY.YAML RENDERING & EXECUTION
+    // =========================================================
+    function loadPolicyData() {
+      if (!currentPolicyConfig) return;
+      const pol = currentPolicyConfig;
+
+      // 1. Validation fast & suite
+      const fastCmd = document.getElementById('cfg-fast-cmd');
+      const fastTimeout = document.getElementById('cfg-fast-timeout');
+      const suiteCmd = document.getElementById('cfg-suite-cmd');
+      const suiteTimeout = document.getElementById('cfg-suite-timeout');
+
+      if (fastCmd && pol.validation?.fast_checks?.[0]?.run) {
+        fastCmd.value = pol.validation.fast_checks[0].run;
+      }
+      if (fastTimeout && pol.validation?.fast_checks?.[0]?.timeout_sec) {
+        fastTimeout.value = pol.validation.fast_checks[0].timeout_sec;
+      }
+      if (suiteCmd && pol.validation?.suite_checks?.[0]?.run) {
+        suiteCmd.value = pol.validation.suite_checks[0].run;
+      }
+      if (suiteTimeout && pol.validation?.suite_checks?.[0]?.timeout_sec) {
+        suiteTimeout.value = pol.validation.suite_checks[0].timeout_sec;
+      }
+
+      // 2. Scope control
+      const maxFiles = document.getElementById('cfg-max-files');
+      const maxScopeInc = document.getElementById('cfg-max-scope-inc');
+      const allowNewFiles = document.getElementById('cfg-allow-new-files');
+      const strictScope = document.getElementById('cfg-strict-scope');
+
+      if (maxFiles && pol.scope_control?.max_files_per_task !== undefined) {
+        maxFiles.value = pol.scope_control.max_files_per_task;
+      }
+      if (maxScopeInc && pol.scope_control?.max_scope_increase !== undefined) {
+        maxScopeInc.value = pol.scope_control.max_scope_increase;
+      }
+      if (allowNewFiles && pol.scope_control?.allow_new_files !== undefined) {
+        allowNewFiles.checked = Boolean(pol.scope_control.allow_new_files);
+      }
+      if (strictScope && pol.scope_control?.strict_scope_enforcement !== undefined) {
+        strictScope.checked = Boolean(pol.scope_control.strict_scope_enforcement);
+      }
+
+      // Allowed dirs & protected files badges
+      const wrapAllowedDirs = document.getElementById('wrap-allowed-dirs');
+      if (wrapAllowedDirs && Array.isArray(pol.scope_control?.allowed_dirs)) {
+        wrapAllowedDirs.innerHTML = '';
+        pol.scope_control.allowed_dirs.forEach(d => {
+          const badge = document.createElement('span');
+          badge.className = 'dir-badge';
+          badge.textContent = d;
+          wrapAllowedDirs.appendChild(badge);
+        });
+      }
+
+      const wrapProtectedFiles = document.getElementById('wrap-protected-files');
+      if (wrapProtectedFiles && Array.isArray(pol.scope_control?.protected_files)) {
+        wrapProtectedFiles.innerHTML = '';
+        pol.scope_control.protected_files.forEach(f => {
+          const badge = document.createElement('span');
+          badge.className = 'prot-badge';
+          badge.textContent = f;
+          wrapProtectedFiles.appendChild(badge);
+        });
+      }
+
+      // 3. Guardrails & Git hygiene
+      const gitRollback = document.getElementById('cfg-git-rollback');
+      const gitAutocommit = document.getElementById('cfg-git-autocommit');
+      const enforceTimeouts = document.getElementById('cfg-enforce-timeouts');
+      const blockPsCurl = document.getElementById('cfg-block-ps-curl');
+      const maxRetries = document.getElementById('cfg-max-retries');
+      const tokenBudget = document.getElementById('cfg-token-budget');
+
+      if (gitRollback && pol.git_hygiene?.rollback_on_validation_fail !== undefined) {
+        gitRollback.checked = Boolean(pol.git_hygiene.rollback_on_validation_fail);
+      }
+      if (gitAutocommit && pol.git_hygiene?.auto_commit_on_done !== undefined) {
+        gitAutocommit.checked = Boolean(pol.git_hygiene.auto_commit_on_done);
+      }
+      if (enforceTimeouts && pol.execution_guardrails?.enforce_command_timeouts !== undefined) {
+        enforceTimeouts.checked = Boolean(pol.execution_guardrails.enforce_command_timeouts);
+      }
+      if (blockPsCurl && pol.execution_guardrails?.block_powershell_curl_alias !== undefined) {
+        blockPsCurl.checked = Boolean(pol.execution_guardrails.block_powershell_curl_alias);
+      }
+      if (maxRetries && pol.retry_and_escalation?.max_retries_per_task !== undefined) {
+        maxRetries.value = pol.retry_and_escalation.max_retries_per_task;
+      }
+      if (tokenBudget && pol.retry_and_escalation?.token_budget_per_task !== undefined) {
+        tokenBudget.value = pol.retry_and_escalation.token_budget_per_task;
+      }
+    }
+
+    // Validation Check Test Runners
+    const btnRunFastCheck = document.getElementById('btn-run-fast-check');
+    const spinFastCheck = document.getElementById('spin-fast-check');
+    const fastCheckBadge = document.getElementById('fast-check-badge');
+
+    const btnRunSuiteCheck = document.getElementById('btn-run-suite-check');
+    const spinSuiteCheck = document.getElementById('spin-suite-check');
+    const suiteCheckBadge = document.getElementById('suite-check-badge');
+
+    const policyTestOutputBox = document.getElementById('policy-test-output-box');
+    const policyTermPre = document.getElementById('policy-term-pre');
+    const policyTermTitle = document.getElementById('policy-term-title');
+    const btnCloseTermOutput = document.getElementById('btn-close-term-output');
+
+    if (btnCloseTermOutput && policyTestOutputBox) {
+      btnCloseTermOutput.addEventListener('click', () => {
+        policyTestOutputBox.style.display = 'none';
+      });
+    }
+
+    if (cfg9RouterUrl) cfg9RouterUrl.addEventListener('input', () => { cfg9RouterUrl.dataset.userEdited = 'true'; });
+    if (cfg9RouterKey) cfg9RouterKey.addEventListener('input', () => { cfg9RouterKey.dataset.userEdited = 'true'; });
+
+    async function executeValidationCheck(type) {
+      const isFast = type === 'fast';
+      const spin = isFast ? spinFastCheck : spinSuiteCheck;
+      const badge = isFast ? fastCheckBadge : suiteCheckBadge;
+
+      const cmdInput = isFast ? document.getElementById('cfg-fast-cmd') : document.getElementById('cfg-suite-cmd');
+      const timeoutInput = isFast ? document.getElementById('cfg-fast-timeout') : document.getElementById('cfg-suite-timeout');
+      const cmdVal = (cmdInput?.value || '').trim();
+      const timeoutVal = parseInt(timeoutInput?.value, 10) || (isFast ? 15 : 180);
+
+      if (spin) spin.style.display = 'inline-block';
+      if (badge) {
+        badge.className = 'test-result-badge badge-running';
+        badge.textContent = 'Đang chạy...';
+      }
+
+      try {
+        const payload = {
+          check_type: type,
+          cmd: cmdVal,
+          timeout_sec: timeoutVal
+        };
+
+        const res = window.CockpitApi?.runValidationCheck
+          ? await window.CockpitApi.runValidationCheck(type, cmdVal, timeoutVal)
+          : await (await fetch('/api/run-validation-check', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Dashboard-Token': csrfToken || ''
+              },
+              body: JSON.stringify(payload)
+            })).json();
+
+        if (res.ok) {
+          if (badge) {
+            badge.className = 'test-result-badge badge-done';
+            badge.textContent = `✓ PASS (${res.duration_ms}ms)`;
+          }
+        } else {
+          if (badge) {
+            badge.className = 'test-result-badge badge-error';
+            badge.textContent = `✕ FAIL (exit ${res.exit_code || 1})`;
+          }
+        }
+
+        if (policyTestOutputBox && policyTermPre) {
+          policyTestOutputBox.style.display = 'block';
+          if (policyTermTitle) {
+            policyTermTitle.textContent = `Kết quả ${isFast ? 'Fast Check (TAB & Syntax)' : 'Suite Check (Python Unittest)'} — ${res.ok ? 'PASS' : 'FAIL'} (${res.duration_ms}ms)`;
+          }
+          policyTermPre.textContent = res.output || res.error || 'Không có log đầu ra.';
+        }
+      } catch (err) {
+        if (badge) {
+          badge.className = 'test-result-badge badge-error';
+          badge.textContent = '✕ Lỗi kết nối';
+        }
+        if (policyTestOutputBox && policyTermPre) {
+          policyTestOutputBox.style.display = 'block';
+          policyTermPre.textContent = `Lỗi mạng hoặc server: ${err.message}\nGợi ý: Bấm Ctrl+C trong terminal đang chạy Dashboard và chạy lại: npm run dashboard`;
+        }
+      } finally {
+        if (spin) spin.style.display = 'none';
+      }
+    }
+
+    if (btnRunFastCheck) btnRunFastCheck.addEventListener('click', () => executeValidationCheck('fast'));
+    if (btnRunSuiteCheck) btnRunSuiteCheck.addEventListener('click', () => executeValidationCheck('suite'));
+
+    // Save Unified Config Event (team.yaml hoặc policy.yaml tùy tab đang chọn)
     if (btnSaveTeamConfig) {
       btnSaveTeamConfig.addEventListener('click', async () => {
         if (spinSaveConfig) spinSaveConfig.style.display = 'inline-block';
+
+        // 1. Lưu policy.yaml khi đang ở Tab Chính sách
+        if (activeConfigTab === 'project') {
+          if (cfgSaveStatusMsg) {
+            cfgSaveStatusMsg.textContent = 'Đang lưu chính sách vào policy.yaml...';
+            cfgSaveStatusMsg.style.color = 'var(--text-secondary)';
+          }
+
+          const policyPayload = {
+            validation: {
+              fast_checks: [{
+                name: 'tab_indentation_check',
+                run: (document.getElementById('cfg-fast-cmd')?.value || '').trim(),
+                timeout_sec: parseInt(document.getElementById('cfg-fast-timeout')?.value, 10) || 15
+              }],
+              suite_checks: [{
+                name: 'unit_test_suite',
+                run: (document.getElementById('cfg-suite-cmd')?.value || '').trim(),
+                timeout_sec: parseInt(document.getElementById('cfg-suite-timeout')?.value, 10) || 180
+              }]
+            },
+            scope_control: {
+              max_files_per_task: parseInt(document.getElementById('cfg-max-files')?.value, 10) || 5,
+              max_scope_increase: parseInt(document.getElementById('cfg-max-scope-inc')?.value, 10) || 1,
+              allow_new_files: Boolean(document.getElementById('cfg-allow-new-files')?.checked),
+              strict_scope_enforcement: Boolean(document.getElementById('cfg-strict-scope')?.checked)
+            },
+            git_hygiene: {
+              rollback_on_validation_fail: Boolean(document.getElementById('cfg-git-rollback')?.checked),
+              auto_commit_on_done: Boolean(document.getElementById('cfg-git-autocommit')?.checked)
+            },
+            execution_guardrails: {
+              enforce_command_timeouts: Boolean(document.getElementById('cfg-enforce-timeouts')?.checked),
+              block_powershell_curl_alias: Boolean(document.getElementById('cfg-block-ps-curl')?.checked)
+            },
+            retry_and_escalation: {
+              max_retries_per_task: parseInt(document.getElementById('cfg-max-retries')?.value, 10) || 3,
+              token_budget_per_task: parseInt(document.getElementById('cfg-token-budget')?.value, 10) || 150000
+            }
+          };
+
+          try {
+            const data = window.CockpitApi?.savePolicyConfig
+              ? await window.CockpitApi.savePolicyConfig({ policy: policyPayload })
+              : await (await fetch('/api/save-policy-config', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-Dashboard-Token': csrfToken || ''
+                  },
+                  body: JSON.stringify({ policy: policyPayload })
+                })).json();
+
+            if (data.ok) {
+              if (cfgSaveStatusMsg) {
+                cfgSaveStatusMsg.textContent = `✓ ${data.message || 'Đã lưu policy.yaml thành công!'}`;
+                cfgSaveStatusMsg.style.color = '#34d399';
+              }
+              fetchSnapshot();
+              setTimeout(() => {
+                if (cfgSaveStatusMsg) cfgSaveStatusMsg.textContent = '';
+              }, 5000);
+            } else {
+              if (cfgSaveStatusMsg) {
+                cfgSaveStatusMsg.textContent = `✕ Lỗi: ${data.error || 'Không thể lưu chính sách'}`;
+                cfgSaveStatusMsg.style.color = '#f87171';
+              }
+            }
+          } catch (err) {
+            if (cfgSaveStatusMsg) {
+              cfgSaveStatusMsg.textContent = `✕ Lỗi: ${err.message}`;
+              cfgSaveStatusMsg.style.color = '#f87171';
+            }
+          } finally {
+            if (spinSaveConfig) spinSaveConfig.style.display = 'none';
+          }
+          return;
+        }
+
+        // 2. Lưu team.yaml khi đang ở Tab Đội ngũ
         if (cfgSaveStatusMsg) {
           cfgSaveStatusMsg.textContent = 'Đang lưu cấu hình vào team.yaml...';
           cfgSaveStatusMsg.style.color = 'var(--text-secondary)';
@@ -655,23 +983,41 @@
           }
         });
 
+        if (Object.keys(rolesPayload).length === 0) {
+          if (cfgSaveStatusMsg) {
+            cfgSaveStatusMsg.textContent = '✕ Lỗi: Đội ngũ không được để trống! Cần tối thiểu 1 vai trò (khuyên dùng Writer) để hệ thống hoạt động.';
+            cfgSaveStatusMsg.style.color = '#f87171';
+          }
+          if (spinSaveConfig) spinSaveConfig.style.display = 'none';
+          return;
+        }
+
+        const providerPayload = {
+          base_url: (cfg9RouterUrl?.value || 'http://127.0.0.1:20128/v1').trim(),
+          default_key: (cfg9RouterKey?.value || 'sk-default').trim()
+        };
+
         try {
           const data = window.CockpitApi?.saveTeamConfig
-            ? await window.CockpitApi.saveTeamConfig({ roles: rolesPayload })
+            ? await window.CockpitApi.saveTeamConfig({ roles: rolesPayload, provider: providerPayload })
             : await (await fetch('/api/save-team-config', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
                   'X-Dashboard-Token': csrfToken || ''
                 },
-                body: JSON.stringify({ roles: rolesPayload })
+                body: JSON.stringify({ roles: rolesPayload, provider: providerPayload })
               })).json();
           if (data.ok) {
             if (cfgSaveStatusMsg) {
               cfgSaveStatusMsg.textContent = `✓ ${data.message}`;
               cfgSaveStatusMsg.style.color = '#34d399';
             }
-            fetchSnapshot();
+            if (txtBtnSaveConfig) {
+              txtBtnSaveConfig.textContent = 'Lưu cấu hình (team.yaml)';
+            }
+            await fetchSnapshot();
+            initSquadFromConfig(true);
             setTimeout(() => {
               if (cfgSaveStatusMsg) cfgSaveStatusMsg.textContent = '';
             }, 5000);
@@ -741,35 +1087,36 @@
         return;
       }
 
+      const preset = selWorkflowPreset ? selWorkflowPreset.value : 'auto';
       btnDecomposeGoal.disabled = true;
       spinDecompose.style.display = 'inline-block';
       txtDecomposeBtn.textContent = 'Router Agent đang khảo sát codebase...';
-      lblDecomposeStatus.textContent = 'Đang gọi Claude Sonnet 4.5 đọc cấu trúc code...';
+      lblDecomposeStatus.textContent = `Đang gọi Router Agent đọc cấu trúc code (Preset: ${preset.toUpperCase()})...`;
 
       try {
         const data = window.CockpitApi?.decomposeGoal
-          ? await window.CockpitApi.decomposeGoal(goal)
+          ? await window.CockpitApi.decomposeGoal(goal, { preset })
           : await (await fetch('/api/decompose', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
                 'X-Dashboard-Token': csrfToken || ''
               },
-              body: JSON.stringify({ goal })
+              body: JSON.stringify({ goal, preset })
             })).json();
         if (!data || !data.ok) {
           throw new Error(data?.error || 'Lỗi bóc tách mục tiêu');
         }
         currentDraftTasks = data.tasks || [];
         renderDraftTasks(currentDraftTasks);
-        lblDecomposeStatus.textContent = `✓ Đã sinh thành công ${currentDraftTasks.length} task(s)! Bạn hãy xem lại và bấm "Phê Duyệt & Khởi Động".`;
+        lblDecomposeStatus.textContent = `Đã sinh thành công ${currentDraftTasks.length} task(s)! Bạn hãy xem lại và bấm "Phê duyệt & Khởi động".`;
       } catch (err) {
-        lblDecomposeStatus.textContent = `❌ Lỗi: ${err.message}`;
+        lblDecomposeStatus.textContent = `Lỗi: ${err.message}`;
         alert('Lỗi phân tích goal: ' + err.message);
       } finally {
         btnDecomposeGoal.disabled = false;
         spinDecompose.style.display = 'none';
-        txtDecomposeBtn.textContent = '🪄 Phân Tích & Sinh Kế Hoạch (Router Agent)';
+        txtDecomposeBtn.textContent = 'Phân tích & Lập kế hoạch';
       }
     });
 
@@ -809,9 +1156,9 @@
         if (t.model) {
           const modelTag = document.createElement('span');
           modelTag.className = 'tag';
-          modelTag.style.background = 'rgba(99, 102, 241, 0.15)';
-          modelTag.style.border = '1px solid rgba(99, 102, 241, 0.35)';
-          modelTag.style.color = '#a5b4fc';
+          modelTag.style.background = 'rgba(255, 255, 255, 0.04)';
+          modelTag.style.border = '1px solid rgba(255, 255, 255, 0.08)';
+          modelTag.style.color = 'var(--text-secondary)';
           modelTag.textContent = t.model.split('/').pop();
           modelTag.title = `Chỉ định model: ${t.model}`;
           badges.appendChild(modelTag);
@@ -834,7 +1181,7 @@
 
         const btnDetail = document.createElement('button');
         btnDetail.className = 'btn-draft-action';
-        btnDetail.textContent = '🔍 Chi Tiết';
+        btnDetail.textContent = 'Chi tiết';
         btnDetail.title = 'Xem chi tiết file task YAML';
         btnDetail.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -843,7 +1190,7 @@
 
         const btnDelete = document.createElement('button');
         btnDelete.className = 'btn-draft-action btn-draft-delete';
-        btnDelete.textContent = '🗑️ Xóa';
+        btnDelete.textContent = 'Xóa';
         btnDelete.title = 'Xóa vĩnh viễn file task này';
         btnDelete.addEventListener('click', async (e) => {
           e.stopPropagation();
@@ -870,7 +1217,7 @@
           } catch (err) {
             alert('Lỗi xóa task: ' + err.message);
             btnDelete.disabled = false;
-            btnDelete.textContent = '🗑️ Xóa';
+            btnDelete.textContent = 'Xóa';
           }
         });
 
@@ -894,10 +1241,39 @@
         const critList = t.acceptance_criteria || [];
         crit.textContent = 'Tiêu chí nghiệm thu: ' + (critList.length > 0 ? critList.join(' • ') : '(None)');
 
+        // Workflow steps badge (Task-Demand × Squad-Roster Engine)
+        const wfRow = document.createElement('div');
+        wfRow.style.fontSize = '10.5px';
+        wfRow.style.color = 'var(--text-secondary)';
+        wfRow.style.marginTop = '4px';
+        const wfSteps = Array.isArray(t.writer_hub_workflow) ? t.writer_hub_workflow : [];
+        if (t.mode === 'consult') {
+          wfRow.textContent = 'Luồng thực thi: Consult Read-Only (Tư vấn báo cáo)';
+        } else if (wfSteps.length > 0) {
+          const wfSummary = wfSteps.map(s => {
+            const act = s.action === 'draft_spec' ? 'Spec' : `Patch(${s.domain || 'code'})`;
+            return `${act}[${s.role || 'writer'}]`;
+          }).join(' ➔ ');
+          wfRow.textContent = `Luồng Writer Hub: ${wfSummary}`;
+        } else {
+          wfRow.textContent = 'Luồng Writer Hub: 1-Step Direct Patch [writer]';
+        }
+
         card.appendChild(head);
         card.appendChild(title);
         card.appendChild(scope);
         card.appendChild(crit);
+        card.appendChild(wfRow);
+
+        if (Array.isArray(t.scope_warnings) && t.scope_warnings.length > 0) {
+          const warnRow = document.createElement('div');
+          warnRow.style.fontSize = '10.5px';
+          warnRow.style.color = '#c45519';
+          warnRow.style.marginTop = '3px';
+          warnRow.textContent = t.scope_warnings.join(' | ');
+          card.appendChild(warnRow);
+        }
+
         listDraftTasks.appendChild(card);
       });
 
@@ -1073,7 +1449,7 @@
           alert('Lỗi lưu task: ' + err.message);
         } finally {
           btnSaveTaskDetail.disabled = false;
-          btnSaveTaskDetail.textContent = '💾 Lưu Thay Đổi';
+          btnSaveTaskDetail.textContent = 'Lưu Thay Đổi';
         }
       });
     }
@@ -1165,6 +1541,10 @@
         txtStepReviewer.textContent = '4b. Review';
       }
 
+      if (txtStepWriter) {
+        txtStepWriter.textContent = '2. Writer Hub';
+      }
+
       // Retry Loop Indicator
       if (attempt && attempt > 1) {
         writerAttemptBadge.textContent = 'Att ' + attempt;
@@ -1252,7 +1632,7 @@
           const timerSpan = el.querySelector('.stage-timer');
           if (timerSpan) {
             const sec = Math.max(0, Math.floor((Date.now() - stageStartedAt) / 1000));
-            timerSpan.textContent = '⏱ ' + sec + 's';
+            timerSpan.textContent = sec + 's';
             timerSpan.style.display = 'inline-block';
           }
         }
@@ -1260,178 +1640,343 @@
 
       // 2. Task duration timer
       if (taskDurationStatic !== null) {
-        taskTimerTag.textContent = 'Duration: ⏱ ' + formatSeconds(taskDurationStatic);
+        taskTimerTag.textContent = 'Duration: ' + formatSeconds(taskDurationStatic);
         taskTimerTag.style.display = 'inline-block';
       } else if (taskStartedAt && currentStage !== 'idle') {
         const totalSec = Math.max(0, Math.floor((Date.now() - taskStartedAt) / 1000));
-        taskTimerTag.textContent = 'Task: ⏱ ' + formatSeconds(totalSec);
+        taskTimerTag.textContent = 'Task: ' + formatSeconds(totalSec);
         taskTimerTag.style.display = 'inline-block';
       } else {
         taskTimerTag.style.display = 'none';
       }
     }, 200);
 
-    // Update Topology SVG Links and Model Capsules according to Standard Workflow
-    function updateTopologyNetwork(activeStage, rolesStatus, rolesConfig, snap) {
-      // 1. Reset all links and model capsules
-      const allLinks = [linkSonnetGemini, linkSonnetDeepseek, linkGeminiValidator, linkDeepseekValidator, linkValidatorDeepseek, linkValidatorOpus];
-      allLinks.forEach(l => {
-        if (l) l.className.baseVal = 'link-path';
-      });
+    // Render Left Column Workflow Squad Cards dynamically from team.yaml & live state
+    function renderWorkflowSquad(activeStage, rolesStatus, rolesConfig, live) {
+      const isRunning = Boolean(live?.active && activeStage !== 'idle');
+      const mode = live?.mode || 'standard';
 
-      const allCapsules = [capsuleSonnet, capsuleGemini, capsuleDeepseek, capsuleValidator, capsuleOpus];
-      allCapsules.forEach(c => {
-        if (c) c.className = c.className.replace(/\b(active|done)\b/g, '').trim();
-      });
-
-      const wStatus = rolesStatus.writer?.status || 'idle';
-      const rStatus = rolesStatus.router?.status || 'idle';
-      const revStatus = rolesStatus.reviewer?.status || 'idle';
-      const attempt = snap?.live_status?.attempt || 1;
-
-      // Gemini 3.8 Flash (Frontend Writer / IDE) is always active/ready
-      if (capsuleGemini) capsuleGemini.classList.add('done');
-
-      // 2. Active Stage mappings theo Standard Workflow
-      if (activeStage === 'router') {
-        if (capsuleSonnet) capsuleSonnet.classList.add('active');
-        if (linkSonnetDeepseek) linkSonnetDeepseek.className.baseVal = 'link-path active';
-      } else if (rStatus === 'done') {
-        if (capsuleSonnet) capsuleSonnet.classList.add('done');
-        if (linkSonnetDeepseek) linkSonnetDeepseek.className.baseVal = 'link-path done';
+      if (squadActiveModeTag) {
+        squadActiveModeTag.textContent = isRunning ? mode.toUpperCase() : 'Adaptive';
       }
 
-      if (activeStage === 'writer') {
-        if (capsuleDeepseek) capsuleDeepseek.classList.add('active');
-        if (linkSonnetDeepseek) linkSonnetDeepseek.className.baseVal = 'link-path active';
-        if (linkDeepseekValidator) linkDeepseekValidator.className.baseVal = 'link-path active';
-        // If in retry attempt, show feedback loop
-        if (attempt > 1 && linkValidatorDeepseek) {
-          linkValidatorDeepseek.className.baseVal = 'link-path active';
+      function getCleanRoleModelText(roleSpec, fallback) {
+        if (!roleSpec || roleSpec.enabled === false || !roleSpec.model) return 'Chưa cấu hình';
+        if (roleSpec.display_name && roleSpec.display_name.trim()) return roleSpec.display_name.trim();
+        const m = (roleSpec.model || '').trim();
+        return m.split('/').pop() || fallback;
+      }
+
+      // 1. Router Agent
+      if (squadModelRouter) {
+        squadModelRouter.textContent = getCleanRoleModelText(rolesConfig.router, 'kr/claude-sonnet-4.5-thinking');
+      }
+      if (squadStatusRouter) {
+        if (!isRunning) {
+          squadStatusRouter.textContent = 'IDLE';
+          squadStatusRouter.className = 'status-badge badge-idle';
+        } else if (mode === 'quick') {
+          squadStatusRouter.textContent = 'SKIPPED';
+          squadStatusRouter.className = 'status-badge badge-skipped';
+        } else if (activeStage === 'router') {
+          squadStatusRouter.textContent = 'WORKING';
+          squadStatusRouter.className = 'status-badge badge-working';
+        } else if (['writer', 'designer', 'applier', 'validator', 'reviewer', 'git', 'done'].includes(activeStage) || rolesStatus.router?.status === 'done') {
+          squadStatusRouter.textContent = 'DONE';
+          squadStatusRouter.className = 'status-badge badge-done';
+        } else {
+          squadStatusRouter.textContent = 'IDLE';
+          squadStatusRouter.className = 'status-badge badge-idle';
         }
-      } else if (wStatus === 'done') {
-        if (capsuleDeepseek) capsuleDeepseek.classList.add('done');
-        if (linkDeepseekValidator) linkDeepseekValidator.className.baseVal = 'link-path done';
       }
 
-      if (['applier', 'validator'].includes(activeStage)) {
-        if (capsuleValidator) capsuleValidator.classList.add('active');
-        if (linkDeepseekValidator) linkDeepseekValidator.className.baseVal = 'link-path active';
-      } else if (['reviewer', 'git', 'done'].includes(activeStage)) {
-        if (capsuleValidator) capsuleValidator.classList.add('done');
+      // 2. Writer Agent
+      if (squadModelWriter) {
+        squadModelWriter.textContent = getCleanRoleModelText(rolesConfig.writer, 'deepseek-ai/deepseek-v4.1-flash-1017');
+      }
+      if (squadStatusWriter) {
+        if (!isRunning) {
+          squadStatusWriter.textContent = 'IDLE';
+          squadStatusWriter.className = 'status-badge badge-idle';
+        } else if (activeStage === 'writer') {
+          squadStatusWriter.textContent = 'WORKING';
+          squadStatusWriter.className = 'status-badge badge-working';
+        } else if (['applier', 'validator', 'reviewer', 'git', 'done'].includes(activeStage) || rolesStatus.writer?.status === 'done') {
+          squadStatusWriter.textContent = 'DONE';
+          squadStatusWriter.className = 'status-badge badge-done';
+        } else {
+          squadStatusWriter.textContent = 'IDLE';
+          squadStatusWriter.className = 'status-badge badge-idle';
+        }
       }
 
-      if (activeStage === 'reviewer') {
-        if (capsuleOpus) capsuleOpus.classList.add('active');
-        if (linkValidatorOpus) linkValidatorOpus.className.baseVal = 'link-path active';
-      } else if (revStatus === 'approved') {
-        if (capsuleOpus) capsuleOpus.classList.add('done');
-        if (linkValidatorOpus) linkValidatorOpus.className.baseVal = 'link-path done';
+      // 3. Designer Agent
+      if (squadModelDesigner) {
+        squadModelDesigner.textContent = getCleanRoleModelText(rolesConfig.designer, 'ag/claude-sonnet-5-5');
+      }
+      if (squadStatusDesigner) {
+        if (!isRunning) {
+          squadStatusDesigner.textContent = 'IDLE';
+          squadStatusDesigner.className = 'status-badge badge-idle';
+        } else if (activeStage === 'designer') {
+          squadStatusDesigner.textContent = 'WORKING';
+          squadStatusDesigner.className = 'status-badge badge-working';
+        } else if (rolesStatus.designer?.status === 'done') {
+          squadStatusDesigner.textContent = 'DONE';
+          squadStatusDesigner.className = 'status-badge badge-done';
+        } else {
+          squadStatusDesigner.textContent = 'STANDBY';
+          squadStatusDesigner.className = 'status-badge badge-idle';
+        }
       }
 
-      if (activeStage === 'done') {
-        if (capsuleSonnet) capsuleSonnet.classList.add('done');
-        if (capsuleDeepseek) capsuleDeepseek.classList.add('done');
-        if (capsuleValidator) capsuleValidator.classList.add('done');
-        if (linkDeepseekValidator) linkDeepseekValidator.className.baseVal = 'link-path done';
+      // 4. Reviewer Agent
+      if (squadModelReviewer) {
+        squadModelReviewer.textContent = getCleanRoleModelText(rolesConfig.reviewer, 'ag/claude-opus-5-5-high');
+      }
+      if (squadStatusReviewer) {
+        if (!isRunning) {
+          squadStatusReviewer.textContent = 'IDLE';
+          squadStatusReviewer.className = 'status-badge badge-idle';
+        } else if (mode === 'quick') {
+          squadStatusReviewer.textContent = 'SKIPPED';
+          squadStatusReviewer.className = 'status-badge badge-skipped';
+        } else if (activeStage === 'reviewer') {
+          squadStatusReviewer.textContent = 'REVIEWING';
+          squadStatusReviewer.className = 'status-badge badge-working';
+        } else if (rolesStatus.reviewer?.status === 'approved' || ['git', 'done'].includes(activeStage)) {
+          squadStatusReviewer.textContent = 'APPROVED';
+          squadStatusReviewer.className = 'status-badge badge-done';
+        } else {
+          squadStatusReviewer.textContent = 'IDLE';
+          squadStatusReviewer.className = 'status-badge badge-idle';
+        }
       }
 
-      // 3. Dynamic Tooltips with Real Model Information
-      if (capsuleSonnet) {
-        capsuleSonnet.title = `Claude Sonnet 4.5 Thinking (${rolesConfig.router?.model || 'kr/claude-sonnet-4.5-thinking'}) - Plan & Scope Router`;
+      // 5. Validator Guard
+      if (squadStatusValidator) {
+        if (!isRunning) {
+          squadStatusValidator.textContent = 'IDLE';
+          squadStatusValidator.className = 'status-badge badge-idle';
+        } else if (['applier', 'validator'].includes(activeStage)) {
+          squadStatusValidator.textContent = 'TESTING';
+          squadStatusValidator.className = 'status-badge badge-working';
+        } else if (['reviewer', 'git', 'done'].includes(activeStage)) {
+          squadStatusValidator.textContent = 'PASS ✓';
+          squadStatusValidator.className = 'status-badge badge-done';
+        } else {
+          squadStatusValidator.textContent = 'IDLE';
+          squadStatusValidator.className = 'status-badge badge-idle';
+        }
       }
-      if (capsuleGemini) {
-        capsuleGemini.title = `Gemini 3.8 Flash (Antigravity IDE Assistant) - Frontend Writer & Pair Programming`;
-      }
-      if (capsuleDeepseek) {
-        capsuleDeepseek.title = `DeepSeek V4.1 Flash (${rolesConfig.writer?.model || 'deepseek-ai/deepseek-v4.1-flash-1017'}) - Backend Writer (Status: ${wStatus.toUpperCase()})`;
-      }
-      if (capsuleValidator) {
-        capsuleValidator.title = `Validator Guard (scripts/validator.mjs) - Test & TAB Gate (Stage: ${activeStage})`;
-      }
-      if (capsuleOpus) {
-        capsuleOpus.title = `Claude Opus 5.5 High (${rolesConfig.reviewer?.model || 'ag/claude-opus-5-5-high'}) - Tech Lead Reviewer (Status: ${revStatus.toUpperCase()})`;
-      }
-
-      // Recalculate pixel-perfect dynamic anchors to eliminate any line gaps
-      requestAnimationFrame(recalculateSvgLinks);
     }
 
-    // Dynamically calculate pixel-perfect SVG Bezier curves directly between node anchors
+    // Update Adaptive Star Topology SVG Links and Nodes dynamically from team.yaml squad
+    function updateTopologyNetwork(activeStage, rolesStatus, rolesConfig, snap) {
+      const spokesContainer = document.getElementById('topology-spokes-container');
+      const svgEl = document.getElementById('topology-svg');
+      if (!spokesContainer || !svgEl) return;
+
+      const isRunning = Boolean(snap?.live_status?.active && activeStage !== 'idle');
+      const mode = snap?.live_status?.mode || 'standard';
+
+      // 1. Center Hub State
+      if (hubStateSub) {
+        if (!isRunning) {
+          hubStateSub.textContent = activeStage === 'done' ? 'State Hub • Completed ✓' : 'State Hub • Idle';
+        } else {
+          hubStateSub.textContent = `State Hub • ${mode.toUpperCase()} (${activeStage.toUpperCase()})`;
+        }
+      }
+      if (capsuleHub) {
+        capsuleHub.className = 'ai-capsule-node node-orchestrator-hub' + (isRunning ? ' active' : (activeStage === 'done' ? ' done' : ''));
+        capsuleHub.title = `Mini Orchestrator Core (Mode: ${mode || 'idle'}, Stage: ${activeStage})`;
+      }
+
+      function formatCleanModel(roleSpec, fallback) {
+        if (!roleSpec) return fallback;
+        if (roleSpec.display_name && roleSpec.display_name.trim()) return roleSpec.display_name.trim();
+        const m = (roleSpec.model || '').trim();
+        return m.split('/').pop() || fallback;
+      }
+
+      // 2. Build Active Spoke Definitions directly from rolesConfig
+      const activeSpokeDefs = [];
+
+      // Router
+      if (rolesConfig.router && rolesConfig.router.enabled !== false && rolesConfig.router.model) {
+        activeSpokeDefs.push({
+          key: 'router',
+          roleTag: 'Router',
+          icon: 'R',
+          modelName: formatCleanModel(rolesConfig.router, 'Claude Sonnet 4.5'),
+          fullModel: rolesConfig.router.model,
+          tooltip: `Router Agent (${rolesConfig.router.model}) - Plan & Scope Router`,
+          defaultPos: { left: '22%', top: '22%' }
+        });
+      }
+
+      // Designer (Rendered ONLY if present in team.yaml rolesConfig!)
+      if (rolesConfig.designer && rolesConfig.designer.enabled !== false && rolesConfig.designer.model) {
+        activeSpokeDefs.push({
+          key: 'designer',
+          roleTag: 'Designer',
+          icon: 'D',
+          modelName: formatCleanModel(rolesConfig.designer, 'Claude Sonnet 5.5'),
+          fullModel: rolesConfig.designer.model,
+          tooltip: `Designer Agent (${rolesConfig.designer.model}) - UI / UX Visual Audit`,
+          defaultPos: { left: '78%', top: '22%' }
+        });
+      }
+
+      // Writer (Rendered with real model name from team.yaml)
+      if (rolesConfig.writer && rolesConfig.writer.enabled !== false && rolesConfig.writer.model) {
+        const wExtra = Array.isArray(rolesConfig.writer.models) && rolesConfig.writer.models.length > 1
+          ? ` (+${rolesConfig.writer.models.length - 1})`
+          : '';
+        activeSpokeDefs.push({
+          key: 'writer',
+          roleTag: 'Writer',
+          icon: 'W',
+          modelName: formatCleanModel(rolesConfig.writer, 'Writer') + wExtra,
+          fullModel: rolesConfig.writer.model,
+          tooltip: `Writer Agent (${rolesConfig.writer.model}) - Code Generator`,
+          defaultPos: { left: '20%', top: '74%' }
+        });
+      }
+
+      // Validator Guard (Always present as engine test gate)
+      activeSpokeDefs.push({
+        key: 'validator',
+        roleTag: 'Guard',
+        icon: 'V',
+        modelName: 'Validator Guard',
+        fullModel: 'validator.mjs',
+        tooltip: 'Validator Guard (scripts/validator.mjs) - Fast Checks & Test Suite',
+        defaultPos: { left: '50%', top: '84%' }
+      });
+
+      // Reviewer (Rendered ONLY if present in team.yaml rolesConfig!)
+      if (rolesConfig.reviewer && rolesConfig.reviewer.enabled !== false && rolesConfig.reviewer.model) {
+        activeSpokeDefs.push({
+          key: 'reviewer',
+          roleTag: 'Reviewer',
+          icon: 'T',
+          modelName: formatCleanModel(rolesConfig.reviewer, 'Claude Opus 5.5'),
+          fullModel: rolesConfig.reviewer.model,
+          tooltip: `Reviewer Agent (${rolesConfig.reviewer.model}) - TechLead Reviewer`,
+          defaultPos: { left: '80%', top: '74%' }
+        });
+      }
+
+      // 3. Render Spoke Nodes & SVG Lines dynamically
+      spokesContainer.innerHTML = '';
+      svgEl.innerHTML = '';
+
+      activeSpokeDefs.forEach(def => {
+        let statusClass = '';
+        let lineClass = 'link-path';
+
+        const rStat = rolesStatus[def.key]?.status || 'idle';
+
+        if (mode === 'quick' && (def.key === 'router' || def.key === 'reviewer')) {
+          statusClass = 'skipped';
+          lineClass = 'link-path skipped';
+        } else if (activeStage === def.key || (def.key === 'validator' && ['applier', 'validator'].includes(activeStage))) {
+          statusClass = 'active';
+          lineClass = 'link-path active';
+        } else if (rStat === 'done' || rStat === 'approved' || activeStage === 'done' ||
+                   (def.key === 'router' && ['writer', 'designer', 'applier', 'validator', 'reviewer', 'git'].includes(activeStage)) ||
+                   (def.key === 'writer' && ['applier', 'validator', 'reviewer', 'git'].includes(activeStage)) ||
+                   (def.key === 'validator' && ['reviewer', 'git'].includes(activeStage)) ||
+                   (def.key === 'reviewer' && ['git'].includes(activeStage))) {
+          statusClass = 'done';
+          lineClass = 'link-path done';
+        }
+
+        // Spoke node element
+        const nodeEl = document.createElement('div');
+        nodeEl.className = `ai-capsule-node spoke-node node-${def.key} ${statusClass}`.trim();
+        nodeEl.id = `capsule-${def.key}`;
+        nodeEl.title = def.tooltip;
+        nodeEl.style.left = def.defaultPos.left;
+        nodeEl.style.top = def.defaultPos.top;
+        nodeEl.innerHTML = `
+          <div class="node-icon icon-${def.key}">${def.icon}</div>
+          <div class="spoke-text">
+            <span class="node-role-tag">${escapeHtml(def.roleTag)}</span>
+            <span class="node-label">${escapeHtml(def.modelName)}</span>
+          </div>
+          <div class="node-status-dot"></div>
+        `;
+        spokesContainer.appendChild(nodeEl);
+
+        // SVG connection line
+        const lineEl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        lineEl.id = `link-hub-${def.key}`;
+        lineEl.setAttribute('class', lineClass);
+        svgEl.appendChild(lineEl);
+      });
+
+      // 4. Calculate coordinates from Hub to all active Spokes
+      requestAnimationFrame(() => {
+        const canvas = document.querySelector('.topology-canvas');
+        if (!canvas) return;
+        const cRect = canvas.getBoundingClientRect();
+        if (cRect.width === 0 || cRect.height === 0) return;
+
+        function getCenter(el) {
+          if (!el) return { x: 0, y: 0 };
+          const r = el.getBoundingClientRect();
+          return {
+            x: r.left + r.width / 2 - cRect.left,
+            y: r.top + r.height / 2 - cRect.top
+          };
+        }
+
+        const pHub = getCenter(capsuleHub);
+
+        activeSpokeDefs.forEach(def => {
+          const nodeEl = document.getElementById(`capsule-${def.key}`);
+          const lineEl = document.getElementById(`link-hub-${def.key}`);
+          if (!nodeEl || !lineEl) return;
+          const pSpoke = getCenter(nodeEl);
+          lineEl.setAttribute('x1', pHub.x.toFixed(1));
+          lineEl.setAttribute('y1', pHub.y.toFixed(1));
+          lineEl.setAttribute('x2', pSpoke.x.toFixed(1));
+          lineEl.setAttribute('y2', pSpoke.y.toFixed(1));
+        });
+      });
+    }
+
+    // Recalculate dynamic SVG links on resize or tab switch
     function recalculateSvgLinks() {
       const canvas = document.querySelector('.topology-canvas');
       if (!canvas) return;
       const cRect = canvas.getBoundingClientRect();
       if (cRect.width === 0 || cRect.height === 0) return;
 
-      function getPointRight(el) {
+      function getCenter(el) {
         if (!el) return { x: 0, y: 0 };
         const r = el.getBoundingClientRect();
         return {
-          x: r.right - cRect.left,
+          x: r.left + r.width / 2 - cRect.left,
           y: r.top + r.height / 2 - cRect.top
         };
       }
 
-      function getPointLeft(el) {
-        if (!el) return { x: 0, y: 0 };
-        const r = el.getBoundingClientRect();
-        return {
-          x: r.left - cRect.left,
-          y: r.top + r.height / 2 - cRect.top
-        };
-      }
-
-      function setBezier(pathEl, p1, p2, curvature = 0.5) {
-        if (!pathEl || !p1 || !p2 || p1.x === 0 || p2.x === 0) return;
-        const dx = Math.max(20, Math.abs(p2.x - p1.x) * curvature);
-        const d = `M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} C ${(p1.x + dx).toFixed(1)} ${p1.y.toFixed(1)}, ${(p2.x - dx).toFixed(1)} ${p2.y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
-        pathEl.setAttribute('d', d);
-      }
-
-      function setFeedbackLoop(pathEl) {
-        if (!pathEl || !capsuleValidator || !capsuleDeepseek) return;
-        const rVal = capsuleValidator.getBoundingClientRect();
-        const rDeep = capsuleDeepseek.getBoundingClientRect();
-        if (rVal.width === 0 || rDeep.width === 0) return;
-
-        // Bắt đầu từ đáy Validator lượn vòng cung mềm xuống dưới rồi chạm đáy DeepSeek
-        const startX = rVal.left + rVal.width * 0.25 - cRect.left;
-        const startY = rVal.bottom - cRect.top;
-        const endX = rDeep.right - cRect.left;
-        const endY = rDeep.bottom - cRect.top;
-        const dropY = Math.max(startY, endY) + 26;
-
-        const d = `M ${startX.toFixed(1)} ${startY.toFixed(1)} C ${(startX - 40).toFixed(1)} ${dropY.toFixed(1)}, ${(endX + 40).toFixed(1)} ${dropY.toFixed(1)}, ${endX.toFixed(1)} ${endY.toFixed(1)}`;
-        pathEl.setAttribute('d', d);
-      }
-
-      const pSonnet = getPointRight(capsuleSonnet);
-      const pGeminiIn = getPointLeft(capsuleGemini);
-      const pGeminiOut = getPointRight(capsuleGemini);
-      const pDeepseekIn = getPointLeft(capsuleDeepseek);
-      const pDeepseekOut = getPointRight(capsuleDeepseek);
-      const pValidatorIn = getPointLeft(capsuleValidator);
-      const pValidatorOut = getPointRight(capsuleValidator);
-      const pOpusIn = getPointLeft(capsuleOpus);
-
-      // 1. Sonnet -> Gemini (Frontend)
-      setBezier(linkSonnetGemini, pSonnet, pGeminiIn);
-
-      // 2. Sonnet -> DeepSeek (Backend)
-      setBezier(linkSonnetDeepseek, pSonnet, pDeepseekIn);
-
-      // 3. Gemini -> Validator
-      setBezier(linkGeminiValidator, pGeminiOut, pValidatorIn);
-
-      // 4. DeepSeek -> Validator
-      setBezier(linkDeepseekValidator, pDeepseekOut, pValidatorIn);
-
-      // 5. Validator -> DeepSeek Feedback loop (khi retry)
-      setFeedbackLoop(linkValidatorDeepseek);
-
-      // 6. Validator -> Opus (Review Gate)
-      setBezier(linkValidatorOpus, pValidatorOut, pOpusIn);
+      const pHub = getCenter(capsuleHub);
+      const allLines = document.querySelectorAll('#topology-svg line');
+      allLines.forEach(lineEl => {
+        const spokeKey = lineEl.id.replace('link-hub-', '');
+        const nodeEl = document.getElementById(`capsule-${spokeKey}`);
+        if (!nodeEl) return;
+        const pSpoke = getCenter(nodeEl);
+        lineEl.setAttribute('x1', pHub.x.toFixed(1));
+        lineEl.setAttribute('y1', pHub.y.toFixed(1));
+        lineEl.setAttribute('x2', pSpoke.x.toFixed(1));
+        lineEl.setAttribute('y2', pSpoke.y.toFixed(1));
+      });
     }
 
     // Intelligent Failure Tail Extraction (Zero Noise)
@@ -1549,7 +2094,7 @@
           left.className = 'queue-item-left';
 
           const icon = document.createElement('span');
-          icon.textContent = '⏳';
+          icon.className = 'queue-item-dot dot-active';
 
           const tid = document.createElement('span');
           tid.className = 'queue-item-id';
@@ -1580,7 +2125,7 @@
           left.className = 'queue-item-left';
 
           const icon = document.createElement('span');
-          icon.textContent = '🚫';
+          icon.className = 'queue-item-dot dot-blocked';
 
           const tid = document.createElement('span');
           tid.className = 'queue-item-id';
@@ -1837,7 +2382,7 @@
           }
 
           if (m.tool_calls && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
-            const callsText = m.tool_calls.map(tc => `🔧 Tool Call: ${tc.function?.name || tc.name}(${tc.function?.arguments || ''})`).join('\n');
+            const callsText = m.tool_calls.map(tc => `Tool Call: ${tc.function?.name || tc.name}(${tc.function?.arguments || ''})`).join('\n');
             textContent = textContent ? `${textContent}\n\n${callsText}` : callsText;
           }
 
@@ -1861,6 +2406,19 @@
         if (data.csrf_token) {
           csrfToken = data.csrf_token;
           if (window.CockpitApi?.setCsrfToken) window.CockpitApi.setCsrfToken(data.csrf_token);
+        }
+
+        if (data.policy) {
+          currentPolicyConfig = data.policy;
+        }
+
+        if (data.router_provider) {
+          if (cfg9RouterUrl && !cfg9RouterUrl.dataset.userEdited && data.router_provider.base_url) {
+            cfg9RouterUrl.value = data.router_provider.base_url;
+          }
+          if (cfg9RouterKey && !cfg9RouterKey.dataset.userEdited && data.router_provider.default_key) {
+            cfg9RouterKey.value = data.router_provider.default_key;
+          }
         }
 
         txtPolling.textContent = '1s Polling';
@@ -1891,14 +2449,20 @@
           if (btnStopOrchestrator) btnStopOrchestrator.style.display = 'none';
         }
 
-        // 4. Tokens
+        // 4. Tokens & Cache Hit Telemetry
         const live = data.live_status || {};
         tokIn.textContent = formatTokens(live.tokens?.session_input || 0);
         tokOut.textContent = formatTokens(live.tokens?.session_output || 0);
+        if (tokCache) {
+          tokCache.textContent = (live.tokens?.cache_hit_pct ?? 0) + '%';
+        }
 
         // 5. Pipeline Stages & Top Stage Indicator
         const activeStage = live.current_stage || (isRunning ? 'preflight' : 'idle');
-        txtStage.textContent = 'Stage: ' + activeStage.toUpperCase();
+        let stageDisplay = activeStage.toUpperCase();
+        if (activeStage === 'writer') stageDisplay = 'WRITER HUB';
+        else if (activeStage === 'applier') stageDisplay = 'APPLIER (GHI ĐĨA)';
+        txtStage.textContent = 'Stage: ' + stageDisplay;
         if (activeStage === 'idle') {
           dotStage.className = 'dot';
         } else if (activeStage === 'done') {
@@ -1972,32 +2536,14 @@
           taskGoal.textContent = 'Waiting for orchestrator task...';
         }
 
-        // 7. Left Column AI Personnel Models
+        // 7. Left Column AI Personnel Models (Workflow Squad)
         const rolesStatus = live.roles_status || {};
         const rolesConfig = data.roles || {};
         currentSquadRolesConfig = rolesConfig;
 
-        squadModelRouter.textContent = rolesConfig.router?.model || 'kr/claude-sonnet-4.5-thinking';
-        squadStatusRouter.textContent = (rolesStatus.router?.status || (activeStage === 'router' ? 'working' : 'idle')).toUpperCase();
-        squadStatusRouter.className = 'status-badge badge-' + (activeStage === 'router' ? 'working' : (rolesStatus.router?.status === 'done' ? 'done' : 'idle'));
+        renderWorkflowSquad(activeStage, rolesStatus, rolesConfig, live);
 
-        squadModelWriter.textContent = rolesConfig.writer?.model || 'deepseek-ai/deepseek-v4.1-flash-1017';
-        squadStatusWriter.textContent = (rolesStatus.writer?.status || (activeStage === 'writer' ? 'working' : 'idle')).toUpperCase();
-        squadStatusWriter.className = 'status-badge badge-' + (activeStage === 'writer' ? 'working' : (rolesStatus.writer?.status === 'done' ? 'done' : 'idle'));
-
-        if (squadStatusValidator) {
-          const isVal = ['applier', 'validator'].includes(activeStage);
-          const isValDone = ['reviewer', 'git', 'done'].includes(activeStage);
-          squadStatusValidator.textContent = isVal ? 'TESTING' : (isValDone ? 'PASS ✓' : 'IDLE');
-          squadStatusValidator.className = 'status-badge badge-' + (isVal ? 'working' : (isValDone ? 'done' : 'idle'));
-        }
-
-        squadModelReviewer.textContent = rolesConfig.reviewer?.model || 'ag/claude-opus-5-5-high';
-        const rStat = live.mode === 'quick' ? 'SKIPPED' : (rolesStatus.reviewer?.status || 'idle').toUpperCase();
-        squadStatusReviewer.textContent = rStat;
-        squadStatusReviewer.className = 'status-badge ' + (rStat === 'SKIPPED' ? 'badge-skipped' : (rStat === 'APPROVED' ? 'badge-done' : 'badge-idle'));
-
-        // 8. Update 9Router Topology Network Capsule Nodes & SVG Links
+        // 8. Update Adaptive Star Topology Network (Center Hub & Spoke Links)
         updateTopologyNetwork(activeStage, rolesStatus, rolesConfig, data);
 
         // 9. Scoped Files
@@ -2066,14 +2612,16 @@
     // UI Event Listeners
     btnPauseLog.addEventListener('click', () => {
       isLogPaused = !isLogPaused;
-      btnPauseLog.textContent = isLogPaused ? '▶ Resume' : '⏸ Pause';
+      btnPauseLog.textContent = isLogPaused ? 'Resume' : 'Pause';
       btnPauseLog.style.background = isLogPaused ? 'var(--status-warning)' : '';
       btnPauseLog.style.color = isLogPaused ? '#000' : '';
     });
 
     btnClearLog.addEventListener('click', () => {
-      while (consoleLogs.firstChild) {
-        consoleLogs.removeChild(consoleLogs.firstChild);
+      if (consoleLogs) {
+        while (consoleLogs.firstChild) {
+          consoleLogs.removeChild(consoleLogs.firstChild);
+        }
       }
       lastRenderedLogsHash = '';
     });

@@ -53,6 +53,8 @@ policy:
       - "ui_bridge/"    # Cầu nối RPC giữa PyWebView và Python backend
       - "ui_web/"       # Giao diện web frontend Studio v2.0 (HTML/CSS/JS)
       - "tests/"        # Bộ kiểm thử đơn vị Python unittest
+      - "docs/"         # Tài liệu kiến trúc và tài liệu dự án (DESIGN.md, STATE.md)
+      - "artifacts/"    # Bản đặc tả kỹ thuật và báo cáo khảo sát AI
 
     # Danh sách file được bảo vệ đặc biệt (AI bị cấm sửa đổi trừ khi có chỉ định rõ ràng):
     protected_files:

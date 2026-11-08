@@ -191,6 +191,61 @@ async function runCockpitTests() {
       if (fs.existsSync(testTaskFile)) fs.unlinkSync(testTaskFile);
     }
 
+    // Test 8: Cockpit v3.1 Preset Selector & Cache Hit Telemetry DOM/API Contract
+    console.log('8. Testing Cockpit v3.1 Workflow Preset Selector & Cache Hit Telemetry...');
+    assert.strictEqual(typeof snapData.live_status?.tokens?.cache_hit_pct, 'number', 'Snapshot tokens must include numeric cache_hit_pct');
+    const htmlRes = await fetch(`http://127.0.0.1:${testPort}/`);
+    assert.strictEqual(htmlRes.status, 200, 'GET / should return 200');
+    const htmlText = await htmlRes.text();
+    assert.ok(htmlText.includes('id="sel-workflow-preset"'), 'Index HTML must include #sel-workflow-preset selector');
+    assert.ok(htmlText.includes('id="tok-cache"'), 'Index HTML must include #tok-cache telemetry badge');
+    console.log('✓ Cockpit v3.1 Preset Selector & Cache Telemetry verified.');
+
+    // Test 9: Policy Hub (/api/save-policy-config & /api/run-validation-check)
+    console.log('9. Testing Policy Hub (/api/save-policy-config & /api/run-validation-check)...');
+    const POLICY_CONFIG_FILE = path.resolve(TEAM_DIR, 'config', 'policy.yaml');
+    const originalPolicyYaml = fs.readFileSync(POLICY_CONFIG_FILE, 'utf8');
+
+    try {
+      const savePolicyRes = await fetch(`http://127.0.0.1:${testPort}/api/save-policy-config`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Dashboard-Token': DASHBOARD_CSRF_TOKEN
+        },
+        body: JSON.stringify({
+          policy: {
+            scope_control: { max_files_per_task: 6 }
+          }
+        })
+      });
+      assert.strictEqual(savePolicyRes.status, 200, 'POST /api/save-policy-config must return 200');
+      const savePolicyData = await savePolicyRes.json();
+      assert.ok(savePolicyData.ok, 'savePolicyData.ok must be true');
+
+      const updatedPolicyYaml = fs.readFileSync(POLICY_CONFIG_FILE, 'utf8');
+      assert.ok(updatedPolicyYaml.includes('max_files_per_task: 6'), 'policy.yaml must reflect updated value');
+      console.log('✓ policy.yaml successfully updated via /api/save-policy-config.');
+
+      // Test run-validation-check
+      const runCheckRes = await fetch(`http://127.0.0.1:${testPort}/api/run-validation-check`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Dashboard-Token': DASHBOARD_CSRF_TOKEN
+        },
+        body: JSON.stringify({ check_type: 'fast' })
+      });
+      assert.strictEqual(runCheckRes.status, 200, 'POST /api/run-validation-check must return 200');
+      const runCheckData = await runCheckRes.json();
+      assert.ok(runCheckData.ok, 'Fast check should pass');
+      assert.strictEqual(runCheckData.exit_code, 0);
+      console.log(`✓ /api/run-validation-check verified successfully (${runCheckData.duration_ms}ms).`);
+    } finally {
+      fs.writeFileSync(POLICY_CONFIG_FILE, originalPolicyYaml, 'utf8');
+      console.log('✓ Restored original policy.yaml.');
+    }
+
     console.log('\n=============================================');
     console.log('ALL COCKPIT & CSRF SECURITY TESTS PASSED! 🎯');
     console.log('=============================================');

@@ -66,10 +66,22 @@ export async function call9Router(model, systemPrompt, userMessage, maxTokens = 
 
   for (const candidateModel of modelsToTry) {
     try {
+      // Prompt Caching breakpoint: attach ephemeral cache_control for Claude models on system role
+      const isClaude = candidateModel.toLowerCase().includes('claude');
+      const systemContent = (isClaude && typeof systemPrompt === 'string' && systemPrompt.length >= 800)
+        ? [
+            {
+              type: 'text',
+              text: systemPrompt,
+              cache_control: { type: 'ephemeral' }
+            }
+          ]
+        : systemPrompt;
+
       const reqBody = {
         model: candidateModel,
         messages: [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: systemContent },
           { role: 'user', content: userMessage }
         ],
         max_tokens: maxTokens,

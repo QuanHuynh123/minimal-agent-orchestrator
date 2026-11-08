@@ -85,6 +85,35 @@
       return res.json();
     },
 
+    async savePolicyConfig(payload) {
+      const res = await request('/api/save-policy-config', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        let errData;
+        try { errData = await res.json(); } catch {}
+        throw new Error(errData?.error || `HTTP ${res.status}: Failed to save policy config`);
+      }
+      return res.json();
+    },
+
+    async runValidationCheck(checkType = 'fast', cmd = null, timeoutSec = null) {
+      const payload = { check_type: checkType };
+      if (cmd) payload.cmd = cmd;
+      if (timeoutSec) payload.timeout_sec = timeoutSec;
+      const res = await request('/api/run-validation-check', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        let errData;
+        try { errData = await res.json(); } catch {}
+        return { ok: false, error: errData?.error || `HTTP ${res.status}` };
+      }
+      return res.json();
+    },
+
     async decomposeGoal(goal, options = {}) {
       const res = await request('/api/decompose', {
         method: 'POST',

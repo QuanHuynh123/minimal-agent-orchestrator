@@ -1,110 +1,111 @@
 <section class="left-col">
 
-      <!-- Active / Last Completed Task Card -->
-      <div class="bento-card">
-        <div class="card-header">
-          <span class="card-title" id="task-card-title">Active Task</span>
-          <span class="tag tag-attempt" id="task-attempt">Attempt 0 / 3</span>
+  <!-- Active / Last Completed Task Card -->
+  <div class="bento-card">
+    <div class="card-header">
+      <span class="card-title" id="task-card-title">Active Task</span>
+      <span class="tag tag-attempt" id="task-attempt">Attempt 0 / 3</span>
+    </div>
+    <div>
+      <div class="task-id-badge" id="task-id">No active task</div>
+    </div>
+    <div class="task-meta-row">
+      <span class="tag tag-quick" id="task-mode">MODE: IDLE</span>
+      <span class="tag tag-low" id="task-risk">RISK: LOW</span>
+      <span class="tag tag-commit" id="task-commit-tag" style="display: none;">[commit]</span>
+      <span class="tag tag-timer" id="task-timer-tag" style="display: none;">Task: 0s</span>
+    </div>
+    <div class="task-goal-text" id="task-goal">Waiting for orchestrator task...</div>
+  </div>
+
+  <!-- Workflow Personnel Card (Dynamically synced with team.yaml) -->
+  <div class="bento-card">
+    <div class="card-header">
+      <span class="card-title">Workflow Squad</span>
+      <span class="tag tag-attempt" id="squad-active-mode-tag">Adaptive</span>
+    </div>
+    <div class="roles-container" id="squad-roles-container">
+      <!-- 1. Router Agent -->
+      <div class="role-row" id="squad-row-router">
+        <div class="role-name">
+          <span class="role-name-title">Router Agent</span>
+          <span class="role-model" id="squad-model-router">Plan &amp; Scope Router</span>
         </div>
-        <div>
-          <div class="task-id-badge" id="task-id">No active task</div>
-        </div>
-        <div class="task-meta-row">
-          <span class="tag tag-quick" id="task-mode">MODE: IDLE</span>
-          <span class="tag tag-low" id="task-risk">RISK: LOW</span>
-          <span class="tag tag-commit" id="task-commit-tag" style="display: none;">[commit]</span>
-          <span class="tag tag-timer" id="task-timer-tag" style="display: none;">Task: ⏱ 0s</span>
-        </div>
-        <div class="task-goal-text" id="task-goal">Waiting for orchestrator task...</div>
+        <span class="status-badge badge-idle" id="squad-status-router">IDLE</span>
       </div>
 
-      <!-- Standard Workflow Personnel Card (Chuẩn 5 Roles chính thức từ agent-team/roles/) -->
-      <div class="bento-card">
-        <div class="card-header">
-          <span class="card-title">Standard Workflow Models</span>
+      <!-- 2. Writer Agent -->
+      <div class="role-row" id="squad-row-writer">
+        <div class="role-name">
+          <span class="role-name-title">Writer Agent</span>
+          <span class="role-model" id="squad-model-writer">Code Generator</span>
         </div>
-        <div class="roles-container">
-          <!-- 1. Router Agent -->
-          <div class="role-row">
-            <div class="role-name">
-              <span class="role-name-title">🧠 Router Agent</span>
-              <span class="role-model" id="squad-model-router">kr/claude-sonnet-4.5-thinking • Spec &amp; Plan</span>
-            </div>
-            <span class="status-badge badge-idle" id="squad-status-router">IDLE</span>
-          </div>
-
-          <!-- 2. Writer Agent -->
-          <div class="role-row">
-            <div class="role-name">
-              <span class="role-name-title">⚡ Writer Agent</span>
-              <span class="role-model" id="squad-model-writer">DeepSeek V4.1 Flash • Single Writer</span>
-            </div>
-            <span class="status-badge badge-idle" id="squad-status-writer">IDLE</span>
-          </div>
-
-          <!-- 3. Designer Agent -->
-          <div class="role-row">
-            <div class="role-name">
-              <span class="role-name-title">🎨 Designer Agent</span>
-              <span class="role-model" id="squad-model-designer">kr/claude-sonnet-4.5-thinking • Visual Audit</span>
-            </div>
-            <span class="status-badge badge-idle" id="squad-status-designer">IDLE</span>
-          </div>
-
-          <!-- 4. Reviewer Agent -->
-          <div class="role-row">
-            <div class="role-name">
-              <span class="role-name-title">🛡️ Reviewer Agent</span>
-              <span class="role-model" id="squad-model-reviewer">ag/claude-opus-5-5-high • TechLead</span>
-            </div>
-            <span class="status-badge badge-skipped" id="squad-status-reviewer">SKIPPED</span>
-          </div>
-
-          <!-- 6. Validator Guard -->
-          <div class="role-row">
-            <div class="role-name">
-              <span class="role-name-title">⚖️ Validator Guard</span>
-              <span class="role-model" id="squad-model-validator">validator.mjs • 0-Token Gate</span>
-            </div>
-            <span class="status-badge badge-idle" id="squad-status-validator">IDLE</span>
-          </div>
-        </div>
+        <span class="status-badge badge-idle" id="squad-status-writer">IDLE</span>
       </div>
 
-      <!-- Scoped Files Card -->
-      <div class="bento-card">
-        <div class="card-header">
-          <span class="card-title">Locked Scope Files</span>
-          <span class="tag tag-attempt" id="scope-count">0 files</span>
+      <!-- 3. Designer Agent -->
+      <div class="role-row" id="squad-row-designer">
+        <div class="role-name">
+          <span class="role-name-title">Designer Agent</span>
+          <span class="role-model" id="squad-model-designer">UI &amp; Visual Audit</span>
         </div>
-        <ul class="file-list" id="scope-files-list">
-          <li class="file-item"><span class="file-path">No scope locked</span></li>
-        </ul>
+        <span class="status-badge badge-idle" id="squad-status-designer">IDLE</span>
       </div>
 
-      <!-- Task Queue Card -->
-      <div class="bento-card">
-        <div class="card-header">
-          <span class="card-title">Task Queue &amp; History</span>
+      <!-- 4. Reviewer Agent -->
+      <div class="role-row" id="squad-row-reviewer">
+        <div class="role-name">
+          <span class="role-name-title">Reviewer Agent</span>
+          <span class="role-model" id="squad-model-reviewer">TechLead Reviewer</span>
         </div>
-        <div class="queue-stats-row">
-          <div class="queue-stat-box">
-            <div class="queue-stat-num" id="cnt-active" style="color: #60a5fa;">0</div>
-            <div class="queue-stat-label">Active</div>
-          </div>
-          <div class="queue-stat-box">
-            <div class="queue-stat-num" id="cnt-done" style="color: #34d399;">0</div>
-            <div class="queue-stat-label">Done</div>
-          </div>
-          <div class="queue-stat-box">
-            <div class="queue-stat-num" id="cnt-blocked" style="color: #f87171;">0</div>
-            <div class="queue-stat-label">Blocked</div>
-          </div>
-        </div>
-        <div class="queue-sub-header" style="font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-top: 4px;">Recent Completed &amp; Queue List</div>
-        <div class="queue-list-container" id="queue-items-list">
-          <!-- Populated securely via DOM nodes -->
-        </div>
+        <span class="status-badge badge-idle" id="squad-status-reviewer">IDLE</span>
       </div>
 
-    </section>
+      <!-- 5. Validator Guard -->
+      <div class="role-row" id="squad-row-validator">
+        <div class="role-name">
+          <span class="role-name-title">Validator Guard</span>
+          <span class="role-model" id="squad-model-validator">validator.mjs • 0-Token Gate</span>
+        </div>
+        <span class="status-badge badge-idle" id="squad-status-validator">IDLE</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scoped Files Card -->
+  <div class="bento-card">
+    <div class="card-header">
+      <span class="card-title">Locked Scope</span>
+      <span class="tag tag-attempt" id="scope-count">0 files</span>
+    </div>
+    <ul class="file-list" id="scope-files-list">
+      <li class="file-item"><span class="file-path">No scope locked</span></li>
+    </ul>
+  </div>
+
+  <!-- Task Queue Card -->
+  <div class="bento-card">
+    <div class="card-header">
+      <span class="card-title">Task Queue</span>
+    </div>
+    <div class="queue-stats-row">
+      <div class="queue-stat-box stat-active">
+        <div class="queue-stat-num" id="cnt-active">0</div>
+        <div class="queue-stat-label">Active</div>
+      </div>
+      <div class="queue-stat-box stat-done">
+        <div class="queue-stat-num" id="cnt-done">0</div>
+        <div class="queue-stat-label">Done</div>
+      </div>
+      <div class="queue-stat-box stat-blocked">
+        <div class="queue-stat-num" id="cnt-blocked">0</div>
+        <div class="queue-stat-label">Blocked</div>
+      </div>
+    </div>
+    <div class="queue-sub-header">Recent Tasks</div>
+    <div class="queue-list-container" id="queue-items-list">
+      <!-- Populated securely via DOM nodes -->
+    </div>
+  </div>
+
+</section>
