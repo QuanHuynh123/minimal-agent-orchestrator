@@ -23,6 +23,7 @@ import {
 } from '../runtime/provider-gateway.mjs';
 import {
   compactMessagesForContext,
+  estimatePayloadTokens,
   groupMessagesIntoTurns,
   loadSession,
   saveSession,
@@ -56,6 +57,7 @@ import {
 import { verifyPlannedScope } from './goal-planner.mjs';
 import {
   buildConsolidatedSpecsContext,
+  buildRouterContext,
   sanitizeProjectRules,
   loadProjectConventions
 } from './lib/context-builders.mjs';
@@ -718,6 +720,95 @@ assert.strictEqual(loadedConv.includes('## 2. Task Triage & Execution Architectu
 
 const emptyConv = loadProjectConventions(path.resolve(REPO_ROOT, 'non_existent_workspace_dir_12345'));
 assert.strictEqual(emptyConv, '', 'Workspace without rule files must gracefully return empty string');
+
+// 7.4 Verify buildRouterContext Repo-Map Injection (Regression Test for queryKeywords)
+const routerCtxDefault = buildRouterContext(['agent-team/runtime'], REPO_ROOT, 50);
+assert.ok(routerCtxDefault.includes('CODEBASE SKELETON & SYMBOL MAP'), 'buildRouterContext without queryKeywords must inject CODEBASE SKELETON & SYMBOL MAP');
+const routerCtxRanked = buildRouterContext(['agent-team/runtime'], REPO_ROOT, 50, 'compactMessagesForContext session');
+assert.ok(routerCtxRanked.includes('session-store.mjs'), 'buildRouterContext with queryKeywords must rank matching symbol files');
+
+// 7.5 Verify JS/Python Enhanced Symbol Extraction (Class methods, Arrow functions, Multi-line defs)
+const jsSample = [
+  'export class PaymentService extends BaseService {',
+  '  async processCharge(amount, currency) {',
+  '    if (amount <= 0) {',
+  '      return false;',
+  '    }',
+  '    return true;',
+  '  }',
+  '}',
+  'export const calculateFee = async (subtotal, rate) => subtotal * rate;',
+  'export function formatReceipt(',
+  '  receiptId,',
+  '  customerName',
+  ') {',
+  '  return receiptId;',
+  '}'
+].join('\n');
+const extractedJs = extractSymbolsFromCode('src/payment.js', jsSample);
+assert.strictEqual(extractedJs.classes.length, 1);
+assert.strictEqual(extractedJs.classes[0].name, 'PaymentService');
+assert.strictEqual(extractedJs.classes[0].methods.length, 1, 'JS class method must be extracted without matching if()');
+assert.strictEqual(extractedJs.classes[0].methods[0].name, 'processCharge');
+assert.ok(extractedJs.functions.some(f => f.name === 'calculateFee'), 'JS arrow function must be extracted');
+assert.ok(extractedJs.functions.some(f => f.name === 'formatReceipt' && f.params.includes('receiptId')), 'JS multi-line function signature must be extracted');
+
+// 7.6 Verify Turn Grouping Resilience (Out-of-Order & Missing Tool Results) + Persistent Epoch Checkpoint
+const messyMessages = [
+  { role: 'user', content: 'Inspect files' },
+  {
+    role: 'assistant',
+    content: '',
+    tool_calls: [
+      { id: 'call_1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+      { id: 'call_2', type: 'function', function: { name: 'search_code', arguments: '{}' } },
+      { id: 'call_3', type: 'function', function: { name: 'list_files', arguments: '{}' } }
+    ]
+  },
+  // Out-of-order result for call_2, call_1 is second, and call_3 is missing completely!
+  { role: 'tool', tool_call_id: 'call_2', content: '{"matches":[],"count":0}' },
+  { role: 'tool', tool_call_id: 'call_1', content: '{"file":"a.js","total_lines":10,"start_line":1,"end_line":10}' },
+  { role: 'tool', tool_call_id: 'orphan_999', content: '{"Orphan":true}' }
+];
+const groupedTurns = groupMessagesIntoTurns(messyMessages);
+assert.strictEqual(groupedTurns.length, 2);
+const toolTurnMsgs = groupedTurns[1].messages;
+assert.strictEqual(toolTurnMsgs.length, 4, 'Assistant + 3 ordered tool results (1 synthesized)');
+assert.strictEqual(toolTurnMsgs[1].tool_call_id, 'call_1', 'Tool results must be ordered to match assistant.tool_calls');
+assert.strictEqual(toolTurnMsgs[2].tool_call_id, 'call_2');
+assert.strictEqual(toolTurnMsgs[3].tool_call_id, 'call_3', 'Missing tool result must be synthesized');
+assert.ok(toolTurnMsgs[3].content.includes('missing or interrupted'));
+
+// Verify Persistent Epoch Checkpoint in-place rotation
+const epochSessionMsgs = [
+  { role: 'user', content: 'CURRENT SCOPED FILE CONTENTS:\n' + 'A'.repeat(6000) },
+  {
+    role: 'assistant',
+    content: 'Reading',
+    tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } }]
+  },
+  { role: 'tool', tool_call_id: 'c1', content: JSON.stringify({ file: 'x.py', start_line: 1, end_line: 200, total_lines: 200, content: 'B'.repeat(6000) }) },
+  { role: 'user', content: 'Recent turn 1' },
+  { role: 'assistant', content: 'Recent reply 1' },
+  { role: 'user', content: 'Recent turn 2' },
+  { role: 'assistant', content: 'Recent reply 2' }
+];
+// Trigger epoch checkpoint with custom low watermark (1000 tokens)
+const compactedEpoch = compactMessagesForContext(epochSessionMsgs, 2, {
+  useEpochWatermark: true,
+  highWatermarkTokens: 1000
+});
+assert.ok(compactedEpoch[0].content.includes('[COMPACTED EPOCH SUMMARY]'), 'Epoch compaction must stamp [COMPACTED EPOCH SUMMARY]');
+assert.strictEqual(epochSessionMsgs.length, compactedEpoch.length, 'Session array must be checkpointed in-place');
+assert.ok(epochSessionMsgs[0].content.includes('[COMPACTED EPOCH SUMMARY]'), 'Persisted session array must retain Epoch Checkpoint');
+const postCheckpointTokens = estimatePayloadTokens(epochSessionMsgs);
+assert.ok(postCheckpointTokens < 500, `Compacted epoch tokens (${postCheckpointTokens}) must drop well below watermark (1000)`);
+
+// Verify Vision Base64 Token Normalization
+const fakeBase64Img = 'data:image/png;base64,' + 'A'.repeat(70000);
+const visionMsg = [{ role: 'user', content: [{ type: 'text', text: 'Hello' }, { type: 'image_url', image_url: { url: fakeBase64Img } }] }];
+const visionTokens = estimatePayloadTokens(visionMsg, [{ name: 'read_file', description: 'Read file' }]);
+assert.ok(visionTokens > 1024 && visionTokens < 1200, `Vision block must normalize to ~1024 tokens instead of raw base64 length (got ${visionTokens})`);
 
 console.log('✓ Universal Task-Demand × Squad-Roster Matrix & 4 Invariants tests passed.\n');
 

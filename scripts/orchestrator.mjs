@@ -270,7 +270,8 @@ async function runRouterPlanner(task) {
   const allowedDirs = policyConfig.policy?.scope_control?.allowed_dirs
     || policyConfig.policy?.allowed_dirs
     || ['*'];
-  const routerContext = buildRouterContext(allowedDirs, REPO_ROOT, 300);
+  const routerQuery = `${task.title || ''} ${task.goal || ''}`.trim();
+  const routerContext = buildRouterContext(allowedDirs, REPO_ROOT, 300, routerQuery);
   const prompt = [
     `TASK ID: ${task.task_id}`,
     `TITLE: ${task.title || ''}`,

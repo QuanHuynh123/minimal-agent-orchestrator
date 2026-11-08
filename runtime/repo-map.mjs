@@ -1,32 +1,36 @@
 #!/usr/bin/env node
 /**
- * Zero-Dependency Structural Repo-Map & Symbol Dependency Engine
- * Part of Agent Squad Runtime v3.0 (agent-team/runtime/repo-map.mjs)
+ * Zero-Dependency Regex Symbol Skeleton & Caller-Degree Ranking Engine
+ * Part of Agent Squad Runtime v3.1 (agent-team/runtime/repo-map.mjs)
  * 
- * Extracts high-level class signatures, method/function headers, and cross-file
- * import dependencies from Python and JavaScript/TypeScript files.
- * Provides PageRank-style relevance scoring and compact token-budgeted skeleton maps
- * for the AI Architect Router, Planner, and Worker agents.
+ * Extracts high-level class signatures, method/function headers, arrow functions,
+ * and cross-file import dependencies from Python and JavaScript/TypeScript files
+ * without requiring native C++ bindings (Tree-sitter).
+ * Ranks files by keyword relevance + caller in-degree centrality.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 
 // In-memory cache keyed by filePath -> { mtime, symbols }
-const AST_CACHE = new Map();
+const SYMBOL_CACHE = new Map();
 
 const IGNORED_DIRS = new Set([
   '.git', 'node_modules', '.venv', 'venv', '__pycache__', 'dist', 'build',
   '.gemini', '.pytest_cache', '.mypy_cache', '.idea', '.vscode'
 ]);
 
+const JS_CONTROL_KEYWORDS = new Set([
+  'if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'typeof', 'delete', 'await', 'super'
+]);
+
 /**
- * Extracts classes, methods, top-level functions, and imports from code.
+ * Extracts classes, methods, top-level functions, arrow functions, and imports from code.
  */
 export function extractSymbolsFromCode(filePath, content = '') {
   const ext = path.extname(filePath).toLowerCase();
   const isPython = ext === '.py';
-  const isJs = ext === '.js' || ext === '.mjs' || ext === '.ts' || ext === '.jsx';
+  const isJs = ext === '.js' || ext === '.mjs' || ext === '.ts' || ext === '.jsx' || ext === '.tsx';
 
   if (!isPython && !isJs) {
     return { filePath, classes: [], functions: [], imports: [], callers: [] };
@@ -38,6 +42,18 @@ export function extractSymbolsFromCode(filePath, content = '') {
   const imports = [];
 
   let currentClass = null;
+
+  // Helper to join up to 6 continuation lines when a signature's parameter list spans multiple lines
+  function getJoinedSignature(idx) {
+    let joined = lines[idx] || '';
+    if (joined.includes('(') && !joined.includes(')')) {
+      for (let k = 1; k <= 6 && idx + k < lines.length; k++) {
+        joined += ' ' + lines[idx + k].trim();
+        if (joined.includes(')')) break;
+      }
+    }
+    return joined;
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -70,37 +86,42 @@ export function extractSymbolsFromCode(filePath, content = '') {
         continue;
       }
 
-      // Python method (indented def)
-      const methodMatch = line.match(/^[ \t]+def\s+([A-Za-z0-9_]+)\s*\(([^)]*)\)(?:\s*->\s*([^:]+))?\s*:/);
-      if (methodMatch && currentClass) {
-        const name = methodMatch[1];
-        if (!name.startsWith('__') || name === '__init__') {
-          currentClass.methods.push({
-            name,
-            params: cleanParams(methodMatch[2]),
-            returns: methodMatch[3] ? methodMatch[3].trim() : '',
-            line: i + 1
-          });
+      // Python method (indented def, supports multi-line params)
+      if (/^[ \t]+(?:async\s+)?def\s+[A-Za-z0-9_]+\s*\(/.test(line) && currentClass) {
+        const sig = getJoinedSignature(i);
+        const methodMatch = sig.match(/^[ \t]+(?:async\s+)?def\s+([A-Za-z0-9_]+)\s*\(([^)]*)\)(?:\s*->\s*([^:]+))?\s*:/);
+        if (methodMatch) {
+          const name = methodMatch[1];
+          if (!name.startsWith('__') || name === '__init__') {
+            currentClass.methods.push({
+              name,
+              params: cleanParams(methodMatch[2]),
+              returns: methodMatch[3] ? methodMatch[3].trim() : '',
+              line: i + 1
+            });
+          }
+          continue;
         }
-        continue;
       }
 
-      // Python top-level def
-      const topDefMatch = line.match(/^[ \t]*def\s+([A-Za-z0-9_]+)\s*\(([^)]*)\)(?:\s*->\s*([^:]+))?\s*:/);
-      if (topDefMatch) {
-        currentClass = null; // Exit class context
-        const name = topDefMatch[1];
-        functions.push({
-          name,
-          params: cleanParams(topDefMatch[2]),
-          returns: topDefMatch[3] ? topDefMatch[3].trim() : '',
-          line: i + 1
-        });
-        continue;
+      // Python top-level def (supports multi-line params)
+      if (/^(?:async\s+)?def\s+[A-Za-z0-9_]+\s*\(/.test(line)) {
+        const sig = getJoinedSignature(i);
+        const topDefMatch = sig.match(/^(?:async\s+)?def\s+([A-Za-z0-9_]+)\s*\(([^)]*)\)(?:\s*->\s*([^:]+))?\s*:/);
+        if (topDefMatch) {
+          currentClass = null; // Exit class context
+          functions.push({
+            name: topDefMatch[1],
+            params: cleanParams(topDefMatch[2]),
+            returns: topDefMatch[3] ? topDefMatch[3].trim() : '',
+            line: i + 1
+          });
+          continue;
+        }
       }
 
       // Reset class context on unindented non-comment, non-decorator lines
-      if (/^[A-Za-z0-9_]/.test(line) && !line.startsWith('class ') && !line.startsWith('def ')) {
+      if (/^[A-Za-z0-9_]/.test(line) && !line.startsWith('class ') && !line.startsWith('def ') && !line.startsWith('async def ')) {
         currentClass = null;
       }
     } else if (isJs) {
@@ -112,8 +133,8 @@ export function extractSymbolsFromCode(filePath, content = '') {
         continue;
       }
 
-      // JS exported class
-      const jsClassMatch = line.match(/export\s+class\s+([A-Za-z0-9_]+)(?:\s+extends\s+([A-Za-z0-9_]+))?/);
+      // JS class (exported or internal)
+      const jsClassMatch = line.match(/^[ \t]*(?:export\s+)?(?:default\s+)?class\s+([A-Za-z0-9_]+)(?:\s+extends\s+([A-Za-z0-9_.]+))?/);
       if (jsClassMatch) {
         currentClass = {
           name: jsClassMatch[1],
@@ -125,21 +146,58 @@ export function extractSymbolsFromCode(filePath, content = '') {
         continue;
       }
 
-      // JS exported function
-      const jsFuncMatch = line.match(/export\s+(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\(([^)]*)\)/);
-      if (jsFuncMatch) {
-        currentClass = null;
-        functions.push({
-          name: jsFuncMatch[1],
-          params: cleanParams(jsFuncMatch[2]),
-          returns: '',
-          line: i + 1
-        });
-        continue;
+      // JS top-level or exported function (supports multi-line params)
+      if (/^[ \t]*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+[A-Za-z0-9_]+\s*\(/.test(line)) {
+        const sig = getJoinedSignature(i);
+        const jsFuncMatch = sig.match(/^[ \t]*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\(([^)]*)\)/);
+        if (jsFuncMatch) {
+          currentClass = null;
+          functions.push({
+            name: jsFuncMatch[1],
+            params: cleanParams(jsFuncMatch[2]),
+            returns: '',
+            line: i + 1
+          });
+          continue;
+        }
       }
 
-      // JS exported const/let
-      const jsConstMatch = line.match(/export\s+(?:const|let)\s+([A-Za-z0-9_]+)/);
+      // JS arrow function (const/let foo = (...) => or async (...) =>)
+      if (/^[ \t]*(?:export\s+)?(?:const|let)\s+[A-Za-z0-9_]+\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z0-9_]+)\s*=>/.test(line)) {
+        const arrowMatch = line.match(/^[ \t]*(?:export\s+)?(?:const|let)\s+([A-Za-z0-9_]+)\s*=\s*(?:async\s*)?(?:\(([^)]*)\)|([A-Za-z0-9_]+))\s*=>/);
+        if (arrowMatch) {
+          currentClass = null;
+          functions.push({
+            name: arrowMatch[1],
+            params: cleanParams(arrowMatch[2] || arrowMatch[3] || ''),
+            returns: '',
+            line: i + 1
+          });
+          continue;
+        }
+      }
+
+      // JS class method inside currentClass
+      if (currentClass && /^[ \t]{2,}(?:static\s+)?(?:async\s+)?[A-Za-z0-9_]+\s*\([^;]*\{\s*$/.test(line)) {
+        const mMatch = line.match(/^[ \t]{2,}(?:static\s+)?(?:async\s+)?([A-Za-z0-9_]+)\s*\(([^)]*)\)\s*\{/);
+        if (mMatch && !JS_CONTROL_KEYWORDS.has(mMatch[1])) {
+          currentClass.methods.push({
+            name: mMatch[1],
+            params: cleanParams(mMatch[2]),
+            returns: '',
+            line: i + 1
+          });
+          continue;
+        }
+      }
+
+      // Close class context on unindented closing brace
+      if (currentClass && /^\}/.test(line)) {
+        currentClass = null;
+      }
+
+      // JS exported const/let (non-arrow)
+      const jsConstMatch = line.match(/^[ \t]*export\s+(?:const|let)\s+([A-Za-z0-9_]+)/);
       if (jsConstMatch) {
         functions.push({
           name: jsConstMatch[1],
@@ -205,13 +263,13 @@ export function scanWorkspaceSymbols(repoRoot, allowedDirs = []) {
           const relPath = path.relative(repoRoot, absPath).replace(/\\/g, '/');
           try {
             const stat = fs.statSync(absPath);
-            const cached = AST_CACHE.get(relPath);
+            const cached = SYMBOL_CACHE.get(relPath);
             if (cached && cached.mtime === stat.mtimeMs) {
               fileMap.set(relPath, cached.symbols);
             } else {
               const content = fs.readFileSync(absPath, 'utf8');
               const symbols = extractSymbolsFromCode(relPath, content);
-              AST_CACHE.set(relPath, { mtime: stat.mtimeMs, symbols });
+              SYMBOL_CACHE.set(relPath, { mtime: stat.mtimeMs, symbols });
               fileMap.set(relPath, symbols);
             }
           } catch {}
@@ -263,7 +321,7 @@ export function generateRepoMap(repoRoot, options = {}) {
   const fileMap = scanWorkspaceSymbols(repoRoot, options.allowedDirs);
   if (fileMap.size === 0) return '';
 
-  // Calculate Relevance Scores (PageRank-style boost)
+  // Calculate Relevance Scores (Keyword Hit + Caller In-Degree Centrality)
   const scoredFiles = [];
   for (const [relPath, sym] of fileMap.entries()) {
     let score = 0;

@@ -13,7 +13,7 @@ import { resolveRepoRoot } from '../scripts/applier.mjs';
 import { loadProjectConventions } from '../scripts/lib/context-builders.mjs';
 import { buildUserMessage } from './context-adapter.mjs';
 import { callModelEndpoint, getModelCapabilities } from './provider-gateway.mjs';
-import { compactMessagesForContext, loadSession, saveSession } from './session-store.mjs';
+import { compactMessagesForContext, estimatePayloadTokens, loadSession, saveSession } from './session-store.mjs';
 import { executeTool, getAvailableToolSchemas } from './tool-runtime.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -193,19 +193,23 @@ export async function runAgent(options = {}) {
   }
 
   // Assemble message history with atomic turn-preserving compaction (using Epoch Watermark to preserve KV Cache)
-  const history = compactMessagesForContext(session.messages || [], 2, { useEpochWatermark: true });
+  const history = compactMessagesForContext(session.messages || [], 2, {
+    useEpochWatermark: true,
+    tools: toolSchemas
+  });
   const messages = [
     { role: 'system', content: systemPromptText },
     ...history,
     userMessage
   ];
 
-  // Token budget estimation & transparency logging
-  const estTotalTokens = Math.ceil(JSON.stringify(messages).length / 3.5);
+  // Token budget estimation & transparency logging (includes tool schemas & normalized vision blocks)
+  const estTotalTokens = estimatePayloadTokens(messages, toolSchemas);
   const sysTokens = Math.ceil(systemPromptText.length / 3.5);
-  const userTokens = Math.ceil(JSON.stringify(userMessage).length / 3.5);
-  const histTokens = Math.ceil(JSON.stringify(history).length / 3.5);
-  console.log(`[Context Budget] Payload: ~${estTotalTokens} tokens (System: ${sysTokens} | History: ${histTokens} | User: ${userTokens}) for role="${role}"`);
+  const userTokens = estimatePayloadTokens([userMessage], []);
+  const histTokens = estimatePayloadTokens(history, []);
+  const toolTokens = estimatePayloadTokens([], toolSchemas);
+  console.log(`[Context Budget] Payload: ~${estTotalTokens} est. tokens (System: ${sysTokens} | Tools: ${toolTokens} | History: ${histTokens} | User: ${userTokens}) for role="${role}"`);
 
   // 5. Bounded Tool Execution Loop
   let currentTurn = 0;
@@ -372,11 +376,9 @@ export async function runAgent(options = {}) {
     }
   }
 
-  // 6. Update & Persist Session (Save full conversational trajectory including intermediate tool calls & receipts)
+  // 6. Update & Persist Session (Save trajectory on top of active Epoch Checkpoint)
   const newMessages = messages.slice(1 + history.length);
-  for (const m of newMessages) {
-    session.messages.push(m);
-  }
+  session.messages = [...history, ...newMessages];
   session.model = modelUsed;
   saveSession(session);
 

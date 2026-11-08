@@ -91,26 +91,95 @@ export function saveSession(session) {
 }
 
 /**
+ * Estimates total payload tokens across messages and tool schemas.
+ * Normalizes Base64 image blocks (~1024 tokens per image instead of counting raw Base64 bytes)
+ * and accounts for tool schema definitions + message framing overhead.
+ */
+export function estimatePayloadTokens(messages = [], tools = []) {
+  let totalTokens = 0;
+
+  if (Array.isArray(tools) && tools.length > 0) {
+    totalTokens += Math.ceil(JSON.stringify(tools).length / 3.5);
+  }
+
+  for (const m of (Array.isArray(messages) ? messages : [])) {
+    if (!m) continue;
+    totalTokens += 4; // Per-message framing overhead
+
+    if (typeof m.content === 'string') {
+      totalTokens += Math.ceil(m.content.length / 3.5);
+    } else if (Array.isArray(m.content)) {
+      for (const block of m.content) {
+        if (!block) continue;
+        if (block.type === 'image_url' || block.type === 'image') {
+          totalTokens += 1024; // Normalized vision tile token budget
+        } else if (typeof block.text === 'string') {
+          totalTokens += Math.ceil(block.text.length / 3.5);
+        } else {
+          totalTokens += Math.ceil(JSON.stringify(block).length / 3.5);
+        }
+      }
+    }
+
+    if (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+      totalTokens += Math.ceil(JSON.stringify(m.tool_calls).length / 3.5);
+    }
+  }
+
+  return totalTokens;
+}
+
+/**
  * Groups messages into atomic turns so assistant tool-calls and their
- * corresponding tool results are NEVER separated or orphaned during compaction.
+ * corresponding tool results are NEVER separated, reordered, or orphaned.
+ * Handles multiple tool calls per turn, out-of-order tool results, and missing results.
  */
 export function groupMessagesIntoTurns(messages = []) {
   const turns = [];
-  let i = 0;
-  while (i < messages.length) {
+  const consumedIndices = new Set();
+
+  for (let i = 0; i < messages.length; i++) {
+    if (consumedIndices.has(i)) continue;
     const msg = messages[i];
+    if (!msg) continue;
+
     if (msg.role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
       const turnMsgs = [msg];
-      const callIds = new Set(msg.tool_calls.map(tc => tc.id));
-      i++;
-      while (i < messages.length && messages[i].role === 'tool' && callIds.has(messages[i].tool_call_id)) {
-        turnMsgs.push(messages[i]);
-        i++;
+      const expectedCallIds = msg.tool_calls.map(tc => tc.id).filter(Boolean);
+      const foundResultsById = new Map();
+
+      // Scan ahead up to the next assistant/user turn (or end of array) to collect matching tool results
+      for (let j = i + 1; j < messages.length; j++) {
+        if (consumedIndices.has(j)) continue;
+        const candidate = messages[j];
+        if (!candidate) continue;
+        if (candidate.role === 'tool' && candidate.tool_call_id && expectedCallIds.includes(candidate.tool_call_id)) {
+          foundResultsById.set(candidate.tool_call_id, candidate);
+          consumedIndices.add(j);
+        } else if (candidate.role === 'assistant' || candidate.role === 'user') {
+          break;
+        }
       }
+
+      // Append tool results in the exact order declared by msg.tool_calls, synthesizing a fallback if missing
+      for (const callId of expectedCallIds) {
+        if (foundResultsById.has(callId)) {
+          turnMsgs.push(foundResultsById.get(callId));
+        } else {
+          turnMsgs.push({
+            role: 'tool',
+            tool_call_id: callId,
+            content: JSON.stringify({ ok: false, error: 'Tool result missing or interrupted' })
+          });
+        }
+      }
+
       turns.push({ type: 'tool_turn', messages: turnMsgs });
+    } else if (msg.role === 'tool') {
+      // Orphaned tool message that didn't match any preceding assistant.tool_calls — skip
+      consumedIndices.add(i);
     } else {
       turns.push({ type: msg.role || 'unknown', messages: [msg] });
-      i++;
     }
   }
   return turns;
@@ -119,42 +188,35 @@ export function groupMessagesIntoTurns(messages = []) {
 export const COMPACTION_HIGH_WATERMARK_TOKENS = 32000;
 
 /**
- * Context Compaction: Compacts old tool output messages to preserve context budget.
- * Converts raw multi-hundred-line file reads into concise receipts.
- * Guarantees atomic assistant tool-call / tool-result pair integrity.
+ * Context Compaction & Persistent Epoch Checkpoint:
+ * - When useEpochWatermark is true and total estimated tokens <= 32,000,
+ *   preserves 100% Append-Only history (with strict tool-call symmetry) to maintain upstream KV Prefix Cache.
+ * - When estimated tokens exceed 32,000, compacts older turns into a persistent Epoch Checkpoint
+ *   and updates the underlying session array in-place (unless options.persistCheckpoint === false)
+ *   so subsequent turns drop below the watermark and resume Append-Only caching.
  */
 export function compactMessagesForContext(messages = [], maxFullTurns = 2, options = {}) {
   if (!Array.isArray(messages) || messages.length === 0) {
     return [];
   }
 
+  const turns = groupMessagesIntoTurns(messages);
+  const symmetricMessages = turns.map(t => t.messages).flat();
+
   // Epoch Compaction Guard (SPEC Section 3.3):
-  // When useEpochWatermark is true and total estimated tokens <= 32,000,
-  // preserve 100% Append-Only history to maintain upstream KV Prefix Cache.
   if (options.useEpochWatermark) {
-    const estTokens = Math.ceil(JSON.stringify(messages).length / 3.5);
+    const estTokens = estimatePayloadTokens(symmetricMessages, options.tools || []);
     const watermark = options.highWatermarkTokens || COMPACTION_HIGH_WATERMARK_TOKENS;
     if (estTokens <= watermark) {
-      const assistantCallIds = new Set();
-      for (const m of messages) {
-        if (m.role === 'assistant' && Array.isArray(m.tool_calls)) {
-          for (const tc of m.tool_calls) {
-            if (tc.id) assistantCallIds.add(tc.id);
-          }
-        }
+      if (options.persistCheckpoint !== false && symmetricMessages.length !== messages.length) {
+        messages.splice(0, messages.length, ...symmetricMessages);
       }
-      return messages.filter(m => {
-        if (m.role === 'tool') {
-          return m.tool_call_id && assistantCallIds.has(m.tool_call_id);
-        }
-        return true;
-      });
+      return symmetricMessages;
     }
   }
 
-  const turns = groupMessagesIntoTurns(messages);
   if (turns.length <= maxFullTurns) {
-    return messages;
+    return symmetricMessages;
   }
 
   const cutoffTurnIndex = Math.max(0, turns.length - maxFullTurns);
@@ -220,9 +282,9 @@ export function compactMessagesForContext(messages = [], maxFullTurns = 2, optio
           if (errIdx !== -1) {
             errorTail = '\n\n' + tail.slice(errIdx).trim();
           }
-          content = `${header}\n\nCURRENT SCOPED FILE CONTENTS:\n[... Scoped file contents omitted from earlier attempts to save tokens. Use read_file tool to inspect specific lines ...]${errorTail}`;
+          content = `${header}\n\n[COMPACTED EPOCH SUMMARY]\nCURRENT SCOPED FILE CONTENTS:\n[... Scoped file contents omitted from earlier attempts to save tokens. Use read_file tool to inspect specific lines ...]${errorTail}`;
         } else if (content.length > 2000) {
-          content = content.slice(0, 1000) + '\n[... Compacted earlier prompt context ...]';
+          content = `[COMPACTED EPOCH SUMMARY]\n` + content.slice(0, 1000) + '\n[... Compacted earlier prompt context ...]';
         }
 
         compactedMsgs.push({
@@ -241,37 +303,19 @@ export function compactMessagesForContext(messages = [], maxFullTurns = 2, optio
   // 4. Token Budget Guard: if maxBudgetTokens is provided, prune oldest intermediate turns
   const maxBudgetTokens = options.maxBudgetTokens || 0;
   if (maxBudgetTokens > 0) {
-    let estTokens = Math.ceil(JSON.stringify(compactedTurns).length / 3.5);
+    let estTokens = estimatePayloadTokens(compactedTurns.flat(), options.tools || []);
     // Keep turn 0 (initial task prompt) and recent turns, drop intermediate oldest turns if over budget
     while (estTokens > maxBudgetTokens && compactedTurns.length > Math.max(2, maxFullTurns + 1)) {
       compactedTurns.splice(1, 1); // Drop oldest intermediate turn
-      estTokens = Math.ceil(JSON.stringify(compactedTurns).length / 3.5);
+      estTokens = estimatePayloadTokens(compactedTurns.flat(), options.tools || []);
     }
   }
 
-  const flattened = compactedTurns.flat();
+  const sanitized = compactedTurns.flat();
 
-  // 5. Invariant Guard: Ensure 100% matching of assistant tool_calls & tool results
-  const assistantCallIds = new Set();
-  for (const m of flattened) {
-    if (m.role === 'assistant' && Array.isArray(m.tool_calls)) {
-      for (const tc of m.tool_calls) {
-        if (tc.id) assistantCallIds.add(tc.id);
-      }
-    }
-  }
-
-  // Clean any orphaned tool messages that have no preceding assistant call
-  const sanitized = [];
-  for (const m of flattened) {
-    if (m.role === 'tool') {
-      if (m.tool_call_id && assistantCallIds.has(m.tool_call_id)) {
-        sanitized.push(m);
-      }
-      // If orphaned, omit silently
-    } else {
-      sanitized.push(m);
-    }
+  // 5. Persist Epoch Checkpoint in-place when Epoch Watermark triggered compaction
+  if (options.useEpochWatermark && options.persistCheckpoint !== false) {
+    messages.splice(0, messages.length, ...sanitized);
   }
 
   return sanitized;

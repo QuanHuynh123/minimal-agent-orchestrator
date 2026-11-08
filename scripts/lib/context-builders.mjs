@@ -341,9 +341,9 @@ export function loadProjectConventions(repoRoot = REPO_ROOT, options = {}) {
 }
 
 /**
- * Router Context Builder (Bounded file list + Project Architecture/Conventions, NO file contents)
+ * Router Context Builder (Bounded file list + Project Architecture/Conventions + Symbol Map, NO file contents)
  */
-export function buildRouterContext(allowedDirs = [], repoRoot = REPO_ROOT, maxFiles = 300) {
+export function buildRouterContext(allowedDirs = [], repoRoot = REPO_ROOT, maxFiles = 300, queryKeywords = '') {
   const sections = [];
 
   // 1. Extract Codebase Architecture / Conventions from host project rules if present
@@ -403,15 +403,22 @@ export function buildRouterContext(allowedDirs = [], repoRoot = REPO_ROOT, maxFi
 
   // 3. Inject Structural Skeleton & Symbol Map (Classes, Defs, Callers)
   try {
+    const normalizedQuery = Array.isArray(queryKeywords)
+      ? queryKeywords.join(' ')
+      : String(queryKeywords || '');
     const skeleton = generateRepoMap(repoRoot, {
       allowedDirs,
-      query: queryKeywords,
+      query: normalizedQuery,
       maxChars: 3500
     });
     if (skeleton && skeleton.trim()) {
       sections.push(`CODEBASE SKELETON & SYMBOL MAP (Classes, Defs & Callers):\n${skeleton.trim()}`);
     }
-  } catch {}
+  } catch (err) {
+    if (process.env.DEBUG_REPO_MAP) {
+      console.warn(`[buildRouterContext] Failed to generate repo map: ${err.message}`);
+    }
+  }
 
   return sections.join('\n\n');
 }

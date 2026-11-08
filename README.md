@@ -67,19 +67,19 @@ flowchart TD
     
     Hub -. "Spoke 1A: Backend/Risk Spec" .-> TechLead["TechLead Architect Spec"]
     Hub -. "Spoke 1B: UI/UX Spec" .-> Designer["Designer Visual Spec"]
-    Hub --> WriterStep["Step 2A: Backend Writer -> Live AST Bridge -> Step 2B: Frontend Writer"]
+    Hub --> WriterStep["Step 2A: Backend Writer -> Live Symbol Bridge -> Step 2B: Frontend Writer"]
     WriterStep --> Gates["0-Token Applier -> Validator -> Anti-Self-Review Gate -> Git Guard"]
 ```
 
 ### 🌟 Điểm Mới Đột Phá Trong Phiên Bản v3.1
 1. **Bộ Định Tuyến `Task-Demand × Squad-Roster` Tự Thích Nghi (1 $\rightarrow$ 6+ Models):**
    - Tự động đối chiếu **Nhu cầu thực tế của Task** (`pure-backend`, `pure-ui`, `mixed-be-ui`, `consult`, mức độ rủi ro) với **Đội hình Model hiện có** trong `config/team.yaml`.
-   - Hỗ trợ từ cấu hình **1 Model duy nhất** (tự động gom bước để chống tự nói chuyện với chính mình — *Anti-Self-Play*) đến **Đội hình đa chuyên gia** (`Step 2A Backend Coder` $\rightarrow$ `Live AST Bridge` $\rightarrow$ `Step 2B Frontend Coder`) và cơ chế **Fallback Model dự phòng** (`models[1]`).
+   - Hỗ trợ từ cấu hình **1 Model duy nhất** (tự động gom bước để chống tự nói chuyện với chính mình — *Anti-Self-Play*) đến **Đội hình đa chuyên gia** (`Step 2A Backend Coder` $\rightarrow$ `Live Symbol Bridge` $\rightarrow$ `Step 2B Frontend Coder`) và cơ chế **Fallback Model dự phòng** (`models[1]`).
 2. **Luồng Tư Vấn & Khảo Sát An Toàn (`mode: "consult"`):**
    - Hỗ trợ giao việc tư vấn kiến trúc, khảo sát giải pháp hoàn toàn Read-Only (khóa toàn bộ quyền ghi file và shell mutation), xuất báo cáo trực tiếp lên giao diện Cockpit.
 3. **Chuẩn Hóa Payload Tương Đương Antigravity IDE (`RUNTIME_PAYLOAD_SPEC.md`):**
    - **Bounded `read_file` Clamping:** Tự động kẹp cứng tối đa `300` dòng / `32KB` mỗi lần đọc kèm gợi ý phân trang `start_line`/`end_line`.
-   - **Epoch Context Compaction (`32k` High-Watermark):** Tự động nén lịch sử tool cũ thành `[COMPACTED EPOCH SUMMARY]` khi vượt ngưỡng `32,000` tokens.
+   - **Persistent Epoch Checkpoint (`32k` High-Watermark):** Duy trì lịch sử 100% Append-Only dưới ngưỡng `32,000` tokens (đã tính cả schema `tools` và chuẩn hóa ảnh Vision); khi vượt ngưỡng, chốt cứng các lượt cũ thành `[COMPACTED EPOCH SUMMARY]` lưu thẳng vào session để các lượt sau tiếp tục Append-Only.
    - **3-Breakpoint Prompt Caching & Reasoning Integrity:** Gắn `cache_control: { type: "ephemeral" }` tại 3 mốc tĩnh/động, bảo toàn `thought_signature` (Gemini 3 / Claude 4.x) và tự động tước bỏ `reasoning_content` ở các lượt gửi đi tiếp theo.
 4. **Tự Động Nạp Quy Ước Dự Án Đích Không Xung Đột (`<project_conventions>`):**
    - Tự động phát hiện và lọc sạch các quy tắc kỹ thuật từ dự án chủ (`AGENTS.md`, `CLAUDE.md`, `RULES.md`, `.agents/rules/*.md`), tự động loại bỏ các lệnh điều phối xung đột và gắn nhãn `[ORCHESTRATOR PRECEDENCE OVERRIDE]`.
@@ -129,8 +129,8 @@ agent-team/
 │   ├── provider-gateway.mjs   # Capability Matrix, 3-Breakpoint Cache & Thought Signature Gateway
 │   ├── context-adapter.mjs    # Đôi Mắt: Mã hóa ảnh Vision Multimodal & File text
 │   ├── tool-runtime.mjs       # Đôi Tay: 5 Local Tools (300-line clamp) + CLI Shell Sandbox
-│   ├── session-store.mjs      # Trí Nhớ: Persistent Sessions & 32k Epoch Compaction
-│   └── repo-map.mjs           # Bản đồ cấu trúc Codebase AST & Live Symbol Indexing
+│   ├── session-store.mjs      # Trí Nhớ: Persistent Sessions & 32k Epoch Checkpoint
+│   └── repo-map.mjs           # Bản đồ cấu trúc Symbol Skeleton (Regex + Caller-Degree Ranking)
 ├── state/
 │   ├── task-state.json        # Trạng thái vận hành ghi atomic (.tmp + rename)
 │   ├── live-status.json       # Trạng thái Star Topology, Token Telemetry & Live Console

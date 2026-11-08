@@ -177,9 +177,12 @@ export async function decomposeGoal(goal, options = {}) {
     );
   }
 
+  const routerContext = buildRouterContext(allowedDirs, repoRoot, 200, cleanGoal);
+
   userPromptParts.push(
     `ALLOWED DIRECTORIES: [${allowedDirs.join(', ')}]`,
     `AVAILABLE SQUAD MODELS: [${availableModelsList.join(', ')}]. If user asked for a model, match to this exact list; otherwise leave "model": null.`,
+    ...(routerContext ? [routerContext] : []),
     `INSTRUCTION: Inspect the repository using your available tools (list_files, search_code, read_file, get_repo_map) if needed, then output strict JSON matching the schema in your system instructions.`
   );
 
