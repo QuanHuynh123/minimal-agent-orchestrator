@@ -1,7 +1,7 @@
 {
   "name": "minimal-agent-orchestrator",
-  "version": "3.0.0",
-  "description": "Minimal Agent Orchestration & Standalone Agent Runtime Standard (v3.0)",
+  "version": "3.1.0",
+  "description": "Minimal Agent Orchestration & Standalone Agent Runtime Standard (v3.1)",
   "type": "module",
   "scripts": {
     "start": "node scripts/orchestrator.mjs",

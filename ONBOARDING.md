@@ -1,7 +1,7 @@
-# 🧭 Sổ Tay Khởi Tạo & Vận Hành Chuẩn (Onboarding Standard v3.0)
+# 🧭 Sổ Tay Khởi Tạo & Vận Hành Chuẩn (Onboarding Standard v3.1)
 
 > **Câu chốt Kiến trúc Cốt lõi (Golden Rule):**  
-> *"Agent Runtime có thể sửa file qua Applier trong scope được cấp; Orchestrator là một workflow tự động dùng runtime để chạy task theo quy trình."*
+> *"Agent Runtime có thể sửa file qua Applier trong scope được cấp; Orchestrator là Trung Tâm Điều Phối Hình Sao (`Writer Hub`) tự động khớp nối Nhu cầu Task với Đội hình Model để chạy task theo quy trình."*
 
 Tài liệu này được tách bạch thành **2 Phần độc lập**:
 - **[Phần 1: Hướng Dẫn Nhanh Dành Cho Kỹ Sư / Con Người (Human Quickstart)](#phần-1-hướng-dẫn-nhanh-dành-cho-kỹ-sư--con-người)**
@@ -42,10 +42,12 @@ roles:
   writer:
     model: "deepseek-ai/deepseek-v4.1-flash-1017" # Model chính của bạn
 ```
-> **💡 Cơ chế Kế thừa 1-Model:** Bạn **chỉ cần cấu hình duy nhất model cho `writer`**. Các role khác (`router`, `reviewer`) sẽ tự động kế thừa model này nếu bạn chưa cần chia tách nhiều model khác nhau.
+> **💡 Cơ chế Tự Thích Nghi Đội Hình (`Task-Demand × Squad-Roster`):**
+> - **Khi chỉ cấu hình 1 Model:** Các role khác (`router`, `reviewer`) sẽ tự động kế thừa model của `writer`. Hệ thống tự động gom bước (*Anti-Self-Play* & *Anti-Self-Review*) để không tốn token gọi cùng 1 model tự nói chuyện với chính nó.
+> - **Khi cấu hình Đa Chuyên Gia (2 $\rightarrow$ 6+ Models):** Bạn có thể gán model chuyên biệt cho `techlead`, `designer`, `reviewer` và mảng `models: [backend_coder, frontend_coder]` cho `writer`. `Writer Hub` sẽ tự động tách giỏ file Backend (`Step 2A`) $\rightarrow$ quét `Live AST Bridge` $\rightarrow$ giao file UI cho Frontend (`Step 2B`).
 
-### B. Ranh giới & Bộ Kiểm Thử Dự Án (`config/policy.yaml`)
-Hệ thống chuẩn hóa **chỉ có đúng 2 file cấu hình** trong `config/` (`team.yaml` và `policy.yaml`). Toàn bộ ranh giới thư mục, file được bảo vệ và lệnh kiểm thử tự động của codebase bạn được quản lý tập trung trong `config/policy.yaml`:
+### B. Ranh giới, Quy Ước Dự Án & Bộ Kiểm Thử (`config/policy.yaml`)
+Hệ thống chuẩn hóa **chỉ có đúng 2 file cấu hình** trong `config/` (`team.yaml` và `policy.yaml`). Toàn bộ ranh giới thư mục, file được bảo vệ, domain patterns và lệnh kiểm thử tự động được quản lý tập trung trong `config/policy.yaml`:
 ```yaml
 policy:
   project_id: "my-project"
@@ -64,6 +66,7 @@ policy:
         run: "npm test" # Lệnh chạy test của dự án bạn (pytest, go test, npm test, etc.)
         timeout_sec: 30
 ```
+> **📎 Tự động nạp Quy ước Dự án (`<project_conventions>`):** Nếu thư mục gốc dự án của bạn có sẵn các file quy chuẩn như `AGENTS.md`, `CLAUDE.md`, `RULES.md` hoặc `.agents/rules/*.md`, Orchestrator v3.1 sẽ tự động lọc lấy các quy tắc kỹ thuật/kiến trúc để nạp cho AI mà không cần cấu hình thêm.
 
 ---
 
@@ -94,11 +97,10 @@ npm run agent -- --role writer --scope "src/auth.py" --prompt "Bổ sung kiểm 
 ```bash
 npm run dashboard
 ```
-1. Mở trình duyệt tại `http://127.0.0.1:4310`.
-2. Chuyển sang Tab **`0. 🚀 Goal Studio & Cockpit`**.
-3. Nhập mục tiêu tính năng bằng ngôn ngữ tự nhiên $\rightarrow$ Bấm **`[Decompose Goal to Tasks]`**.
-4. AI Planner sẽ đọc codebase và tạo các task nháp ở trạng thái `draft_review`.
-5. Bạn kiểm tra lại các file trong `scope` $\rightarrow$ Bấm **`[Approve & Run Queue]`**. Bấm 1-chạm hệ thống sẽ tự động đổi `draft_review` sang `ready`, chạy ngầm, kiểm thử và báo cáo kết quả.
+1. Mở trình duyệt tại `http://127.0.0.1:4310` (Phòng Điều Khiển Hình Sao - Star Topology Control Room).
+2. Nhập mục tiêu tính năng hoặc câu hỏi tư vấn bằng ngôn ngữ tự nhiên, chọn chế độ định tuyến (`Auto: Task-Demand × Squad`, `Fast 1-Step`, `Spec + Coder`, hoặc `Consult Only`) $\rightarrow$ Bấm **`[Lập Kế Hoạch]`**.
+3. AI Planner sẽ đọc codebase và tạo các task nháp ở trạng thái `draft_review`.
+4. Bạn kiểm tra lại các file trong `scope` $\rightarrow$ Bấm **`[Duyệt & Chạy Ngay]`**. Hệ thống sẽ tự động đổi `draft_review` sang `ready`, điều phối các chuyên gia theo mô hình Hình Sao, chạy kiểm thử và báo cáo kết quả.
 
 #### Cách B: Dùng CLI
 ```bash
@@ -147,7 +149,7 @@ acceptance_criteria:
   - "Toàn bộ unit test liên quan và validator fast PASS 100%"
 
 # 2. CÁC TRƯỜNG TÙY CHỌN (OPTIONAL)
-mode: "quick" # "quick" (<=3 files, low/medium risk) | "standard" (bật Reviewer gate khi risk >= high)
+mode: "quick" # "quick" (<=3 files) | "standard" (Spec/Reviewer gate) | "consult" (Read-Only khảo sát/tư vấn)
 risk_level: "low" # "low" | "medium" | "high"
 constraints:
   - "Tuân thủ quy tắc thụt lề (indentation) của file gốc trong dự án"
