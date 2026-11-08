@@ -43,7 +43,14 @@ import {
   MAX_READ_BYTES,
   MAX_SINGLE_LINE_CHARS
 } from '../runtime/tool-runtime.mjs';
-import { extractSymbolsFromCode, generateRepoMap } from '../runtime/repo-map.mjs';
+import {
+  computePersonalizedPageRank,
+  extractSymbolsFromCode,
+  generateRepoMap,
+  isTreeSitterWasmReady,
+  resolveImportTarget,
+  scanWorkspaceSymbols
+} from '../runtime/repo-map.mjs';
 import { loadRoleConfig, stripOldInlineThinking } from '../runtime/index.mjs';
 import {
   resolveThinkingBudget,
@@ -727,8 +734,14 @@ assert.ok(routerCtxDefault.includes('CODEBASE SKELETON & SYMBOL MAP'), 'buildRou
 const routerCtxRanked = buildRouterContext(['agent-team/runtime'], REPO_ROOT, 50, 'compactMessagesForContext session');
 assert.ok(routerCtxRanked.includes('session-store.mjs'), 'buildRouterContext with queryKeywords must rank matching symbol files');
 
-// 7.5 Verify JS/Python Enhanced Symbol Extraction (Class methods, Arrow functions, Multi-line defs)
+// 7.5 Verify Pillar 1: Tree-Sitter WASM AST Parser (Comments, Template Literals, Methods, Arrow Functions, Multi-line)
+assert.strictEqual(isTreeSitterWasmReady(), true, 'Tree-sitter WASM must initialize automatically');
 const jsSample = [
+  '/* export class FakeCommentedClass {} */',
+  '// export function fakeSingleLineComment() {}',
+  'const fakeTemplate = `',
+  'export function fakeInsideTemplateLiteral() {}',
+  '`;',
   'export class PaymentService extends BaseService {',
   '  async processCharge(amount, currency) {',
   '    if (amount <= 0) {',
@@ -746,12 +759,82 @@ const jsSample = [
   '}'
 ].join('\n');
 const extractedJs = extractSymbolsFromCode('src/payment.js', jsSample);
-assert.strictEqual(extractedJs.classes.length, 1);
+assert.strictEqual(extractedJs.parser, 'tree-sitter-wasm', 'Must use real Tree-Sitter WASM AST parser');
+assert.strictEqual(extractedJs.classes.length, 1, 'Commented-out classes must be ignored by AST');
 assert.strictEqual(extractedJs.classes[0].name, 'PaymentService');
 assert.strictEqual(extractedJs.classes[0].methods.length, 1, 'JS class method must be extracted without matching if()');
 assert.strictEqual(extractedJs.classes[0].methods[0].name, 'processCharge');
 assert.ok(extractedJs.functions.some(f => f.name === 'calculateFee'), 'JS arrow function must be extracted');
 assert.ok(extractedJs.functions.some(f => f.name === 'formatReceipt' && f.params.includes('receiptId')), 'JS multi-line function signature must be extracted');
+assert.strictEqual(extractedJs.functions.some(f => f.name.startsWith('fake')), false, 'Functions inside comments or template literals must NEVER be extracted');
+
+// 7.5b Verify Pillar 2: resolveImportTarget (./, ../, extension probing, TS .js->.ts, index.*, Python dotted/relative)
+const mockRepoFiles = new Set([
+  'agent-team/scripts/orchestrator.mjs',
+  'agent-team/scripts/applier.mjs',
+  'agent-team/scripts/lib/risk-policy.mjs',
+  'agent-team/scripts/server/routes-tasks.mjs',
+  'agent-team/runtime/index.mjs',
+  'src/services/user.ts',
+  'src/components/index.tsx',
+  'core/eraser.py',
+  'core/providers/__init__.py',
+  'core/providers/store.py'
+]);
+assert.strictEqual(
+  resolveImportTarget('agent-team/scripts/orchestrator.mjs', './lib/risk-policy.mjs', mockRepoFiles),
+  'agent-team/scripts/lib/risk-policy.mjs',
+  'Relative ./ import with extension must resolve'
+);
+assert.strictEqual(
+  resolveImportTarget('agent-team/scripts/orchestrator.mjs', '../runtime/index.mjs', mockRepoFiles),
+  'agent-team/runtime/index.mjs',
+  'Parent ../ import must resolve'
+);
+assert.strictEqual(
+  resolveImportTarget('agent-team/scripts/orchestrator.mjs', './server/routes-tasks', mockRepoFiles),
+  'agent-team/scripts/server/routes-tasks.mjs',
+  'Extension-less relative import must resolve via extension probing'
+);
+assert.strictEqual(
+  resolveImportTarget('src/app.ts', './services/user.js', mockRepoFiles),
+  'src/services/user.ts',
+  'TypeScript ESM .js import must resolve to .ts file'
+);
+assert.strictEqual(
+  resolveImportTarget('src/app.ts', './components', mockRepoFiles),
+  'src/components/index.tsx',
+  'Directory import must resolve to /index.tsx'
+);
+assert.strictEqual(
+  resolveImportTarget('ui_bridge/js_api.py', 'core.eraser', mockRepoFiles),
+  'core/eraser.py',
+  'Python dotted module import must resolve'
+);
+assert.strictEqual(
+  resolveImportTarget('core/providers/service.py', '.store', mockRepoFiles),
+  'core/providers/store.py',
+  'Python relative .store import must resolve'
+);
+
+// Verify real workspace caller graph & Pillar 3 Personalized PageRank with scopeFiles
+const wsMap = scanWorkspaceSymbols(REPO_ROOT, ['agent-team/scripts', 'agent-team/runtime']);
+const riskSym = wsMap.get('agent-team/scripts/lib/risk-policy.mjs');
+assert.ok(riskSym && riskSym.callers.includes('agent-team/scripts/orchestrator.mjs'), 'risk-policy.mjs callers must include orchestrator.mjs via resolved ./lib/risk-policy.mjs import');
+
+const pprRanks = computePersonalizedPageRank(wsMap, {
+  keywords: ['risk'],
+  scopeFiles: ['agent-team/scripts/orchestrator.mjs']
+});
+assert.ok((pprRanks.get('agent-team/scripts/orchestrator.mjs') || 0) > (pprRanks.get('agent-team/scripts/dashboard.mjs') || 0), 'Scoped file must receive higher Personalized PageRank than unscoped file');
+
+const scopedMapOut = generateRepoMap(REPO_ROOT, {
+  allowedDirs: ['agent-team/scripts', 'agent-team/runtime'],
+  scopeFiles: ['agent-team/scripts/orchestrator.mjs'],
+  maxChars: 1200
+});
+assert.ok(scopedMapOut.includes('[agent-team/scripts/orchestrator.mjs] [SCOPE]'), 'Scoped file must be tagged [SCOPE] and placed at top of Repo Map');
+assert.ok(scopedMapOut.includes('additional files omitted to fit context budget'), 'Truncated Repo Map must explicitly report count of omitted files');
 
 // 7.6 Verify Turn Grouping Resilience (Out-of-Order & Missing Tool Results) + Persistent Epoch Checkpoint
 const messyMessages = [

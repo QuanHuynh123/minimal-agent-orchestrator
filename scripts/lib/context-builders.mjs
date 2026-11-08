@@ -343,7 +343,7 @@ export function loadProjectConventions(repoRoot = REPO_ROOT, options = {}) {
 /**
  * Router Context Builder (Bounded file list + Project Architecture/Conventions + Symbol Map, NO file contents)
  */
-export function buildRouterContext(allowedDirs = [], repoRoot = REPO_ROOT, maxFiles = 300, queryKeywords = '') {
+export function buildRouterContext(allowedDirs = [], repoRoot = REPO_ROOT, maxFiles = 300, queryKeywords = '', scopeFiles = []) {
   const sections = [];
 
   // 1. Extract Codebase Architecture / Conventions from host project rules if present
@@ -409,6 +409,7 @@ export function buildRouterContext(allowedDirs = [], repoRoot = REPO_ROOT, maxFi
     const skeleton = generateRepoMap(repoRoot, {
       allowedDirs,
       query: normalizedQuery,
+      scopeFiles: Array.isArray(scopeFiles) ? scopeFiles : [],
       maxChars: 3500
     });
     if (skeleton && skeleton.trim()) {

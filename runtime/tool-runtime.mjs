@@ -481,11 +481,15 @@ export function toolRunCommand(repoRoot, args = {}) {
 /**
  * Structural Repo-Map tool handler
  */
-export function toolGetRepoMap(repoRoot, args = {}) {
+export function toolGetRepoMap(repoRoot, args = {}, context = {}) {
   const allowedDirs = args.dir ? [args.dir] : [];
+  const rawScope = Array.isArray(args.scope_files)
+    ? args.scope_files
+    : (Array.isArray(context.allowedScope) && !context.allowedScope.includes('*') ? context.allowedScope : []);
   const mapStr = generateRepoMap(repoRoot, {
     allowedDirs,
     query: args.query || '',
+    scopeFiles: rawScope,
     maxChars: Math.min(args.max_chars || 3500, 8000)
   });
   return {
@@ -518,7 +522,7 @@ export async function executeTool(toolName, args = {}, context = {}) {
     case 'read_file':
       return toolReadFile(repoRoot, args, context);
     case 'get_repo_map':
-      return toolGetRepoMap(repoRoot, args);
+      return toolGetRepoMap(repoRoot, args, context);
     case 'apply_patch':
       return toolApplyPatch(repoRoot, args, context);
     case 'run_validator':

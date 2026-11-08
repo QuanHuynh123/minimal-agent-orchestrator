@@ -130,7 +130,7 @@ agent-team/
 │   ├── context-adapter.mjs    # Đôi Mắt: Mã hóa ảnh Vision Multimodal & File text
 │   ├── tool-runtime.mjs       # Đôi Tay: 5 Local Tools (300-line clamp) + CLI Shell Sandbox
 │   ├── session-store.mjs      # Trí Nhớ: Persistent Sessions & 32k Epoch Checkpoint
-│   └── repo-map.mjs           # Bản đồ cấu trúc Symbol Skeleton (Regex + Caller-Degree Ranking)
+│   └── repo-map.mjs           # Bản đồ cấu trúc AST (Tree-Sitter WASM + Import Graph + Personalized PageRank)
 ├── state/
 │   ├── task-state.json        # Trạng thái vận hành ghi atomic (.tmp + rename)
 │   ├── live-status.json       # Trạng thái Star Topology, Token Telemetry & Live Console

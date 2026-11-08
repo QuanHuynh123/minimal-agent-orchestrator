@@ -918,12 +918,13 @@ async function runOrchestrator() {
           maxFilesPerTask
         });
 
-        // Inject concise neighboring symbol map for architectural awareness
+        // Inject concise neighboring symbol map for architectural awareness (PageRank seeded with task.scope)
         let neighborRepoMap = '';
         try {
           const taskKeywords = extractTaskKeywords(task);
           neighborRepoMap = generateRepoMap(REPO_ROOT, {
             query: taskKeywords,
+            scopeFiles: task.scope,
             maxChars: 2500
           });
         } catch {}
