@@ -54,8 +54,10 @@ export function stripOldInlineThinking(messages = [], keepRecentTurns = 1) {
 
 /**
  * Loads team role & provider configuration from team.yaml.
- * Supports 1-Model Minimal Onboarding: if a specialized role is omitted or disabled in team.yaml,
- * it automatically inherits roles.writer.model so newcomers only need 1 working model.
+ * Enforces fail-fast role isolation:
+ * - Disabled roles (enabled: false) return enabled: false and model: null (never substituted).
+ * - Missing models on specialized roles return null (never silently replaced with writer's model).
+ * - fallback_model strictly uses roleCfg.fallback_model (never falls back to another role's model).
  */
 export function loadRoleConfig(roleName = 'designer', customTeamCfg = null) {
   let teamCfg = customTeamCfg || {};
@@ -74,41 +76,28 @@ export function loadRoleConfig(roleName = 'designer', customTeamCfg = null) {
 
   const roles = teamCfg.roles || {};
   const writerCfg = roles.writer || {};
-  const roleCfg = roles[roleName] || {};
+  const isWriterAlias = roleName === 'backend_writer' || roleName === 'frontend_writer';
+  const roleCfg = roles[roleName] || (isWriterAlias ? writerCfg : {});
 
-  // Resolve default tools by role archetype
+  // Resolve default tools by role archetype (run_command excluded from writer/designer to preserve Applier boundary)
   let defaultTools = ['read_file', 'list_files', 'search_code', 'get_repo_map'];
-  let fallbackDefaultModel = writerCfg.model || 'kr/claude-sonnet-4.5-thinking';
-
-  if (roleName === 'writer' || roleName === 'backend_writer' || roleName === 'frontend_writer') {
-    defaultTools = ['read_file', 'list_files', 'search_code', 'get_repo_map', 'apply_patch', 'run_validator', 'run_command'];
-    fallbackDefaultModel = writerCfg.model || 'deepseek-ai/deepseek-v4.1-flash-1017';
-  } else if (roleName === 'designer') {
-    defaultTools = ['read_file', 'list_files', 'search_code', 'get_repo_map', 'run_command'];
-    fallbackDefaultModel = roles.router?.model || writerCfg.model || 'kr/claude-sonnet-4.5-thinking';
-  } else if (roleName === 'reviewer' || roleName === 'techlead') {
-    defaultTools = ['read_file', 'list_files', 'search_code', 'get_repo_map'];
-    fallbackDefaultModel = roles.reviewer?.model || writerCfg.model || 'ag/claude-opus-5-5-high';
-  } else if (roleName === 'architect') {
-    defaultTools = ['read_file', 'list_files', 'search_code', 'get_repo_map'];
-    fallbackDefaultModel = roles.architect?.model || roles.router?.model || writerCfg.model || 'kr/claude-sonnet-4.5-thinking';
+  if (roleName === 'writer' || isWriterAlias) {
+    defaultTools = ['read_file', 'list_files', 'search_code', 'get_repo_map', 'apply_patch', 'run_validator'];
   } else if (roleName === 'debugger') {
-    defaultTools = ['read_file', 'list_files', 'search_code', 'get_repo_map', 'run_command'];
-    fallbackDefaultModel = roles.router?.model || writerCfg.model || 'kr/claude-sonnet-4.5-thinking';
+    defaultTools = ['read_file', 'list_files', 'search_code', 'get_repo_map', 'run_validator'];
   }
 
-  const resolvedModel = (roleCfg.enabled !== false && roleCfg.model)
-    ? roleCfg.model
-    : fallbackDefaultModel;
-
-  const roleModelsList = Array.isArray(roleCfg.models) ? roleCfg.models.filter(Boolean) : [];
-  const secondaryRoleModel = roleModelsList.find(m => m !== resolvedModel) || null;
+  const isEnabled = roleCfg.enabled !== false;
+  const resolvedModel = isEnabled
+    ? (roleCfg.model || roleCfg.default_model || (Array.isArray(roleCfg.models) ? roleCfg.models[0] : null) || null)
+    : null;
 
   return {
     name: roleName,
+    enabled: isEnabled,
     display_name: roleCfg.display_name || roleName,
     model: resolvedModel,
-    fallback_model: roleCfg.fallback_model || secondaryRoleModel || writerCfg.fallback_model || writerCfg.model || null,
+    fallback_model: isEnabled ? (roleCfg.fallback_model || null) : null,
     allowed_tools: roleCfg.allowed_tools || defaultTools,
     allowed_scope: roleCfg.allowed_scope || [],
     temperature: roleCfg.temperature ?? 0.2,
@@ -165,10 +154,37 @@ export async function runAgent(options = {}) {
     return { ok: false, error: 'Prompt or attachments are required to run agent' };
   }
 
-  // 1. Resolve Role Config
+  // 1. Resolve Role Config (Fail-fast if role is disabled or lacks a model)
   const roleConfig = loadRoleConfig(role);
+  if (roleConfig.enabled === false) {
+    return {
+      ok: false,
+      error: `Role "${role}" is disabled in team.yaml (enabled: false). Stopping execution instead of falling back.`
+    };
+  }
   const activeModel = modelOverride || model || roleConfig.model;
+  if (!activeModel) {
+    return {
+      ok: false,
+      error: `Role "${role}" has no model configured in team.yaml. Stopping execution.`
+    };
+  }
   const capabilities = getModelCapabilities(activeModel);
+
+  // Load scope guardrails (protected_files & allowed_dirs) from policy.yaml
+  let policyProtectedFiles = null;
+  let policyAllowedDirs = null;
+  const localPolicyFile = path.resolve(TEAM_DIR, 'config', 'policy.local.yaml');
+  const defaultPolicyFile = path.resolve(TEAM_DIR, 'config', 'policy.yaml');
+  const activePolicyFile = fs.existsSync(localPolicyFile) ? localPolicyFile : defaultPolicyFile;
+  if (fs.existsSync(activePolicyFile)) {
+    try {
+      const parsedPolicy = YAML.parse(fs.readFileSync(activePolicyFile, 'utf8')) || {};
+      const sc = parsedPolicy?.policy?.scope_control || parsedPolicy?.scope_control || {};
+      if (Array.isArray(sc.protected_files)) policyProtectedFiles = sc.protected_files;
+      if (Array.isArray(sc.allowed_dirs)) policyAllowedDirs = sc.allowed_dirs;
+    } catch {}
+  }
 
   // 2. Load or Restore Session
   const session = loadSession(sessionId, role, activeModel);
@@ -216,7 +232,7 @@ export async function runAgent(options = {}) {
   const turnReceipts = [];
   const accumulatedPatches = [];
   let finalContent = '';
-  let modelUsed = activeModel;
+  let modelUsed = null;
 
   const accumulatedUsage = {
     prompt_tokens: 0,
@@ -300,7 +316,9 @@ export async function runAgent(options = {}) {
         sessionId: sessionSafeId,
         repoRoot,
         allowedTools: roleConfig.allowed_tools,
-        allowedScope: scope.length > 0 ? scope : roleConfig.allowed_scope
+        allowedScope: scope.length > 0 ? scope : roleConfig.allowed_scope,
+        protectedFiles: policyProtectedFiles,
+        allowedDirs: policyAllowedDirs
       };
 
       if (tc.name === 'apply_patch' && tc.arguments?.patch) {

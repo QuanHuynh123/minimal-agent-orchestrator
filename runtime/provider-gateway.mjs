@@ -8,91 +8,35 @@ export const DEFAULT_9ROUTER_URL = 'http://127.0.0.1:20128/v1';
 export const DEFAULT_TIMEOUT_MS = 90000; // 90s hard timeout (HR-1)
 
 /**
- * Capability Matrix: Maps known models to their operational capabilities.
+ * Capability Matrix: Family-based capability presets (no hardcoded personal model IDs).
  */
-export const CAPABILITY_MATRIX = {
-  // Claude 3.7 / 3.5 / 4.5 Thinking profiles
-  'kr/claude-sonnet-4.5-thinking': {
-    supports_vision: true,
-    supports_multimodal: true,
-    supports_tool_calls: true,
-    supports_long_context: true,
-    supports_json_schema: true,
-    supports_code_generation: true,
-    max_context_tokens: 200000
-  },
-  'claude-sonnet-4.5': {
-    supports_vision: true,
-    supports_multimodal: true,
-    supports_tool_calls: true,
-    supports_long_context: true,
-    supports_json_schema: true,
-    supports_code_generation: true,
-    max_context_tokens: 200000
-  },
-  'ag/claude-opus-5-5-high': {
-    supports_vision: true,
-    supports_multimodal: true,
-    supports_tool_calls: true,
-    supports_long_context: true,
-    supports_json_schema: true,
-    supports_code_generation: true,
-    max_context_tokens: 200000
-  },
-  // DeepSeek coding models
-  'Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017': {
-    supports_vision: false,
-    supports_multimodal: false,
-    supports_tool_calls: true,
-    supports_long_context: true,
-    supports_json_schema: true,
-    supports_code_generation: true,
-    max_context_tokens: 128000
-  },
-  'deepseek-ai/deepseek-v4.1-flash-1017': {
-    supports_vision: false,
-    supports_multimodal: false,
-    supports_tool_calls: true,
-    supports_long_context: true,
-    supports_json_schema: true,
-    supports_code_generation: true,
-    max_context_tokens: 128000
-  },
-  'deepseek-chat': {
-    supports_vision: false,
-    supports_multimodal: false,
-    supports_tool_calls: true,
-    supports_long_context: true,
-    supports_json_schema: true,
-    supports_code_generation: true,
-    max_context_tokens: 64000
-  }
-};
+export const CAPABILITY_MATRIX = {};
 
 /**
- * Returns capability flags for any given model ID (with safe heuristics for unknowns).
+ * Returns capability flags for any given model ID based on model family capabilities.
  */
 export function getModelCapabilities(modelId = '') {
   const normalized = String(modelId).toLowerCase();
-  
+
   if (CAPABILITY_MATRIX[modelId]) {
     return { ...CAPABILITY_MATRIX[modelId] };
   }
 
-  // Heuristics for unknown model IDs
-  const isClaude = normalized.includes('claude');
-  const isGpt4 = normalized.includes('gpt-4') || normalized.includes('o1') || normalized.includes('o3');
+  const isClaude = normalized.includes('claude') || normalized.includes('sonnet') || normalized.includes('opus') || normalized.includes('haiku');
+  const isGpt4 = normalized.includes('gpt-4') || normalized.includes('gpt-5') || normalized.includes('o1') || normalized.includes('o3');
   const isGemini = normalized.includes('gemini');
-  const isVision = isClaude || isGpt4 || isGemini || normalized.includes('vision');
+  const isDeepseek = normalized.includes('deepseek');
+  const isQwenCoder = normalized.includes('qwen') || normalized.includes('coder');
+  const isVision = !isDeepseek && (isClaude || isGpt4 || isGemini || normalized.includes('vision') || normalized.includes('vl'));
 
   return {
     supports_vision: isVision,
     supports_multimodal: isVision,
-    supports_tool_calls: isClaude || isGpt4 || normalized.includes('instruct'),
-    supports_long_context: isClaude || isGemini || normalized.includes('128k') || normalized.includes('200k'),
-    supports_json_schema: isGpt4 || isClaude,
+    supports_tool_calls: isClaude || isGpt4 || isGemini || isDeepseek || isQwenCoder || normalized.includes('instruct'),
+    supports_long_context: isClaude || isGemini || isDeepseek || normalized.includes('128k') || normalized.includes('200k'),
+    supports_json_schema: isGpt4 || isClaude || isGemini || isDeepseek,
     supports_code_generation: true,
-    max_context_tokens: isClaude || isGemini ? 200000 : 64000
+    max_context_tokens: isClaude || isGemini ? 200000 : (isDeepseek ? 128000 : 64000)
   };
 }
 

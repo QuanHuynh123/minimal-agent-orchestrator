@@ -34,6 +34,7 @@ import {
   executeTool,
   getAvailableToolSchemas,
   isDangerousCommand,
+  toolApplyPatch,
   toolGetRepoMap,
   toolListFiles,
   toolReadFile,
@@ -51,7 +52,7 @@ import {
   resolveImportTarget,
   scanWorkspaceSymbols
 } from '../runtime/repo-map.mjs';
-import { loadRoleConfig, stripOldInlineThinking } from '../runtime/index.mjs';
+import { loadRoleConfig, runAgent, stripOldInlineThinking } from '../runtime/index.mjs';
 import {
   resolveThinkingBudget,
   matchesDomainPattern,
@@ -228,20 +229,35 @@ if (tempImgCreated) {
   if (fs.existsSync(absTempImg)) fs.unlinkSync(absTempImg);
 }
 
-// 1-Model Minimal Onboarding inheritance check
-const singleModelCfg = loadRoleConfig('designer', {
+// Fail-fast role isolation & no cross-role fallback check
+const testTeamCfg = {
   providers: { local_9router: { base_url: 'http://127.0.0.1:11434/v1', default_key: 'ollama' } },
   roles: {
-    writer: { enabled: true, model: 'qwen2.5-coder:14b' },
-    router: { enabled: false },
+    writer: { enabled: true, model: 'qwen2.5-coder:14b', fallback_model: 'gemini-flash' },
+    designer: { enabled: true, model: 'claude-sonnet-5-5', fallback_model: null },
+    router: { enabled: false, model: 'claude-sonnet-4.5' },
     reviewer: { enabled: false }
   }
-});
-assert.strictEqual(singleModelCfg.model, 'qwen2.5-coder:14b', 'Designer role should inherit writer.model when router/designer omitted');
-assert.strictEqual(singleModelCfg.base_url, 'http://127.0.0.1:11434/v1');
-assert.strictEqual(singleModelCfg.api_key, 'ollama');
+};
+const designerCfg = loadRoleConfig('designer', testTeamCfg);
+assert.strictEqual(designerCfg.enabled, true);
+assert.strictEqual(designerCfg.model, 'claude-sonnet-5-5');
+assert.strictEqual(designerCfg.fallback_model, null, 'Designer with fallback_model: null must NOT fall back to writer model');
+assert.strictEqual(designerCfg.allowed_tools.includes('run_command'), false, 'Designer must NOT have run_command by default');
 
-console.log('✓ Context & Vision Adapter + 1-Model Onboarding tests passed.');
+const writerCfgTest = loadRoleConfig('writer', testTeamCfg);
+assert.strictEqual(writerCfgTest.allowed_tools.includes('run_command'), false, 'Writer must NOT have run_command by default');
+assert.strictEqual(writerCfgTest.fallback_model, 'gemini-flash');
+
+const disabledRouterCfg = loadRoleConfig('router', testTeamCfg);
+assert.strictEqual(disabledRouterCfg.enabled, false, 'Disabled role must report enabled: false');
+assert.strictEqual(disabledRouterCfg.model, null, 'Disabled role must NOT inherit writer model');
+assert.strictEqual(disabledRouterCfg.fallback_model, null);
+
+const unconfiguredArchCfg = loadRoleConfig('architect', testTeamCfg);
+assert.strictEqual(unconfiguredArchCfg.model, null, 'Unconfigured specialized role must return model: null instead of writer model');
+
+console.log('✓ Context & Vision Adapter + Fail-Fast Role Isolation tests passed.');
 
 // -------------------------------------------------------------
 // Test 4: Tool Execution Runtime & RBAC
@@ -319,13 +335,38 @@ assert.strictEqual(schemas[0].function.name, 'read_file');
 assert.strictEqual(schemas[1].function.name, 'apply_patch');
 assert.strictEqual(schemas[2].function.name, 'run_command');
 
-// run_command security guardrail checks
+// run_command security guardrail checks (whitelist + dangerous command blocklist)
 assert.strictEqual(isDangerousCommand('del /f /s /q C:\\Windows'), true);
 assert.strictEqual(isDangerousCommand('format d:'), true);
 assert.strictEqual(isDangerousCommand('cat .env.production'), true);
 assert.strictEqual(isDangerousCommand('type .env'), true);
+assert.strictEqual(isDangerousCommand('gc .env'), true);
+assert.strictEqual(isDangerousCommand('Set-Content -Path core/x.py -Value "hacked"'), true);
+assert.strictEqual(isDangerousCommand('Remove-Item -Recurse -Force core/'), true);
+assert.strictEqual(isDangerousCommand('git commit -m "bypass applier"'), true);
+assert.strictEqual(isDangerousCommand('pip install evil-pkg'), true);
+assert.strictEqual(isDangerousCommand('python -c "open(\'.env\').read()"'), true);
+assert.strictEqual(isDangerousCommand('git status && del x.py'), true);
 assert.strictEqual(isDangerousCommand('git status --short'), false);
 assert.strictEqual(isDangerousCommand('npm test'), false);
+assert.strictEqual(isDangerousCommand('node --check agent-team/scripts/applier.mjs'), false);
+
+// toolApplyPatch enforces policy.yaml protected_files & allowed_dirs even when omitted from context
+const protectedPatchAttempt = `FILE: tests/test_indentation.py\n<<<<<<< SEARCH\nimport unittest\n=======\n# hacked\n>>>>>>> REPLACE`;
+const protectedPatchRes = toolApplyPatch(REPO_ROOT, { patch: protectedPatchAttempt }, {
+  sessionId: 'test-sec',
+  allowedScope: ['tests/test_indentation.py']
+});
+assert.strictEqual(protectedPatchRes.ok, false, 'toolApplyPatch must block edits to protected_files from policy.yaml');
+assert.ok(protectedPatchRes.error.includes('Forbidden file'), `Expected Forbidden file error, got: ${protectedPatchRes.error}`);
+
+const outsideDirPatchAttempt = `FILE: unauthorized_dir/hack.py\n<<<<<<< SEARCH\n=======\nprint(1)\n>>>>>>> REPLACE`;
+const outsideDirPatchRes = toolApplyPatch(REPO_ROOT, { patch: outsideDirPatchAttempt }, {
+  sessionId: 'test-sec-dir',
+  allowedScope: ['unauthorized_dir/hack.py']
+});
+assert.strictEqual(outsideDirPatchRes.ok, false, 'toolApplyPatch must block files outside allowed_dirs from policy.yaml');
+assert.ok(outsideDirPatchRes.error.includes('outside project.allowed_dirs'), `Expected allowed_dirs error, got: ${outsideDirPatchRes.error}`);
 
 // run_command execution
 const cmdSafe = await toolRunCommand(REPO_ROOT, { command: 'node -e "console.log(\'AGENT_CLI_OK\')"' });
@@ -504,10 +545,13 @@ assert.ok(dossier.includes('Button: .btn-checkout'), 'Dossier must contain Spec 
 fs.unlinkSync(tmpSpec1);
 fs.unlinkSync(tmpSpec2);
 
-// 6.3 Architect Role Inheritance
+// 6.3 Unconfigured Role Fail-Fast Guard (Architect not in team.yaml -> model: null, runAgent stops)
 const archCfg = loadRoleConfig('architect');
-assert.ok(archCfg.model, 'Architect role must resolve a valid model via inheritance');
+assert.strictEqual(archCfg.model, null, 'Unconfigured architect role must return model: null instead of silent inheritance');
 assert.ok(archCfg.allowed_tools.includes('read_file'), 'Architect role must have read_file tool');
+const failFastRes = await runAgent({ role: 'architect', prompt: 'Draft spec' });
+assert.strictEqual(failFastRes.ok, false, 'runAgent must fail fast when role has no model configured');
+assert.ok(failFastRes.error.includes('no model configured'), `Expected no model configured error, got: ${failFastRes.error}`);
 
 // 6.4 Model Override Parameter Contract Guard
 const testOverrideRole = loadRoleConfig('writer');

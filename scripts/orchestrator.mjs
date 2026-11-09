@@ -255,10 +255,9 @@ async function runRouterPlanner(task) {
     return { ok: false, error: 'Router role is disabled in team.yaml' };
   }
 
-  const writerRole = teamConfig.roles?.writer || {};
-  const routerModel = routerRole.model || writerRole.model;
+  const routerModel = routerRole.model || routerRole.default_model;
   if (!routerModel) {
-    return { ok: false, error: 'Router role has no model configured and no writer model to inherit' };
+    return { ok: false, error: 'Router role has no model configured in team.yaml. Stopping instead of falling back to writer.' };
   }
   const routerFallback = routerRole.fallback_model || null;
   const routerTemp = routerRole.temperature ?? 0.2;
@@ -315,9 +314,9 @@ async function runReviewerGate(task, scopedFiles, previousReviewIssues = [], act
     return { ok: true, skipped: true };
   }
 
-  const reviewerModel = reviewerRole.model || activeWriterModel || teamConfig.roles?.writer?.model;
+  const reviewerModel = reviewerRole.model || reviewerRole.default_model;
   if (!reviewerModel) {
-    return { ok: false, error: 'Reviewer role has no model configured and no writer model to inherit' };
+    return { ok: false, error: 'Reviewer role is enabled but has no model configured in team.yaml. Stopping instead of letting writer self-review.' };
   }
   const reviewerFallback = reviewerRole.fallback_model || null;
   const reviewerTemp = reviewerRole.temperature ?? 0.1;
@@ -597,7 +596,17 @@ async function runOrchestrator() {
       if (task.mode === 'consult') {
         const consultRole = task.role || 'designer';
         const roleCfg = teamConfig.roles?.[consultRole] || {};
+        if (roleCfg.enabled === false) {
+          blockReason = `Consultation role "${consultRole}" is disabled in team.yaml (enabled: false). Stopping execution.`;
+          task.status = 'blocked';
+          throw new Error(blockReason);
+        }
         const consultModel = task.model || roleCfg.default_model || roleCfg.model;
+        if (!consultModel) {
+          blockReason = `Consultation role "${consultRole}" has no model configured in team.yaml. Stopping execution.`;
+          task.status = 'blocked';
+          throw new Error(blockReason);
+        }
         const promptText = task.goal || task.prompt || task.title || 'Review codebase and provide consultation.';
 
         console.log(`[START] ${task.task_id} | Mode: consult | Role: ${consultRole} | Model: ${consultModel || 'default'} | Goal: ${sanitizeGoal(promptText)}`);
@@ -885,6 +894,11 @@ async function runOrchestrator() {
 
         // Step A: Prepare Writer Prompt WITH Context-Aware Scoped File Contents
         const writerRole = teamConfig.roles?.writer || {};
+        if (writerRole.enabled === false) {
+          blockReason = 'Writer role is disabled in team.yaml (enabled: false). Stopping execution.';
+          task.status = 'blocked';
+          break;
+        }
         const writerModel = task.model
           || writerRole.default_model
           || writerRole.model
@@ -943,7 +957,17 @@ async function runOrchestrator() {
           if (wfStep.action === 'draft_spec') {
             const stepRole = wfStep.role || 'architect';
             const roleCfg = teamConfig.roles?.[stepRole] || {};
-            const stepModel = wfStep.model || roleCfg.default_model || roleCfg.model || writerModel;
+            if (roleCfg.enabled === false) {
+              blockReason = `Spec role "${stepRole}" is disabled in team.yaml (enabled: false). Stopping instead of falling back to writer.`;
+              task.status = 'blocked';
+              break;
+            }
+            const stepModel = wfStep.model || roleCfg.default_model || roleCfg.model;
+            if (!stepModel) {
+              blockReason = `Spec role "${stepRole}" has no model configured in team.yaml. Stopping instead of falling back to writer.`;
+              task.status = 'blocked';
+              break;
+            }
             const stepThinking = resolveThinkingBudget(task.risk_level, stepModel, roleCfg);
             const targetArtifact = wfStep.output_artifact || `artifacts/${task.task_id}_${stepRole}_spec.md`;
             const artFullPath = path.resolve(REPO_ROOT, targetArtifact);
@@ -1061,6 +1085,10 @@ async function runOrchestrator() {
           }
         }
 
+        if (task.status === 'blocked') {
+          break;
+        }
+
         // 2. Execute Coder Patch Buckets (Single Merged Step OR Step 2A Backend -> AST Bridge -> Step 2B Frontend)
         let patchSteps = workflowSteps.filter(s => s.action === 'apply_patch');
         if (patchSteps.length === 0) {
@@ -1168,9 +1196,9 @@ async function runOrchestrator() {
                 rawReasoning: '',
                 finishReason: 'stop',
                 usage: agentRes.usage || { prompt_tokens: 0, completion_tokens: 0 },
-                modelUsed: agentRes.model_used || activeWriterModel,
-                responseModel: agentRes.model_used || activeWriterModel,
-                modelMatched: true
+                modelUsed: agentRes.model_used || null,
+                responseModel: agentRes.model_used || null,
+                modelMatched: Boolean(agentRes.model_used)
               };
             } else {
               console.warn(`[Writer Runtime] Agent run returned error: ${agentRes.error}. Falling back to call9Router...`);

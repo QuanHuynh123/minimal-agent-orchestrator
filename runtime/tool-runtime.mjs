@@ -7,7 +7,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { exec } from 'node:child_process';
-import { applyEdits, normalizeOrThrow, resolveRepoRoot } from '../scripts/applier.mjs';
+import YAML from 'yaml';
+import { applyEdits, normalizeOrThrow, resolveRepoRoot, TEAM_DIR } from '../scripts/applier.mjs';
 import { validateFast, validateSuite } from '../scripts/validator.mjs';
 import { isForbiddenAttachment } from './context-adapter.mjs';
 import { generateRepoMap } from './repo-map.mjs';
@@ -130,13 +131,13 @@ export const TOOL_SCHEMAS = {
     type: 'function',
     function: {
       name: 'run_command',
-      description: 'Execute a non-interactive CLI shell command in the workspace root with strict timeout and security guardrails. Target OS is Windows with PowerShell. Use cross-platform CLI tools (git, python, node) or PowerShell cmdlets (Select-String, Get-Content). Do NOT use Linux-specific utilities like sed, awk, or head.',
+      description: 'Execute a strictly whitelisted read-only diagnostic or unit-test command (`node --check`, `python -m unittest`, `npm test`, `git status`, `git diff`). Arbitrary shell commands, file writes, package installations, and git commits are blocked to enforce the Applier security boundary.',
       parameters: {
         type: 'object',
         properties: {
           command: {
             type: 'string',
-            description: 'The shell command string to execute in Windows PowerShell.'
+            description: 'The whitelisted diagnostic or test command string to execute.'
           },
           timeout_sec: {
             type: 'number',
@@ -351,6 +352,26 @@ export function toolReadFile(repoRoot, args = {}, context = {}) {
   }
 }
 
+function loadRuntimeScopePolicy() {
+  const localPolicyPath = path.resolve(TEAM_DIR, 'config', 'policy.local.yaml');
+  const defaultPolicyPath = path.resolve(TEAM_DIR, 'config', 'policy.yaml');
+  const activePath = fs.existsSync(localPolicyPath) ? localPolicyPath : defaultPolicyPath;
+  let sc = {};
+  if (fs.existsSync(activePath)) {
+    try {
+      const parsed = YAML.parse(fs.readFileSync(activePath, 'utf8')) || {};
+      sc = parsed?.policy?.scope_control || parsed?.scope_control || {};
+    } catch {}
+  }
+  return {
+    allowedDirs: Array.isArray(sc.allowed_dirs) ? sc.allowed_dirs : null,
+    protectedFiles: Array.isArray(sc.protected_files) ? sc.protected_files : [],
+    allowNewFiles: sc.allow_new_files ?? true,
+    newFilesOnlyInScope: sc.new_files_only_in_scope ?? true,
+    maxScopeIncrease: sc.max_scope_increase ?? 1
+  };
+}
+
 export function toolApplyPatch(repoRoot, args = {}, context = {}) {
   const patch = args.patch;
   if (!patch || typeof patch !== 'string') {
@@ -360,13 +381,26 @@ export function toolApplyPatch(repoRoot, args = {}, context = {}) {
   const allowedScope = context.allowedScope || [];
   const fakeTask = {
     task_id: context.sessionId || 'runtime-task',
-    scope: allowedScope.length > 0 ? allowedScope : null
+    scope: allowedScope.length > 0 ? allowedScope : null,
+    forbidden_files: Array.isArray(context.forbiddenFiles) ? context.forbiddenFiles : []
   };
+
+  const defaultPolicy = loadRuntimeScopePolicy();
+  const effectiveAllowedDirs = Array.isArray(context.allowedDirs)
+    ? context.allowedDirs
+    : defaultPolicy.allowedDirs;
+  const effectiveProtectedFiles = Array.isArray(context.protectedFiles)
+    ? context.protectedFiles
+    : defaultPolicy.protectedFiles;
 
   try {
     const applyRes = applyEdits(patch, fakeTask, {
       repoRoot,
-      allowedDirs: context.allowedDirs || null
+      allowedDirs: effectiveAllowedDirs,
+      protectedFiles: effectiveProtectedFiles,
+      allowNewFiles: defaultPolicy.allowNewFiles,
+      newFilesOnlyInScope: defaultPolicy.newFilesOnlyInScope,
+      maxScopeIncrease: defaultPolicy.maxScopeIncrease
     });
     return applyRes;
   } catch (err) {
@@ -390,26 +424,44 @@ export async function toolRunValidator(args = {}) {
 
 export const DANGEROUS_COMMAND_PATTERNS = [
   /\bformat\s+[a-z]:/i,
-  /\bdel\s+.*[a-z]:\\/i,
-  /\brmdir\s+.*[a-z]:\\/i,
-  /\brm\s+-(?:rf|fr)\s+\//i,
+  /\bdel\b/i,
+  /\berase\b/i,
+  /\brmdir\b/i,
+  /\brd\s+/i,
+  /\brm\b/i,
   /\bshutdown\b/i,
-  /\breg\s+delete\b/i,
+  /\breg\s+(?:delete|add)\b/i,
   /\bnet\s+user\b/i,
   /\bvssadmin\b/i,
   /\bbcdedit\b/i,
   /\bdiskpart\b/i,
-  /\b(?:type|cat|get-content)\s+.*\.env/i
+  /\b(?:type|cat|get-content|gc|set-content|sc|add-content|ac|out-file|remove-item|ri|copy-item|move-item|new-item|ni)\b/i,
+  /\.env\b/i,
+  /\bgit\s+(?:commit|push|reset|checkout|clean|rebase|merge|am|apply|stash)\b/i,
+  /\b(?:pip|pip3|npm|pnpm|yarn)\s+(?:install|i|add|remove|uninstall|update)\b/i,
+  /\b(?:open|writeFileSync|writeFile|appendFile|unlink|rmSync|rmdirSync|child_process|execSync|spawn)\b/i,
+  /[;&|><`]|\$\(/
+];
+
+export const ALLOWED_DIAGNOSTIC_COMMAND_PATTERNS = [
+  /^node\s+--check\s+[\w./\\-]+$/i,
+  /^node\s+-e\s+(?:"[^"]+"|'[^']+')$/i,
+  /^node\s+(?:agent-team\/)?scripts\/(?:test-[\w.-]+|validator\.mjs)(?:\s+[\w-]+)?$/i,
+  /^npm\s+(?:test|run\s+test(?::[\w:-]+)?)$/i,
+  /^(?:python|python3|\.\\\.venv\\Scripts\\python\.exe)\s+-m\s+(?:unittest|py_compile)\b[\w\s./\\-]*$/i,
+  /^git\s+(?:status|diff|log|branch)(?:\s+[\w./\\-]+)*$/i
 ];
 
 export function isDangerousCommand(cmd = '') {
   const normalized = String(cmd).trim();
+  if (!normalized) return true;
   for (const pattern of DANGEROUS_COMMAND_PATTERNS) {
     if (pattern.test(normalized)) {
       return true;
     }
   }
-  return false;
+  const matchesWhitelist = ALLOWED_DIAGNOSTIC_COMMAND_PATTERNS.some(pattern => pattern.test(normalized));
+  return !matchesWhitelist;
 }
 
 export function toolRunCommand(repoRoot, args = {}) {
