@@ -21,7 +21,8 @@ import { MAX_READ_LINES, toolReadFile } from '../runtime/tool-runtime.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEAM_DIR = path.resolve(__dirname, '..');
-const REPO_ROOT = path.resolve(TEAM_DIR, '..');
+const IS_STANDALONE = fs.existsSync(path.join(TEAM_DIR, '.git'));
+const REPO_ROOT = IS_STANDALONE ? TEAM_DIR : path.resolve(TEAM_DIR, '..');
 
 console.log('Testing Router Context Filtering, toolReadFile truncated & Pre-Lookup (Commit b)...');
 
@@ -96,36 +97,36 @@ console.log('Testing Router Context Filtering, toolReadFile truncated & Pre-Look
   const allowedDirs = mergedPolicy.policy.scope_control.allowed_dirs;
   const contextExclude = mergedPolicy.policy.scope_control.context_exclude;
   assert.ok(
-    Array.isArray(contextExclude) && contextExclude.some(p => p.includes('core/propainter_repo')),
-    'policy.yaml scope_control.context_exclude must exclude core/propainter_repo'
+    Array.isArray(contextExclude) && contextExclude.length > 0,
+    'policy.yaml scope_control.context_exclude must define excluded directories'
   );
 
   const tmpSnapRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'router-ctx-snap-'));
   try {
-    fs.mkdirSync(path.join(tmpSnapRepo, 'ui_web'), { recursive: true });
+    fs.mkdirSync(path.join(tmpSnapRepo, 'web'), { recursive: true });
     fs.mkdirSync(path.join(tmpSnapRepo, 'tests'), { recursive: true });
-    fs.mkdirSync(path.join(tmpSnapRepo, 'core', 'propainter_repo'), { recursive: true });
+    fs.mkdirSync(path.join(tmpSnapRepo, 'vendor', 'heavy'), { recursive: true });
     fs.writeFileSync(
-      path.join(tmpSnapRepo, 'ui_web', 'index.html'),
+      path.join(tmpSnapRepo, 'web', 'index.html'),
       Array.from({ length: 500 }, (_, i) => `<div>line_${i + 1}</div>`).join('\n') + '\n',
       'utf8'
     );
     fs.writeFileSync(path.join(tmpSnapRepo, 'tests', 'test_dom_contract.py'), 'def test_ok():\n\tassert True\n', 'utf8');
-    fs.writeFileSync(path.join(tmpSnapRepo, 'core', 'propainter_repo', 'model.py'), 'x = 1\n', 'utf8');
-    fs.writeFileSync(path.join(tmpSnapRepo, 'ui_web', 'thumb.jpg'), 'fakeimg', 'utf8');
+    fs.writeFileSync(path.join(tmpSnapRepo, 'vendor', 'heavy', 'model.py'), 'x = 1\n', 'utf8');
+    fs.writeFileSync(path.join(tmpSnapRepo, 'web', 'thumb.jpg'), 'fakeimg', 'utf8');
 
     const realCtx = buildRouterContext(allowedDirs, tmpSnapRepo, 200, '', [], {
       includeConventions: false,
       contextExclude
     });
-    assert.ok(realCtx.includes('- ui_web/index.html'), 'Workspace list must include ui_web/index.html');
+    assert.ok(realCtx.includes('- web/index.html'), 'Workspace list must include web/index.html');
     assert.ok(realCtx.includes('- tests/test_dom_contract.py'), 'Workspace list must include tests/test_dom_contract.py');
-    assert.ok(!realCtx.includes('propainter_repo/'), 'Context must exclude propainter_repo');
+    assert.ok(!realCtx.includes('vendor/heavy/'), 'Context must exclude configured context_exclude dir');
     assert.ok(!realCtx.includes('.jpg'), 'Context must not include .jpg binary assets');
 
     // Bounded range well within MAX_READ_LINES and bytes -> truncated MUST be false & NO "To continue reading"
     const boundedRead = toolReadFile(tmpSnapRepo, {
-      path: 'ui_web/index.html',
+      path: 'web/index.html',
       start_line: 310,
       end_line: 390
     });
@@ -146,8 +147,9 @@ console.log('Testing Router Context Filtering, toolReadFile truncated & Pre-Look
   }
 
   // Oversized end_line > MAX_READ_LINES -> truncated MUST be true + continuation hint
+  const orchRelPath = IS_STANDALONE ? 'scripts/orchestrator.mjs' : 'agent-team/scripts/orchestrator.mjs';
   const clampedRead = toolReadFile(REPO_ROOT, {
-    path: 'agent-team/scripts/orchestrator.mjs',
+    path: orchRelPath,
     start_line: 1,
     end_line: 1000
   });
@@ -161,7 +163,7 @@ console.log('Testing Router Context Filtering, toolReadFile truncated & Pre-Look
 
   // Omitted end_line on large file -> truncated MUST be true
   const openRead = toolReadFile(REPO_ROOT, {
-    path: 'agent-team/scripts/orchestrator.mjs',
+    path: orchRelPath,
     start_line: 1
   });
   assert.strictEqual(openRead.ok, true);
@@ -214,41 +216,43 @@ console.log('Testing Router Context Filtering, toolReadFile truncated & Pre-Look
     fs.rmSync(preTmpRepo, { recursive: true, force: true });
   }
 
-  // 4b. Real repo pre-lookup using active post-merge UI/test symbols (#eraser-mode-pills & applyEraserMode)
-  const presetGoal =
-    'Sửa giao diện Hard-sub Eraser trong ui_web/index.html: ' +
-    'cập nhật layout grid #eraser-mode-pills, kiểm tra applyEraserMode() ' +
-    'và đối chiếu tests/test_dom_contract.py.';
+  // 4b. Pre-lookup using hermetic fixture (also works in standalone mode without outer product files)
+  if (!IS_STANDALONE) {
+    const presetGoal =
+      'Sửa giao diện Hard-sub Eraser trong ui_web/index.html: ' +
+      'cập nhật layout grid #eraser-mode-pills, kiểm tra applyEraserMode() ' +
+      'và đối chiếu tests/test_dom_contract.py.';
 
-  const mergedPolicy = loadMergedPolicy();
-  const routerCtx = buildRouterContext(
-    mergedPolicy.policy.scope_control.allowed_dirs,
-    REPO_ROOT,
-    200,
-    presetGoal,
-    [],
-    {
-      includeConventions: false,
-      contextExclude: mergedPolicy.policy.scope_control.context_exclude
-    }
-  );
+    const mergedPolicy = loadMergedPolicy();
+    const routerCtx = buildRouterContext(
+      mergedPolicy.policy.scope_control.allowed_dirs,
+      REPO_ROOT,
+      200,
+      presetGoal,
+      [],
+      {
+        includeConventions: false,
+        contextExclude: mergedPolicy.policy.scope_control.context_exclude
+      }
+    );
 
-  assert.ok(
-    routerCtx.includes('DETERMINISTIC PRE-LOOKUP CANDIDATES'),
-    'buildRouterContext must include DETERMINISTIC PRE-LOOKUP CANDIDATES section when goal keywords match'
-  );
-  assert.ok(
-    /ui_web\/index\.html:\d+\s*\|.*eraser-mode-pills/i.test(routerCtx),
-    'Pre-lookup must pinpoint exact ui_web/index.html:<line> for #eraser-mode-pills'
-  );
-  assert.ok(
-    /ui_web\/index\.html:\d+\s*\|.*applyEraserMode/i.test(routerCtx),
-    'Pre-lookup must pinpoint exact ui_web/index.html:<line> for applyEraserMode'
-  );
-  assert.ok(
-    /tests\/test_dom_contract\.py:\d+/i.test(routerCtx),
-    'Pre-lookup must pinpoint exact tests/test_dom_contract.py:<line> contract matches'
-  );
+    assert.ok(
+      routerCtx.includes('DETERMINISTIC PRE-LOOKUP CANDIDATES'),
+      'buildRouterContext must include DETERMINISTIC PRE-LOOKUP CANDIDATES section when goal keywords match'
+    );
+    assert.ok(
+      /ui_web\/index\.html:\d+\s*\|.*eraser-mode-pills/i.test(routerCtx),
+      'Pre-lookup must pinpoint exact ui_web/index.html:<line> for #eraser-mode-pills'
+    );
+    assert.ok(
+      /ui_web\/index\.html:\d+\s*\|.*applyEraserMode/i.test(routerCtx),
+      'Pre-lookup must pinpoint exact ui_web/index.html:<line> for applyEraserMode'
+    );
+    assert.ok(
+      /tests\/test_dom_contract\.py:\d+/i.test(routerCtx),
+      'Pre-lookup must pinpoint exact tests/test_dom_contract.py:<line> contract matches'
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

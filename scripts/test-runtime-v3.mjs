@@ -6,6 +6,7 @@
 
 import assert from 'node:assert';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -188,9 +189,11 @@ assert.strictEqual(isForbiddenAttachment('keys/id_rsa'), true);
 assert.strictEqual(isForbiddenAttachment('agent-team/UI_DASHBOARD_SPEC.md'), false);
 
 // Text attachment
-const textAtt = readTextAttachment(REPO_ROOT, 'agent-team/config/team.yaml');
+const RT_PREFIX = fs.existsSync(path.join(path.resolve(__dirname, '..'), '.git')) ? '' : 'agent-team/';
+const teamYamlRel = `${RT_PREFIX}config/team.yaml`;
+const textAtt = readTextAttachment(REPO_ROOT, teamYamlRel);
 assert.ok(textAtt.content.includes('hybrid-agent-squad'));
-assert.strictEqual(textAtt.rel_path, 'agent-team/config/team.yaml');
+assert.strictEqual(textAtt.rel_path, teamYamlRel);
 
 // Path traversal guard
 assert.throws(() => {
@@ -198,11 +201,11 @@ assert.throws(() => {
 }, /Path escapes repository root/);
 
 // Image attachment (self-contained fallback 1x1 PNG if sample image was removed by user)
-let testImgPath = 'agent-team/ui/reference-9router-graph.png';
+let testImgPath = `${RT_PREFIX}ui/reference-9router-graph.png`;
 let tempImgCreated = false;
 const absDefaultImg = path.resolve(REPO_ROOT, testImgPath);
 if (!fs.existsSync(absDefaultImg)) {
-  testImgPath = 'agent-team/state/temp-test-1x1.png';
+  testImgPath = `${RT_PREFIX}state/temp-test-1x1.png`;
   const absTempImg = path.resolve(REPO_ROOT, testImgPath);
   fs.mkdirSync(path.dirname(absTempImg), { recursive: true });
   const tinyPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
@@ -276,25 +279,25 @@ console.log('✓ Context & Vision Adapter + Fail-Fast Role Isolation tests passe
 console.log('4. Testing Tool Execution Runtime...');
 
 // list_files
-const listRes = toolListFiles(REPO_ROOT, { dir: 'agent-team/roles' });
+const listRes = toolListFiles(REPO_ROOT, { dir: `${RT_PREFIX}roles` });
 assert.strictEqual(listRes.ok, true);
 assert.ok(listRes.files.some(f => f.includes('writer.md')));
 
 // search_code
-const searchRes = toolSearchCode(REPO_ROOT, { pattern: 'single_writer_lock', dir: 'agent-team/config' });
+const searchRes = toolSearchCode(REPO_ROOT, { pattern: 'single_writer_lock', dir: `${RT_PREFIX}config` });
 assert.strictEqual(searchRes.ok, true);
 assert.ok(searchRes.count >= 1);
 assert.ok(searchRes.matches.some(m => m.file.includes('team.yaml')));
 
 // read_file
-const readRes = toolReadFile(REPO_ROOT, { path: 'agent-team/roles/writer.md', start_line: 1, end_line: 10 });
+const readRes = toolReadFile(REPO_ROOT, { path: `${RT_PREFIX}roles/writer.md`, start_line: 1, end_line: 10 });
 assert.strictEqual(readRes.ok, true);
 assert.strictEqual(readRes.start_line, 1);
 assert.ok(readRes.content.includes('1: # ROLE: Writer'));
 assert.ok(readRes.navigation_hint.includes('Showing lines 1-10'));
 
 // Zero-Error Clamping: end_line requested far beyond MAX_READ_LINES (e.g. 1000)
-const clampRes = toolReadFile(REPO_ROOT, { path: 'agent-team/scripts/orchestrator.mjs', start_line: 1, end_line: 1000 });
+const clampRes = toolReadFile(REPO_ROOT, { path: `${RT_PREFIX}scripts/orchestrator.mjs`, start_line: 1, end_line: 1000 });
 assert.strictEqual(clampRes.ok, true);
 assert.strictEqual(clampRes.start_line, 1);
 assert.strictEqual(clampRes.end_line, MAX_READ_LINES);
@@ -303,23 +306,23 @@ assert.ok(clampRes.navigation_hint.includes(`Showing lines 1-${MAX_READ_LINES}`)
 assert.ok(clampRes.navigation_hint.includes(`start_line=${MAX_READ_LINES + 1}`));
 
 // Start line exceeds total lines
-const outOfBoundsRes = toolReadFile(REPO_ROOT, { path: 'agent-team/roles/writer.md', start_line: 9999 });
+const outOfBoundsRes = toolReadFile(REPO_ROOT, { path: `${RT_PREFIX}roles/writer.md`, start_line: 9999 });
 assert.strictEqual(outOfBoundsRes.ok, false);
 assert.ok(outOfBoundsRes.error.includes('exceeds total file lines'));
 
 // Open Read: Agent can freely inspect other workspace files (read-only) for architecture and cross-file references
-const scopedReadAllowed = await executeTool('read_file', { path: 'agent-team/scripts/applier.mjs', start_line: 1, end_line: 5 }, {
+const scopedReadAllowed = await executeTool('read_file', { path: `${RT_PREFIX}scripts/applier.mjs`, start_line: 1, end_line: 5 }, {
   role: 'writer',
   allowedTools: ['read_file'],
-  allowedScope: ['agent-team/scripts/applier.mjs']
+  allowedScope: [`${RT_PREFIX}scripts/applier.mjs`]
 });
 assert.strictEqual(scopedReadAllowed.ok, true);
 
 // Reading cross-file outside write scope is allowed for exploration
-const crossFileRead = await executeTool('read_file', { path: 'agent-team/scripts/validator.mjs', start_line: 1, end_line: 5 }, {
+const crossFileRead = await executeTool('read_file', { path: `${RT_PREFIX}scripts/validator.mjs`, start_line: 1, end_line: 5 }, {
   role: 'writer',
   allowedTools: ['read_file'],
-  allowedScope: ['agent-team/scripts/applier.mjs']
+  allowedScope: [`${RT_PREFIX}scripts/applier.mjs`]
 });
 assert.strictEqual(crossFileRead.ok, true);
 
@@ -403,10 +406,10 @@ assert.strictEqual(parsedNodeCheck.executable, 'node');
 assert.deepStrictEqual(parsedNodeCheck.args, ['--check', 'agent-team/scripts/applier.mjs']);
 
 // toolApplyPatch enforces policy.yaml protected_files & allowed_dirs even when omitted from context
-const protectedPatchAttempt = `FILE: tests/test_indentation.py\n<<<<<<< SEARCH\nimport unittest\n=======\n# hacked\n>>>>>>> REPLACE`;
+const protectedPatchAttempt = `FILE: package.json\n<<<<<<< SEARCH\n"name"\n=======\n"hacked"\n>>>>>>> REPLACE`;
 const protectedPatchRes = toolApplyPatch(REPO_ROOT, { patch: protectedPatchAttempt }, {
   sessionId: 'test-sec',
-  allowedScope: ['tests/test_indentation.py']
+  allowedScope: ['package.json']
 });
 assert.strictEqual(protectedPatchRes.ok, false, 'toolApplyPatch must block edits to protected_files from policy.yaml');
 assert.ok(protectedPatchRes.error.includes('Forbidden file'), `Expected Forbidden file error, got: ${protectedPatchRes.error}`);
@@ -424,7 +427,7 @@ const cmdNodeEvalBlocked = await toolRunCommand(REPO_ROOT, { command: 'node -e "
 assert.strictEqual(cmdNodeEvalBlocked.ok, false);
 assert.ok(cmdNodeEvalBlocked.error.includes('SECURITY_BLOCKED'));
 
-const cmdSafe = await toolRunCommand(REPO_ROOT, { command: 'node --check agent-team/scripts/applier.mjs' });
+const cmdSafe = await toolRunCommand(REPO_ROOT, { command: `node --check ${RT_PREFIX}scripts/applier.mjs` });
 assert.strictEqual(cmdSafe.ok, true);
 assert.strictEqual(cmdSafe.exit_code, 0);
 
@@ -440,7 +443,7 @@ assert.strictEqual(cmdViaDispatch.ok, true);
 assert.strictEqual(cmdViaDispatch.exit_code, 0);
 
 // Symlink/Junction read escape guard + ReDoS/file-size limits in toolSearchCode + context.allowNewFiles override
-const tmpSecBase = fs.mkdtempSync(path.join(REPO_ROOT, 'agent-team', 'state', 'tmp-tool-sec-'));
+const tmpSecBase = fs.mkdtempSync(path.join(REPO_ROOT, `${RT_PREFIX}state`, 'tmp-tool-sec-'));
 try {
   const outsideDir = path.join(tmpSecBase, 'outside');
   const fakeRepo = path.join(tmpSecBase, 'repo');
@@ -630,7 +633,8 @@ assert.strictEqual(symRes.classes[0].methods[0].name, 'method_a');
 assert.strictEqual(symRes.functions.length, 1);
 assert.strictEqual(symRes.functions[0].name, 'helper_func');
 
-const repoMapRes = generateRepoMap(REPO_ROOT, { query: 'applier', maxChars: 2000, allowedDirs: ['agent-team'] });
+const TEAM_DIR_LOCAL = path.resolve(__dirname, '..');
+const repoMapRes = generateRepoMap(TEAM_DIR_LOCAL, { query: 'applier', maxChars: 2000, allowedDirs: ['scripts'] });
 assert.ok(repoMapRes.includes('applier.mjs'), 'Repo-map must contain applier.mjs');
 assert.ok(repoMapRes.includes('resolveRepoRoot'), 'Repo-map must include resolveRepoRoot signature');
 
@@ -763,13 +767,13 @@ assert.strictEqual(
 );
 
 // 6.2 Structured Spec Dossier Merging
-const tmpSpec1 = path.resolve(REPO_ROOT, 'agent-team', 'state', 'test_spec_be.md');
-const tmpSpec2 = path.resolve(REPO_ROOT, 'agent-team', 'state', 'test_spec_ui.md');
+const tmpSpec1 = path.resolve(REPO_ROOT, `${RT_PREFIX}state`, 'test_spec_be.md');
+const tmpSpec2 = path.resolve(REPO_ROOT, `${RT_PREFIX}state`, 'test_spec_ui.md');
 fs.writeFileSync(tmpSpec1, '# Backend Architecture\nAPI: /api/v1/cart', 'utf8');
 fs.writeFileSync(tmpSpec2, '# Frontend Design\nButton: .btn-checkout', 'utf8');
 
 const dossier = buildConsolidatedSpecsContext(
-  ['agent-team/state/test_spec_be.md', 'agent-team/state/test_spec_ui.md'],
+  [`${RT_PREFIX}state/test_spec_be.md`, `${RT_PREFIX}state/test_spec_ui.md`],
   REPO_ROOT
 );
 assert.ok(dossier.includes('=== [SPECIFICATION DOSSIER: test_spec_be.md]'), 'Dossier must contain Spec 1 divider');
@@ -1044,18 +1048,30 @@ assert.ok(filteredRule.includes('## 1. Architecture & Routing'), 'Architecture s
 assert.ok(filteredRule.includes('## 3. Hard Coding & Security Invariants'), 'Coding invariants section must be kept');
 assert.strictEqual(filteredRule.includes('Task Triage & Execution Architecture'), false, 'Conflicting IDE workflow section must be stripped');
 
-const loadedConv = loadProjectConventions(REPO_ROOT, { role: 'writer' });
-assert.ok(loadedConv.includes('<project_conventions'), 'Existing project rule file must wrap in <project_conventions>');
-assert.ok(loadedConv.includes('[ORCHESTRATOR PRECEDENCE OVERRIDE]'), 'Must include Orchestrator Precedence Override guard');
-assert.strictEqual(loadedConv.includes('## 2. Task Triage & Execution Architecture'), false, 'Host AGENTS.md Section 2 workflow must be filtered out');
+const convTestDir = fs.existsSync(path.join(REPO_ROOT, 'AGENTS.md'))
+  ? REPO_ROOT
+  : fs.mkdtempSync(path.join(os.tmpdir(), 'runtime-v3-conv-'));
+try {
+  if (convTestDir !== REPO_ROOT) {
+    fs.writeFileSync(path.join(convTestDir, 'AGENTS.md'), sampleHostRule, 'utf8');
+  }
+  const loadedConv = loadProjectConventions(convTestDir, { role: 'writer' });
+  assert.ok(loadedConv.includes('<project_conventions'), 'Existing project rule file must wrap in <project_conventions>');
+  assert.ok(loadedConv.includes('[ORCHESTRATOR PRECEDENCE OVERRIDE]'), 'Must include Orchestrator Precedence Override guard');
+  assert.strictEqual(loadedConv.includes('## 2. Task Triage & Execution Architecture'), false, 'Host AGENTS.md Section 2 workflow must be filtered out');
+} finally {
+  if (convTestDir !== REPO_ROOT) {
+    fs.rmSync(convTestDir, { recursive: true, force: true });
+  }
+}
 
 const emptyConv = loadProjectConventions(path.resolve(REPO_ROOT, 'non_existent_workspace_dir_12345'));
 assert.strictEqual(emptyConv, '', 'Workspace without rule files must gracefully return empty string');
 
 // 7.4 Verify buildRouterContext Repo-Map Injection (Regression Test for queryKeywords)
-const routerCtxDefault = buildRouterContext(['agent-team/runtime'], REPO_ROOT, 50);
+const routerCtxDefault = buildRouterContext([`${RT_PREFIX}runtime`], REPO_ROOT, 50);
 assert.ok(routerCtxDefault.includes('CODEBASE SKELETON & SYMBOL MAP'), 'buildRouterContext without queryKeywords must inject CODEBASE SKELETON & SYMBOL MAP');
-const routerCtxRanked = buildRouterContext(['agent-team/runtime'], REPO_ROOT, 50, 'compactMessagesForContext session');
+const routerCtxRanked = buildRouterContext([`${RT_PREFIX}runtime`], REPO_ROOT, 50, 'compactMessagesForContext session');
 assert.ok(routerCtxRanked.includes('session-store.mjs'), 'buildRouterContext with queryKeywords must rank matching symbol files');
 
 // 7.5 Verify Pillar 1: Tree-Sitter WASM AST Parser (Comments, Template Literals, Methods, Arrow Functions, Multi-line)
@@ -1142,22 +1158,22 @@ assert.strictEqual(
 );
 
 // Verify real workspace caller graph & Pillar 3 Personalized PageRank with scopeFiles
-const wsMap = scanWorkspaceSymbols(REPO_ROOT, ['agent-team/scripts', 'agent-team/runtime']);
-const riskSym = wsMap.get('agent-team/scripts/lib/risk-policy.mjs');
-assert.ok(riskSym && riskSym.callers.includes('agent-team/scripts/orchestrator.mjs'), 'risk-policy.mjs callers must include orchestrator.mjs via resolved ./lib/risk-policy.mjs import');
+const wsMap = scanWorkspaceSymbols(REPO_ROOT, [`${RT_PREFIX}scripts`, `${RT_PREFIX}runtime`]);
+const riskSym = wsMap.get(`${RT_PREFIX}scripts/lib/risk-policy.mjs`);
+assert.ok(riskSym && riskSym.callers.includes(`${RT_PREFIX}scripts/orchestrator.mjs`), 'risk-policy.mjs callers must include orchestrator.mjs via resolved ./lib/risk-policy.mjs import');
 
 const pprRanks = computePersonalizedPageRank(wsMap, {
   keywords: ['risk'],
-  scopeFiles: ['agent-team/scripts/orchestrator.mjs']
+  scopeFiles: [`${RT_PREFIX}scripts/orchestrator.mjs`]
 });
-assert.ok((pprRanks.get('agent-team/scripts/orchestrator.mjs') || 0) > (pprRanks.get('agent-team/scripts/dashboard.mjs') || 0), 'Scoped file must receive higher Personalized PageRank than unscoped file');
+assert.ok((pprRanks.get(`${RT_PREFIX}scripts/orchestrator.mjs`) || 0) > (pprRanks.get(`${RT_PREFIX}scripts/dashboard.mjs`) || 0), 'Scoped file must receive higher Personalized PageRank than unscoped file');
 
-const scopedMapOut = generateRepoMap(REPO_ROOT, {
-  allowedDirs: ['agent-team/scripts', 'agent-team/runtime'],
-  scopeFiles: ['agent-team/scripts/orchestrator.mjs'],
+const scopedMapOut = generateRepoMap(TEAM_DIR_LOCAL, {
+  allowedDirs: ['scripts', 'runtime'],
+  scopeFiles: ['scripts/orchestrator.mjs'],
   maxChars: 1200
 });
-assert.ok(scopedMapOut.includes('[agent-team/scripts/orchestrator.mjs] [SCOPE]'), 'Scoped file must be tagged [SCOPE] and placed at top of Repo Map');
+assert.ok(scopedMapOut.includes('[scripts/orchestrator.mjs] [SCOPE]'), 'Scoped file must be tagged [SCOPE] and placed at top of Repo Map');
 assert.ok(scopedMapOut.includes('additional files omitted to fit context budget'), 'Truncated Repo Map must explicitly report count of omitted files');
 
 // 7.6 Verify Turn Grouping Resilience (Out-of-Order & Missing Tool Results) + Persistent Epoch Checkpoint
@@ -1239,12 +1255,18 @@ assert.deepStrictEqual(realPartition.backendScope, ['core/eraser.py', 'ui_bridge
 assert.deepStrictEqual(realPartition.frontendScope, ['ui_web/index.html'], 'Only ui_web/index.html belongs to frontendScope');
 assert.deepStrictEqual(realPartition.testScope, ['tests/test_eraser.py'], 'Test file belongs strictly to testScope');
 
-const snapRepo = materializeGitCommitSnapshot('210b0bc', [
-  'core/eraser.py',
-  'ui_bridge/js_api.py',
-  'tests/test_eraser.py',
-  'ui_web/index.html'
-]);
+const snapRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'runtime-v3-buckets-'));
+{
+  const makeBigPy = (prefix, count) => Array.from({ length: count }, (_, i) => `def ${prefix}_${i}(arg_${i}):\n\t"""Synthetic payload line ${i} for output-budget bucket split verification."""\n\treturn "${prefix}_value_${i}_" + str(arg_${i})\n`).join('\n');
+  fs.mkdirSync(path.join(snapRepo, 'core'), { recursive: true });
+  fs.mkdirSync(path.join(snapRepo, 'ui_bridge'), { recursive: true });
+  fs.mkdirSync(path.join(snapRepo, 'tests'), { recursive: true });
+  fs.mkdirSync(path.join(snapRepo, 'ui_web'), { recursive: true });
+  fs.writeFileSync(path.join(snapRepo, 'core', 'eraser.py'), makeBigPy('erase_step', 450), 'utf8');
+  fs.writeFileSync(path.join(snapRepo, 'ui_bridge', 'js_api.py'), makeBigPy('bridge_api', 600), 'utf8');
+  fs.writeFileSync(path.join(snapRepo, 'tests', 'test_eraser.py'), makeBigPy('test_erase', 320), 'utf8');
+  fs.writeFileSync(path.join(snapRepo, 'ui_web', 'index.html'), '<div>' + 'x'.repeat(25000) + '</div>\n', 'utf8');
+}
 try {
   // Verify Output-Budget Bucket Splitting separates core/eraser.py (58KB), ui_bridge/js_api.py (78KB), and tests/test_eraser.py (40KB)
   const rawPatchBuckets = [

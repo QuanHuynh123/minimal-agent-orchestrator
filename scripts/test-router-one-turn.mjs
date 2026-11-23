@@ -88,7 +88,7 @@ function testEmbedded10LineSnippets(snapRepo) {
   console.log('[OK] ~10-line embedded code snippet extraction passed');
 }
 
-function testCheckScopeWithDependents(snapRepo) {
+function testCheckScopeWithDependents(snapRepo, cfgDir) {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'scope-deps-'));
   try {
     fs.mkdirSync(path.join(tmpRoot, 'core'), { recursive: true });
@@ -127,6 +127,7 @@ function testCheckScopeWithDependents(snapRepo) {
       ['core/eraser.py', 'ui_bridge/js_api.py', 'tests/test_eraser.py'],
       snapRepo,
       {
+        configDir: cfgDir,
         goal: 'Sửa hàm probe_roi_banner_box và detect_banner_box trong core/eraser.py để xử lý vùng ROI rỗng an toàn, kiểm tra kết nối qua eraser_probe trong ui_bridge/js_api.py và bổ sung unit test trong tests/test_eraser.py.'
       }
     );
@@ -140,6 +141,7 @@ function testCheckScopeWithDependents(snapRepo) {
       ['core/providers/service.py', 'ui_bridge/js_api.py', 'tests/test_providers.py'],
       snapRepo,
       {
+        configDir: cfgDir,
         goal: 'Kiểm tra và sửa lỗi xử lý danh sách model mặc định trong ProviderService (core/providers/service.py) và hàm provider_list_presets trong ui_bridge/js_api.py kèm test trong tests/test_providers.py.'
       }
     );
@@ -158,7 +160,7 @@ function testCheckScopeWithDependents(snapRepo) {
   }
 }
 
-async function testOneTurnDecomposeAndComparisonHarness(snapRepo) {
+async function testOneTurnDecomposeAndComparisonHarness(snapRepo, cfgDir) {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'router-1turn-'));
   try {
     const capturedPrompts = [];
@@ -190,6 +192,7 @@ async function testOneTurnDecomposeAndComparisonHarness(snapRepo) {
       {
         dryRun: true,
         repoRoot: snapRepo,
+        configDir: cfgDir,
         sessionsDir: path.join(tmpRoot, 's1-default'),
         baseUrlOverride: 'http://127.0.0.1:20199/v1',
         apiKeyOverride: 'mock',
@@ -259,7 +262,7 @@ async function testOneTurnDecomposeAndComparisonHarness(snapRepo) {
   }
 }
 
-async function testDefaultOneTurnFallbackBranches(snapRepo) {
+async function testDefaultOneTurnFallbackBranches(snapRepo, cfgDir) {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'router-fallback-'));
   try {
     // Branch 1: No keyword hits in pre-lookup -> immediately fall back to multi-turn tool loop (5 turns)
@@ -334,6 +337,7 @@ async function testDefaultOneTurnFallbackBranches(snapRepo) {
       {
         dryRun: true,
         repoRoot: snapRepo,
+        configDir: cfgDir,
         sessionsDir: path.join(tmpRoot, 'dep-no-fallback'),
         baseUrlOverride: 'http://127.0.0.1:20199/v1',
         apiKeyOverride: 'mock',
@@ -401,7 +405,7 @@ async function testDefaultOneTurnFallbackBranches(snapRepo) {
   }
 }
 
-async function testNoKeywordHitsMax3ToolTurnsWithWarning(snapRepo) {
+async function testNoKeywordHitsMax3ToolTurnsWithWarning(snapRepo, cfgDir) {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'router-cap3-'));
   try {
     let callCount = 0;
@@ -477,14 +481,98 @@ async function testNoKeywordHitsMax3ToolTurnsWithWarning(snapRepo) {
   }
 }
 
+function buildSyntheticSnapshotRepo() {
+  const snapRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'router-1turn-snap-'));
+  const files = {
+    'ui_web/index.html': [
+      '<!DOCTYPE html>',
+      '<html><body>',
+      '<div id="eraser-presets"><button data-preset="bottom-default">Bottom</button></div>',
+      '<div id="eraser-mode-pills" class="grid gap-2">',
+      '  <button data-mode="smart_fill">Smart Fill</button>',
+      '</div>',
+      '<script>',
+      'function applyEraserMode(mode) {',
+      '  const box = document.getElementById("eraser-mode-pills");',
+      '  return box ? mode : "";',
+      '}',
+      'function renderPresets() {',
+      '  return document.getElementById("eraser-presets");',
+      '}',
+      '</script>',
+      '</body></html>'
+    ].join('\n'),
+    'core/eraser.py': [
+      'def probe_roi_banner_box(video_path: str):',
+      '\tif not video_path:',
+      '\t\treturn None',
+      '\treturn detect_banner_box(video_path)',
+      '',
+      'def detect_banner_box(video_path: str):',
+      '\treturn (0, 0, 100, 50)',
+      ''
+    ].join('\n'),
+    'core/providers/__init__.py': 'from core.providers.service import ProviderService\n',
+    'core/providers/service.py': [
+      'from core.providers.store import ProviderStore',
+      '',
+      'class ProviderService:',
+      '\tdef __init__(self, store=None):',
+      '\t\tself.store = store or ProviderStore()',
+      '\tdef list_presets(self):',
+      '\t\treturn self.store.load()',
+      ''
+    ].join('\n'),
+    'core/providers/store.py': 'class ProviderStore:\n\tdef load(self):\n\t\treturn []\n',
+    'ui_bridge/__init__.py': '"""Bridge package."""\n',
+    'ui_bridge/js_api.py': [
+      'from core.eraser import probe_roi_banner_box',
+      'from core.providers.service import ProviderService',
+      '',
+      'class JsApi:',
+      '\tdef eraser_probe(self, path: str):',
+      '\t\treturn probe_roi_banner_box(path)',
+      '\tdef provider_list_presets(self):',
+      '\t\treturn ProviderService().list_presets()',
+      ''
+    ].join('\n'),
+    'tests/test_dom_contract.py': [
+      'import unittest',
+      'class DomTests(unittest.TestCase):',
+      '\tdef test_eraser_presets(self):',
+      '\t\tassert "ui_web/index.html" and "eraser-presets" and "applyEraserMode"',
+      ''
+    ].join('\n'),
+    'tests/test_eraser.py': 'from core.eraser import probe_roi_banner_box, detect_banner_box\n',
+    'tests/test_providers.py': 'from core.providers.service import ProviderService\n',
+    'tests/test_ui_bridge.py': 'from ui_bridge.js_api import JsApi\n'
+  };
+  for (const [rel, content] of Object.entries(files)) {
+    const abs = path.join(snapRepo, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, content, 'utf8');
+  }
+  const cfgDir = path.join(snapRepo, '.snap-config');
+  fs.mkdirSync(cfgDir, { recursive: true });
+  const realCfgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'config');
+  fs.copyFileSync(path.join(realCfgDir, 'team.yaml'), path.join(cfgDir, 'team.yaml'));
+  const rawPol = fs.readFileSync(path.join(realCfgDir, 'policy.yaml'), 'utf8');
+  const snapPol = rawPol.replace(
+    /allowed_dirs:\s*\n(?:\s*-\s*[^\n]+\n)+/,
+    'allowed_dirs:\n      - "core/"\n      - "ui_bridge/"\n      - "ui_web/"\n      - "tests/"\n'
+  );
+  fs.writeFileSync(path.join(cfgDir, 'policy.yaml'), snapPol, 'utf8');
+  return { snapRepo, cfgDir };
+}
+
 async function main() {
-  const snapRepo = materializeGitCommitSnapshot('210b0bc', SNAPSHOT_FILES);
+  const { snapRepo, cfgDir } = buildSyntheticSnapshotRepo();
   try {
     testEmbedded10LineSnippets(snapRepo);
-    testCheckScopeWithDependents(snapRepo);
-    await testOneTurnDecomposeAndComparisonHarness(snapRepo);
-    await testDefaultOneTurnFallbackBranches(snapRepo);
-    await testNoKeywordHitsMax3ToolTurnsWithWarning(snapRepo);
+    testCheckScopeWithDependents(snapRepo, cfgDir);
+    await testOneTurnDecomposeAndComparisonHarness(snapRepo, cfgDir);
+    await testDefaultOneTurnFallbackBranches(snapRepo, cfgDir);
+    await testNoKeywordHitsMax3ToolTurnsWithWarning(snapRepo, cfgDir);
     console.log('[PASS] test-router-one-turn');
   } finally {
     fs.rmSync(snapRepo, { recursive: true, force: true });

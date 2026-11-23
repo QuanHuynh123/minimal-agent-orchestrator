@@ -165,11 +165,11 @@ export const TOOL_SCHEMAS = {
         properties: {
           query: {
             type: 'string',
-            description: 'Keywords or symbols to rank relevant files/classes/functions first (e.g. "downloader subtitle", "eraser").'
+            description: 'Keywords or symbols to rank relevant files/classes/functions first (e.g. "auth token", "parser").'
           },
           dir: {
             type: 'string',
-            description: 'Optional directory name to restrict search (e.g. "core", "ui_bridge").'
+            description: 'Optional directory name to restrict search (e.g. "src", "api").'
           },
           max_chars: {
             type: 'number',

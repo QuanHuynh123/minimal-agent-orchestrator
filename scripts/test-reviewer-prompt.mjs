@@ -14,10 +14,39 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEAM_DIR = path.resolve(__dirname, '..');
 
+function buildSyntheticLargeApiFile() {
+  const methods = [
+    'from typing import Any, Dict',
+    '',
+    'class JsApi:',
+    '\tdef _show_winforms_file_dialog(self) -> None:',
+    '\t\t"""Unrelated helper far above the modified tail."""',
+    '\t\treturn None',
+    ''
+  ];
+  for (let i = 0; i < 450; i++) {
+    methods.push(`\tdef helper_method_${i}(self, value: str = "payload_${i}") -> Dict[str, Any]:`);
+    methods.push(`\t\t"""Synthetic class body line ${i} to ensure git diff --function-context exceeds 40KB."""`);
+    methods.push(`\t\treturn {"ok": True, "index": ${i}, "value": value}`);
+    methods.push('');
+  }
+  return methods.join('\n') + '\n';
+}
+
+function buildSyntheticLargeTestFile() {
+  const lines = ['import unittest', 'from unittest.mock import MagicMock', '', 'class BridgeTests(unittest.TestCase):'];
+  for (let i = 0; i < 120; i++) {
+    lines.push(`\tdef test_existing_case_${i}(self) -> None:`);
+    lines.push(`\t\tself.assertEqual(${i}, ${i})`);
+    lines.push('');
+  }
+  return lines.join('\n') + '\n';
+}
+
 function runTests() {
   const systemPrompt = fs.readFileSync(path.join(TEAM_DIR, 'roles', 'reviewer.md'), 'utf8');
-  const jsApiBefore = readGitCommitFile('210b0bc', 'ui_bridge/js_api.py');
-  const testUiBefore = readGitCommitFile('210b0bc', 'tests/test_ui_bridge.py');
+  const jsApiBefore = buildSyntheticLargeApiFile();
+  const testUiBefore = buildSyntheticLargeTestFile();
 
   const sampleSpec = [
     '# Pre-Code Spec: `get_supported_publish_privacies`',

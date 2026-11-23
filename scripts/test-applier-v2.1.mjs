@@ -89,45 +89,48 @@ assert.strictEqual(isFileInScope('src/web/index.html', ['index.html']), false);
 assert.strictEqual(isFileInScope('src/web/index.html', ['src/web/index.html']), true);
 assert.strictEqual(isFileInScope('src/web/index.html', ['**/index.html']), true);
 
-const outOfScopeRes = applyEdits('### FILE: agent-team/roles/reviewer.md\n<<<<<<< SEARCH\nfoo\n=======\nbar\n>>>>>>> REPLACE', {
-  scope: ['agent-team/roles/writer.md'],
+const PREFIX = fs.existsSync(path.join(path.resolve(__dirname, '..'), '.git')) ? '' : 'agent-team/';
+const ALLOWED_ROLE_DIR = PREFIX || 'roles/';
+
+const outOfScopeRes = applyEdits(`### FILE: ${PREFIX}roles/reviewer.md\n<<<<<<< SEARCH\nfoo\n=======\nbar\n>>>>>>> REPLACE`, {
+  scope: [`${PREFIX}roles/writer.md`],
   allow_scope_expansion: false
 }, {
-  allowedDirs: ['agent-team/']
+  allowedDirs: [ALLOWED_ROLE_DIR]
 });
 assert.strictEqual(outOfScopeRes.ok, false);
 assert.match(outOfScopeRes.error, /Out-of-scope edit attempted/);
 console.log('✓ Strict scope rejection & exact path matching passed');
 
 // Test 5: Scope Expansion with limit & High-Risk Escalation Block
-const expansionOkRes = applyEdits('### FILE: agent-team/roles/writer.md\n<<<<<<< SEARCH\nnonexistent_line_xyz\n=======\nbar\n>>>>>>> REPLACE', {
-  scope: ['agent-team/roles/router.md'],
+const expansionOkRes = applyEdits(`### FILE: ${PREFIX}roles/writer.md\n<<<<<<< SEARCH\nnonexistent_line_xyz\n=======\nbar\n>>>>>>> REPLACE`, {
+  scope: [`${PREFIX}roles/router.md`],
   allow_scope_expansion: true,
   scope_expansions: []
 }, {
-  allowedDirs: ['agent-team/'],
+  allowedDirs: [ALLOWED_ROLE_DIR],
   maxScopeIncrease: 1
 });
 // Fails because SEARCH block not found on disk, but passed scope check!
 assert.match(expansionOkRes.error, /SEARCH block 1 not found/);
 
-const newFileOutScopeRes = applyEdits('### FILE: agent-team/roles/brand_new_unscoped.md\n<<<<<<< SEARCH\n\n=======\n# role\n>>>>>>> REPLACE', {
-  scope: ['agent-team/roles/writer.md'],
+const newFileOutScopeRes = applyEdits(`### FILE: ${PREFIX}roles/brand_new_unscoped.md\n<<<<<<< SEARCH\n\n=======\n# role\n>>>>>>> REPLACE`, {
+  scope: [`${PREFIX}roles/writer.md`],
   allow_scope_expansion: true,
   scope_expansions: []
 }, {
-  allowedDirs: ['agent-team/'],
+  allowedDirs: [ALLOWED_ROLE_DIR],
   maxScopeIncrease: 1,
   newFilesOnlyInScope: true
 });
 assert.strictEqual(newFileOutScopeRes.ok, false);
 assert.match(newFileOutScopeRes.error, /new_files_only_in_scope/);
 
-const disallowNewFileRes = applyEdits('### FILE: agent-team/roles/brand_new_scoped.md\n<<<<<<< SEARCH\n\n=======\n# role\n>>>>>>> REPLACE', {
-  scope: ['agent-team/roles/brand_new_scoped.md'],
+const disallowNewFileRes = applyEdits(`### FILE: ${PREFIX}roles/brand_new_scoped.md\n<<<<<<< SEARCH\n\n=======\n# role\n>>>>>>> REPLACE`, {
+  scope: [`${PREFIX}roles/brand_new_scoped.md`],
   allow_scope_expansion: false
 }, {
-  allowedDirs: ['agent-team/'],
+  allowedDirs: [ALLOWED_ROLE_DIR],
   allowNewFiles: false
 });
 assert.strictEqual(disallowNewFileRes.ok, false);
@@ -177,7 +180,7 @@ fs.writeFileSync(tempLock, JSON.stringify({ pid: 99999999, started_at: '2026-01-
 assert.strictEqual(acquireLock(tempLock), true);
 releaseLock(tempLock);
 
-const ctx = buildScopedFilesContext(['agent-team/package.json', 'agent-team/nonexistent-new.txt'], REPO_ROOT);
+const ctx = buildScopedFilesContext([`${PREFIX}package.json`, `${PREFIX}nonexistent-new.txt`], REPO_ROOT);
 assert.match(ctx, /EXISTING CONTENT/);
 assert.match(ctx, /NEW FILE - DOES NOT EXIST ON DISK YET/);
 console.log('✓ Stale lock recovery & Writer file context injection passed');
@@ -373,9 +376,9 @@ assert.match(matchWrong.reason, /Requested model "kr\/claude-sonnet-4\.5" but up
 console.log('✓ State deduplication, stale blocked purge, validateConfig & verifyResponseModel passed');
 
 // 13. Test Role-Specific Context Builders (Router Google Maps + Bounded File List, Reviewer Function-Context + Previous Issues)
-const routerCtx = buildRouterContext(['agent-team/scripts/', 'agent-team/runtime/'], resolveRepoRoot(), 50);
+const routerCtx = buildRouterContext([`${PREFIX}scripts/`, `${PREFIX}runtime/`], resolveRepoRoot(), 50);
 assert.match(routerCtx, /AVAILABLE WORKSPACE FILES/);
-assert.match(routerCtx, /- agent-team\/scripts\/applier\.mjs/);
+assert.ok(routerCtx.includes(`- ${PREFIX}scripts/applier.mjs`));
 assert.doesNotMatch(routerCtx, /__pycache__/);
 
 const revPromptFresh = buildReviewerPrompt(

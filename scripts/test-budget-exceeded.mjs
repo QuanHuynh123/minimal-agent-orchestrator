@@ -31,7 +31,20 @@ import { runSuiteV1RouterBenchmark } from './score-router-suite.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEAM_DIR = path.resolve(__dirname, '..');
-const REPO_ROOT = path.resolve(TEAM_DIR, '..');
+const REPO_ROOT = fs.existsSync(path.join(TEAM_DIR, '.git')) ? TEAM_DIR : path.resolve(TEAM_DIR, '..');
+
+function writeSyntheticSuite(tmpDir) {
+  const suitePath = path.join(tmpDir, 'synthetic-suite.json');
+  const tasks = Array.from({ length: 6 }, (_, i) => ({
+    id: `T-SYN-${i + 1}`,
+    goal: `Update handler_${i + 1} in src/app.js and add tests in tests/test_app.js`,
+    expected_scope: ['src/app.js', 'tests/test_app.js'],
+    expected_mode: 'quick',
+    expected_risk: 'low'
+  }));
+  fs.writeFileSync(suitePath, JSON.stringify({ suite_id: 'synthetic-v1', tasks }, null, 2), 'utf8');
+  return suitePath;
+}
 
 async function testBudgetErrorPropertiesAndNoRetry() {
   const err = new BudgetExceededError('Adjusted Claude fresh tokens exceeded (60000/60000)', {
@@ -167,8 +180,10 @@ async function testBudgetErrorPropertiesAndNoRetry() {
     assert.equal(failedRun.ok, false);
     assert.ok(!String(failedRun.error).includes('429'), `Error must not emit fake HTTP 429: ${failedRun.error}`);
 
+    const suitePath = writeSyntheticSuite(tmpDir);
     const suiteStop = await runSuiteV1RouterBenchmark({
       repoRoot: REPO_ROOT,
+      suitePath,
       sessionsDir: path.join(tmpDir, 'suite'),
       limit: 1,
       repetitions: 1,
@@ -221,8 +236,10 @@ async function testStrictPreCall60kGuardAndWorstCasePlan() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'td-60k-hard-cap-'));
   try {
     let sentCalls = 0;
+    const suitePath = writeSyntheticSuite(tmpDir);
     const suiteRes = await runSuiteV1RouterBenchmark({
       repoRoot: REPO_ROOT,
+      suitePath,
       sessionsDir: path.join(tmpDir, 's'),
       modelOverride: 'ag/claude-sonnet-5-5',
       limit: 6,

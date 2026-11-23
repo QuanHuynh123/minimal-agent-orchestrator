@@ -1395,7 +1395,7 @@ function resolveValidationConfigAndChecks(projectConfig, stageName) {
   return { repoRoot, checks, allChecks: [...fastChecks, ...suiteChecks] };
 }
 
-const DEFAULT_ONNX_MODEL_NAMES = ['lama_fp32.onnx', 'ch_PP-OCRv4_det.onnx'];
+const DEFAULT_ONNX_MODEL_NAMES = [];
 const fileSha256Cache = new Map();
 
 export function computeFileSha256Cached(filePath, sizeBytes, mtimeMs, options = {}) {
@@ -1424,18 +1424,17 @@ export function computeFileSha256Cached(filePath, sizeBytes, mtimeMs, options = 
 
 export function resolveOnnxModelsDir(options = {}) {
   if (options.modelsDir) return path.resolve(options.modelsDir);
-  if (process.env.TOOLDOWNLOAD_MODELS_DIR) return path.resolve(process.env.TOOLDOWNLOAD_MODELS_DIR);
-  if (process.platform === 'win32') {
-    const base = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-    return path.join(base, 'ToolDownload', 'models', 'inpaint');
-  }
-  return path.join(os.homedir(), '.tool-download', 'models', 'inpaint');
+  if (process.env.AGENT_TEAM_MODELS_DIR) return path.resolve(process.env.AGENT_TEAM_MODELS_DIR);
+  return null;
 }
 
 function defaultCollectOnnxModels(options = {}) {
   const modelsDir = resolveOnnxModelsDir(options);
   const names = new Set(Array.isArray(options.onnxModelNames) ? options.onnxModelNames : DEFAULT_ONNX_MODEL_NAMES);
-  if (fs.existsSync(modelsDir)) {
+  if (!modelsDir && names.size === 0) {
+    return [];
+  }
+  if (modelsDir && fs.existsSync(modelsDir)) {
     try {
       for (const entry of fs.readdirSync(modelsDir, { withFileTypes: true })) {
         if (entry.isFile() && entry.name.toLowerCase().endsWith('.onnx')) {
@@ -1446,7 +1445,7 @@ function defaultCollectOnnxModels(options = {}) {
   }
 
   return [...names].sort().map(name => {
-    const filePath = path.join(modelsDir, name);
+    const filePath = modelsDir ? path.join(modelsDir, name) : name;
     if (!fs.existsSync(filePath)) {
       return { name, path: filePath, exists: false, size_bytes: null, sha256: null };
     }

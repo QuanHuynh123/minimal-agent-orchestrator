@@ -163,7 +163,7 @@ function discoverDependencyCandidateFiles(repoRoot, options = {}) {
   const scPolicy = policyConfig.policy?.scope_control || {};
   const searchDirs = Array.isArray(scPolicy.allowed_dirs) && scPolicy.allowed_dirs.length > 0
     ? scPolicy.allowed_dirs
-    : ['core', 'ui_bridge', 'ui_web', 'ui', 'tests', 'scripts', 'agent-team/scripts'];
+    : ['src', 'app', 'lib', 'core', 'web', 'tests', 'scripts'];
   return buildRouterContextParts(searchDirs, repoRoot, options.maxFiles ?? 1000, '', [], {
     includeConventions: false,
     contextExclude: Array.isArray(scPolicy.context_exclude) ? scPolicy.context_exclude : [],
@@ -474,7 +474,7 @@ export function evaluatePostPatchSignatureGate({
     breakingSymbolRenames: hasRemovedOrRenamed
   });
 
-  // Also scan project .html/.js/.mjs files (e.g. PyWebView UI calling JsApi methods by string/identifier)
+  // Also scan project .html/.js/.mjs files (e.g. web frontend calling backend RPC/API methods by string/identifier)
   const webCallers = findOutOfScopeWebStringCallers(changedSignatures, repoRoot, {
     candidateFiles: sharedCandidates,
     allowedCallerScope,

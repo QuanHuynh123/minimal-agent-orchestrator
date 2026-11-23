@@ -9,11 +9,11 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEAM_DIR = path.resolve(__dirname, '..');
-const REPO_ROOT = path.resolve(TEAM_DIR, '..');
+const REPO_ROOT = fs.existsSync(path.join(TEAM_DIR, '.git')) ? TEAM_DIR : path.resolve(TEAM_DIR, '..');
 
 function makeEnvFingerprint(overrides = {}) {
   return {
-    python_path: 'D:\\tool-download\\.venv\\Scripts\\python.exe',
+    python_path: 'C:\\venv\\Scripts\\python.exe',
     is_admin: false,
     loopback_bindable: true,
     pip_freeze_hash: 'pip-hash-v1',
@@ -27,7 +27,7 @@ function makeEnvFingerprint(overrides = {}) {
       error: null
     },
     onnx_models: [
-      { name: 'lama_fp32.onnx', path: 'C:\\models\\lama_fp32.onnx', exists: true, size_bytes: 1024, sha256: 'sha-lama-1' }
+      { name: 'model_a.onnx', path: 'C:\\models\\model_a.onnx', exists: true, size_bytes: 1024, sha256: 'sha-model-1' }
     ],
     checked_at: '2026-11-16T00:00:00.000Z',
     ...overrides
@@ -53,7 +53,9 @@ function findRealPython({ candidates = ['python', 'python3'], execFn = execFileS
 
 function runPythonIndentationSmokeCheck({ repoRoot, tmpRepo, extractFn, execFn = execFileSync, log = console.log, env } = {}) {
   const indentationTestPath = path.join(repoRoot, 'tests', 'test_indentation.py');
-  if (!fs.existsSync(indentationTestPath)) {
+  const targetTestFile = path.join(tmpRepo, 'tests', 'test_indentation.py');
+  const isMockedExec = execFn !== execFileSync;
+  if (!fs.existsSync(indentationTestPath) && !isMockedExec) {
     log('[SKIP] Real Python indentation smoke check skipped: tests/test_indentation.py not found.');
     return { executed: false, skipped: true, reason: 'missing_test_file', parsed: [] };
   }
@@ -62,9 +64,12 @@ function runPythonIndentationSmokeCheck({ repoRoot, tmpRepo, extractFn, execFn =
     log('[SKIP] Real Python indentation smoke check skipped: no real Python interpreter available on PATH.');
     return { executed: false, skipped: true, reason: 'python_not_found', parsed: [] };
   }
-  const targetTestFile = path.join(tmpRepo, 'tests', 'test_indentation.py');
   if (!fs.existsSync(targetTestFile)) {
-    fs.copyFileSync(indentationTestPath, targetTestFile);
+    if (fs.existsSync(indentationTestPath)) {
+      fs.copyFileSync(indentationTestPath, targetTestFile);
+    } else {
+      fs.writeFileSync(targetTestFile, '# synthetic placeholder for mocked execFn\n', 'utf8');
+    }
   }
   const badPyPath = path.join(tmpRepo, 'core', 'space_bad.py');
   fs.writeFileSync(badPyPath, 'def bad():\n    return 0\n', 'utf8');

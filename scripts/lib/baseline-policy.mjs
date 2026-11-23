@@ -391,7 +391,7 @@ function findNamingConventionTargets(testFileRel, repoRoot) {
   const pyMatch = normTest.match(/(?:^|\/)test_([\w]+)\.py$/);
   if (pyMatch) {
     const stem = pyMatch[1];
-    for (const dir of ['core', 'ui', 'ui_bridge', 'ui_web', '']) {
+    for (const dir of ['src', 'app', 'lib', 'core', 'api', '']) {
       const rel = dir ? `${dir}/${stem}.py` : `${stem}.py`;
       if (fs.existsSync(path.join(repoRoot, rel))) {
         targets.add(rel);
@@ -1393,7 +1393,7 @@ export function evaluateTaskOutcomeWithBaseline({
 }
 
 /**
- * Extracts clean dotted unittest targets (e.g. `tests.test_ui_bridge.MediaPathResolutionTests.test_x`)
+ * Extracts clean dotted unittest targets (e.g. `tests.test_api.PathResolutionTests.test_x`)
  * from check results and raw validator failure output so retries can validate failing tests first.
  */
 export function extractFailingTestTargetsForRetry(errSummary = '', checkResults = []) {

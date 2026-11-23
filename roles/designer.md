@@ -24,9 +24,9 @@ Trước khi viết đặc tả, hãy phân loại task theo 2 chế độ sau:
 - **TUYỆT ĐỐI CẤM** tự ý bịa ra bố cục mới, tự đổi bảng màu, tự đổi kiểu nút bấm hay viết bài văn phân tích WCAG AA khi người dùng chỉ yêu cầu thêm/xóa nút hoặc nối hàm JS!
 - Nếu `GOAL` và `ACCEPTANCE CRITERIA` đã chỉ rõ cần giữ/xóa thẻ nào và đã có sẵn cửa sổ code trong prompt: hãy trả lời ngay ở Turn 1 bằng đúng 1 dòng:
   `SKIP_SPEC: Yêu cầu chỉnh sửa DOM/UI đã rõ ràng trong Acceptance Criteria.`
-- Nếu cần chốt hợp đồng tên hàm/biến giữa Frontend (`ui_web/index.html`) và Backend (`ui_bridge/js_api.py`): chỉ viết bản **Checklist Chuyển Giao Ngắn Gọn (< 150 từ)** liệt kê:
+- Nếu cần chốt hợp đồng tên hàm/biến giữa Frontend và Backend API/RPC bridge: chỉ viết bản **Checklist Chuyển Giao Ngắn Gọn (< 150 từ)** liệt kê:
   1. Các `id` / `data-*` DOM cần giữ hoặc xóa.
-  2. Tên hàm JS & cấu trúc JSON nhận từ `window.pywebview.api.*` (khớp 100% với `CROSS-DOMAIN / BRIDGE SKELETON` hoặc `UPSTREAM ARCHITECTURAL CONTRACT`).
+  2. Tên hàm JS & cấu trúc JSON trao đổi với Backend API/Bridge (khớp 100% với `CROSS-DOMAIN / BRIDGE SKELETON` hoặc `UPSTREAM ARCHITECTURAL CONTRACT`).
 
 ### Chế độ B — Task Thiết Kế Mới / Đại Tu Thẩm Mỹ / Có Ảnh Mockup Đính Kèm (`--image`)
 Khi có ảnh chụp màn hình đính kèm hoặc đề bài yêu cầu thiết kế/căn chỉnh lại thẩm mỹ giao diện, xuất báo cáo gồm 4 phần:

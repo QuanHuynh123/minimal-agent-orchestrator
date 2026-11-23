@@ -2,6 +2,11 @@ team:
   name: hybrid-agent-squad
   version: "3.1"
   single_writer_lock: true
+spec_models:
+  low: ag/gemini-3.8-flash-medium
+  medium: ag/gemini-3.8-flash-medium
+  high: ag/claude-opus-5-5-medium
+  critical: ag/claude-opus-5-5-medium
 providers:
   local_9router:
     type: openai_compatible
@@ -12,11 +17,17 @@ roles:
   router:
     enabled: true
     provider: local_9router
-    display_name: Claude Sonnet 4.5 Thinking
-    model: kr/claude-sonnet-4.5-thinking
-    default_model: kr/claude-sonnet-4.5-thinking
+    display_name: Gemini 3.8 Flash Medium
+    model: ag/gemini-3.8-flash-medium
+    default_model: ag/gemini-3.8-flash-medium
     models:
-      - kr/claude-sonnet-4.5-thinking
+      - ag/gemini-3.8-flash-medium
+      - ag/claude-sonnet-5-5
+    escalation_model: ag/claude-sonnet-5-5
+    disabled_models:
+      - id: kr/claude-sonnet-4.5-thinking
+        disabled: true
+        reason: "Deprecated upstream model"
     fallback_model: null
     temperature: 0.2
     max_thinking_tokens: 200
@@ -30,24 +41,43 @@ roles:
   writer:
     enabled: true
     provider: local_9router
-    display_name: deepseek-v4.1-flash-1017
+    display_name: Code Generator Squad
     model: Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017
     default_model: Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017
     models:
       - Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017
-      - ag/gemini-3.8-flash-high
-    fallback_model: ag/gemini-3.8-flash-high
+      - ag/gemini-3.8-flash-medium
+    fallback_model: ag/gemini-3.8-flash-medium
     temperature: 0.1
+    max_thinking_tokens: 200
+    output_format: search_replace_blocks
+    spec_file: roles/writer.md
+    allowed_actions:
+      - backend_write
+      - frontend_write
+      - read_scoped_files
+      - propose_patch
+    forbidden_actions:
+      - out_of_scope_edit
+      - unapproved_dependency
   designer:
     enabled: true
     provider: local_9router
-    display_name: claude-sonnet-5-5-medium
-    model: ag/claude-sonnet-5-5-medium
-    default_model: ag/claude-sonnet-5-5-medium
+    display_name: Claude Sonnet 5.5
+    model: ag/claude-sonnet-5-5
+    default_model: ag/claude-sonnet-5-5
     models:
-      - ag/claude-sonnet-5-5-medium
+      - ag/claude-sonnet-5-5
     fallback_model: null
-    temperature: 0.1
+    temperature: 0.2
+    spec_file: roles/designer.md
+    allowed_actions:
+      - visual_audit
+      - ui_ux_spec
+      - read_scoped_files
+    forbidden_actions:
+      - direct_write
+      - apply_patch
   reviewer:
     enabled: true
     provider: local_9router
@@ -58,3 +88,10 @@ roles:
       - ag/claude-opus-5-5-medium
     fallback_model: null
     temperature: 0.1
+    spec_file: roles/reviewer.md
+    allowed_actions:
+      - review_diff
+      - approve
+      - reject
+    forbidden_actions:
+      - direct_write

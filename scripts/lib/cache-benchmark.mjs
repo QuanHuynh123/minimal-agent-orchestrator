@@ -17,10 +17,10 @@ export const DEFAULT_CACHE_BENCHMARK_MODELS = [
 ];
 
 const STATIC_REFERENCE_BLOCK = [
-  'ToolDownload Studio v2.0 Architecture & Invariant Reference Manual:',
-  '1. Execution Layer Boundary: ui_web/index.html delegates backend commands over window.pywebview.api into ui_bridge/js_api.py, which schedules background worker threads inside core/* and returns asynchronous updates exclusively through ui_bridge/event_bus.py.',
-  '2. Python Indentation Standard: Every .py module MUST use TAB (\\t) indentation exclusively, verified via tests/test_indentation.py and validator.mjs fast mode.',
-  '3. Security & Secret Hygiene: Credentials and webhook secrets are stored strictly in Windows Credential Vault (WinVaultKeyring), never written to plaintext JSON configs and never exposed to the browser view.',
+  'SampleApp Architecture & Invariant Reference Manual:',
+  '1. Execution Layer Boundary: web/index.html delegates backend commands over an RPC API layer into api/bridge.py, which schedules background worker threads inside src/* and returns asynchronous updates exclusively through api/event_bus.py.',
+  '2. Indentation Standard: Every source module MUST follow the project formatter/indentation rules verified via validator.mjs fast mode.',
+  '3. Security & Secret Hygiene: Credentials and webhook secrets are stored strictly in the OS credential vault, never written to plaintext JSON configs and never exposed to the browser view.',
   '4. Bounded Network & Process Execution: All subprocess invocations and HTTP requests specify explicit timeouts, and PowerShell scripts invoke curl.exe --max-time rather than bare curl.',
   '5. Prompt Prefix Invariance Protocol: Prefix tokens [0..N] sent on Turn N MUST remain byte-for-byte immutable on Turn N+1 across messages and tool declarations so upstream provider KV caches stay warm across multi-turn reasoning loops.',
   '6. Telemetry Integrity Rules: Provider usage objects are preserved verbatim as raw_usage alongside requested_model and actual_model; cached_tokens remains null whenever the upstream provider omits cache telemetry fields.'
@@ -77,11 +77,11 @@ export function buildControlledCachePrompts(nonce = '') {
 
 const ROUTER_CONTEXT_MODULE_BLOCK = [
   STATIC_REFERENCE_BLOCK,
-  'Module Inventory Slice: core/downloader.py | core/eraser.py | core/transcriber.py | core/ai_providers.py | core/providers/presets.py | core/providers/store.py | ui_bridge/js_api.py | ui_bridge/event_bus.py | ui_web/index.html.',
+  'Module Inventory Slice: src/fetcher.py | src/worker.py | src/parser.py | src/ai_providers.py | src/providers/presets.py | src/providers/store.py | api/bridge.py | api/event_bus.py | web/index.html.',
   'Routing Constraints & Verification Checklist:',
   '- Scope must stay atomic (< 150 lines changed per task YAML) with explicit acceptance_criteria and mode (quick | standard | consult).',
-  '- UI preset changes require verifying window.pywebview.api bridges, DOM safe rendering (.textContent), and custom event listeners without innerHTML.',
-  '- Python test verification runs .venv/Scripts/python.exe -m unittest with strict TAB indentation checks before marking task complete.'
+  '- UI changes require verifying API bridge contracts, DOM safe rendering (.textContent), and custom event listeners without innerHTML.',
+  '- Automated test verification runs the configured project test suite before marking a task complete.'
 ].join('\n');
 
 function cloneRouterToolsWithPrefixTag(baseTools, tag) {
@@ -110,7 +110,7 @@ export function buildRouterSizedCachePrompts(nonce = '', options = {}) {
   const routerRolePath = path.resolve(TEAM_DIR, 'roles', 'router.md');
   const routerSpec = fs.existsSync(routerRolePath)
     ? fs.readFileSync(routerRolePath, 'utf8').trim()
-    : 'You are the ToolDownload Studio AI Router Agent. Scope tasks atomically into strict JSON.';
+    : 'You are the AI Router Agent. Scope tasks atomically into strict JSON.';
 
   const baseTools = getAvailableToolSchemas(['list_files', 'search_code', 'read_file', 'get_repo_map']);
   const toolsA = cloneRouterToolsWithPrefixTag(baseTools, 'ALPHA-01');
@@ -128,7 +128,7 @@ export function buildRouterSizedCachePrompts(nonce = '', options = {}) {
   }
 
   const userTail = [
-    'ALLOWED DIRECTORIES: [core/, ui_bridge/, ui_web/, tests/, agent-team/]',
+    'ALLOWED DIRECTORIES: [src/, api/, web/, tests/]',
     'AVAILABLE SQUAD MODELS: [kr/claude-sonnet-4.5-thinking, ag/claude-sonnet-5-5, ag/gemini-3.8-flash-medium, ag/claude-opus-5-5-medium]',
     'USER GOAL: Clean up preset pills overflow and wire dry-run telemetry diagnostics safely.',
     'INSTRUCTION: Benchmark probe only. Ignore task planning output schema above and reply strictly with one word: OK.'

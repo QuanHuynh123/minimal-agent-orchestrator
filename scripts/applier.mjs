@@ -15,7 +15,8 @@ export function resolveRepoRoot(projectConfig = null, options = {}) {
   if (!cfg) {
     cfg = loadMergedPolicy({ configDir: options.configDir });
   }
-  const configuredRoot = cfg?.policy?.repo_root || cfg?.project?.repo_root || '..';
+  const defaultRoot = fs.existsSync(path.join(TEAM_DIR, '.git')) ? '.' : '..';
+  const configuredRoot = cfg?.policy?.repo_root || cfg?.project?.repo_root || defaultRoot;
   return path.resolve(TEAM_DIR, configuredRoot);
 }
 

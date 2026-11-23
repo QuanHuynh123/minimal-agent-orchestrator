@@ -18,6 +18,14 @@ function createTempSignatureRepo() {
   fs.mkdirSync(path.join(repoDir, 'ui_bridge'), { recursive: true });
   fs.mkdirSync(path.join(repoDir, 'ui_web'), { recursive: true });
   fs.mkdirSync(path.join(repoDir, 'tests'), { recursive: true });
+  const configDir = path.join(repoDir, '.sig-config');
+  fs.mkdirSync(configDir, { recursive: true });
+  const rawPol = fs.readFileSync(path.join(TEAM_DIR, 'config', 'policy.yaml'), 'utf8');
+  const sigPol = rawPol.replace(
+    /allowed_dirs:\s*\n(?:\s*-\s*[^\n]+\n)+/,
+    'allowed_dirs:\n      - "core/"\n      - "ui_bridge/"\n      - "ui_web/"\n      - "tests/"\n'
+  );
+  fs.writeFileSync(path.join(configDir, 'policy.yaml'), sigPol, 'utf8');
 
   const alphaBefore = [
     'def compute_score(alpha, beta=1):',
@@ -75,7 +83,7 @@ function createTempSignatureRepo() {
   fs.writeFileSync(path.join(repoDir, 'ui_web', 'view.mjs'), jsViewSrc, 'utf8');
   fs.writeFileSync(path.join(repoDir, 'tests', 'test_alpha.py'), pyTestSrc, 'utf8');
 
-  return { repoDir, alphaBefore, jsHelperBefore };
+  return { repoDir, configDir, alphaBefore, jsHelperBefore };
 }
 
 async function runTests() {
@@ -272,7 +280,8 @@ async function runTests() {
       beforeContents: { 'ui_bridge/js_api.py': jsApiBefore },
       afterContents: { 'ui_bridge/js_api.py': jsApiBreak },
       taskScope: ['ui_bridge/js_api.py'],
-      repoRoot: tmp.repoDir
+      repoRoot: tmp.repoDir,
+      configDir: tmp.configDir
     });
     assert.strictEqual(resHtmlBlocked.blocked, true, 'Changing JsApi method signature referenced in ui_web/index.html must block');
     assert.strictEqual(resHtmlBlocked.reason, 'signature_change_out_of_scope');
@@ -296,7 +305,8 @@ async function runTests() {
       beforeContents: { 'ui_bridge/js_api.py': jsApiBefore },
       afterContents: { 'ui_bridge/js_api.py': jsApiOrphanChange },
       taskScope: ['ui_bridge/js_api.py'],
-      repoRoot: tmp.repoDir
+      repoRoot: tmp.repoDir,
+      configDir: tmp.configDir
     });
     assert.strictEqual(
       resUnreferencedPasses.blocked,
@@ -311,7 +321,8 @@ async function runTests() {
       beforeContents: { 'ui_bridge/js_api.py': jsApiBefore },
       afterContents: { 'ui_bridge/js_api.py': jsApiBreak },
       taskScope: ['ui_bridge/js_api.py', 'ui_web/index.html', 'ui_web/bridge_caller.mjs'],
-      repoRoot: tmp.repoDir
+      repoRoot: tmp.repoDir,
+      configDir: tmp.configDir
     });
     assert.strictEqual(resUiInScope.blocked, false, 'When web callers are inside scope, signature change is allowed');
 
@@ -370,7 +381,8 @@ async function runTests() {
       beforeContents: { 'core/runner.py': shortBefore },
       afterContents: { 'core/runner.py': shortChanged },
       taskScope: ['core/runner.py'],
-      repoRoot: tmp.repoDir
+      repoRoot: tmp.repoDir,
+      configDir: tmp.configDir
     });
     assert.strictEqual(
       resShortNoFalsePositive.blocked,
@@ -394,7 +406,8 @@ async function runTests() {
       beforeContents: { 'core/runner.py': shortBefore },
       afterContents: { 'core/runner.py': shortChanged },
       taskScope: ['core/runner.py'],
-      repoRoot: tmp.repoDir
+      repoRoot: tmp.repoDir,
+      configDir: tmp.configDir
     });
     assert.strictEqual(resShortRealCallers.blocked, true, 'Real short-name callers (open(...) / .run) must block');
     assert.ok(resShortRealCallers.blocked_dependents.includes('ui_web/bridge.js'));

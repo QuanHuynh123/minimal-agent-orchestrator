@@ -10,7 +10,8 @@ import * as gitGuard from './git-guard.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEAM_DIR = path.resolve(__dirname, '..');
-const REPO_ROOT = path.resolve(TEAM_DIR, '..');
+const IS_STANDALONE = fs.existsSync(path.join(TEAM_DIR, '.git'));
+const REPO_ROOT = IS_STANDALONE ? TEAM_DIR : path.resolve(TEAM_DIR, '..');
 
 function runGitCheckIgnore(cwd, relPath) {
   try {
@@ -31,7 +32,11 @@ async function runTests() {
     execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: tmpRepo, stdio: 'pipe' });
 
     // Copy real .gitignore files from REPO_ROOT to test exact project ignore rules
-    fs.copyFileSync(path.join(REPO_ROOT, '.gitignore'), path.join(tmpRepo, '.gitignore'));
+    if (IS_STANDALONE) {
+      fs.writeFileSync(path.join(tmpRepo, '.gitignore'), 'node_modules/\n', 'utf8');
+    } else {
+      fs.copyFileSync(path.join(REPO_ROOT, '.gitignore'), path.join(tmpRepo, '.gitignore'));
+    }
     fs.mkdirSync(path.join(tmpRepo, 'agent-team', 'state', 'sessions'), { recursive: true });
     fs.copyFileSync(path.join(TEAM_DIR, '.gitignore'), path.join(tmpRepo, 'agent-team', '.gitignore'));
 

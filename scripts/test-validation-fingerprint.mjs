@@ -125,12 +125,13 @@ async function runTests() {
     // 5. Expanded fingerprint: ONNX model existence/sha256, onnxruntime+providers, pip_freeze_hash & baseline mismatch
     const modelsDir = path.join(tmpRoot, 'onnx-models');
     fs.mkdirSync(modelsDir, { recursive: true });
-    const dummyOnnxContent = Buffer.from('fake-lama-onnx-weights-v1');
+    const dummyOnnxContent = Buffer.from('fake-model-a-onnx-weights-v1');
     const expectedOnnxSha = crypto.createHash('sha256').update(dummyOnnxContent).digest('hex');
-    fs.writeFileSync(path.join(modelsDir, 'lama_fp32.onnx'), dummyOnnxContent);
+    fs.writeFileSync(path.join(modelsDir, 'model_a.onnx'), dummyOnnxContent);
 
     const fpBaseline = await collectEnvironmentFingerprint(cfgWithVenv, {
       modelsDir,
+      onnxModelNames: ['model_a.onnx', 'model_b.onnx'],
       detectAdmin: () => false,
       checkLoopback: async () => true,
       detectPythonPath: () => 'C:\\Py\\python.exe',
@@ -148,10 +149,10 @@ async function runTests() {
     });
 
     assert.ok(Array.isArray(fpBaseline.onnx_models), 'env_fingerprint must contain onnx_models array');
-    const lamaEntry = fpBaseline.onnx_models.find(m => m.name === 'lama_fp32.onnx');
-    const ocrEntry = fpBaseline.onnx_models.find(m => m.name === 'ch_PP-OCRv4_det.onnx');
-    assert.ok(lamaEntry && lamaEntry.exists === true && lamaEntry.sha256 === expectedOnnxSha, 'Existing ONNX model must record exists=true and exact sha256');
-    assert.ok(ocrEntry && ocrEntry.exists === false && ocrEntry.sha256 === null, 'Missing ONNX model must record exists=false and sha256=null');
+    const modelAEntry = fpBaseline.onnx_models.find(m => m.name === 'model_a.onnx');
+    const modelBEntry = fpBaseline.onnx_models.find(m => m.name === 'model_b.onnx');
+    assert.ok(modelAEntry && modelAEntry.exists === true && modelAEntry.sha256 === expectedOnnxSha, 'Existing ONNX model must record exists=true and exact sha256');
+    assert.ok(modelBEntry && modelBEntry.exists === false && modelBEntry.sha256 === null, 'Missing ONNX model must record exists=false and sha256=null');
     assert.deepStrictEqual(fpBaseline.onnxruntime, {
       installed: true,
       import_ok: true,
@@ -173,9 +174,10 @@ async function runTests() {
     assert.strictEqual(builtMatched.environment_mismatch, false, 'Identical baseline vs run fingerprint must set environment_mismatch=false');
 
     // Modified ONNX model + pip_freeze_hash + onnxruntime provider -> mismatch detected!
-    fs.writeFileSync(path.join(modelsDir, 'lama_fp32.onnx'), Buffer.from('mutated-onnx-weights-v2'));
+    fs.writeFileSync(path.join(modelsDir, 'model_a.onnx'), Buffer.from('mutated-onnx-weights-v2'));
     const fpDrifted = await collectEnvironmentFingerprint(cfgWithVenv, {
       modelsDir,
+      onnxModelNames: ['model_a.onnx', 'model_b.onnx'],
       detectAdmin: () => false,
       checkLoopback: async () => true,
       detectPythonPath: () => 'C:\\Py\\python.exe',
@@ -195,7 +197,7 @@ async function runTests() {
     assert.strictEqual(driftCmp.matched, false);
     assert.ok(driftCmp.mismatch_fields.includes('pip_freeze_hash'), `Expected pip_freeze_hash mismatch, got: ${driftCmp.mismatch_fields}`);
     assert.ok(driftCmp.mismatch_fields.includes('onnxruntime.providers'), `Expected onnxruntime.providers mismatch, got: ${driftCmp.mismatch_fields}`);
-    assert.ok(driftCmp.mismatch_fields.some(f => f.includes('lama_fp32.onnx')), `Expected lama_fp32.onnx mismatch, got: ${driftCmp.mismatch_fields}`);
+    assert.ok(driftCmp.mismatch_fields.some(f => f.includes('model_a.onnx')), `Expected model_a.onnx mismatch, got: ${driftCmp.mismatch_fields}`);
 
     // 5b. Verify ONNX model hash cache hits on identical (path, size, mtime) and misses on mtime/size change
     const cacheModelsDir = path.join(tmpRoot, 'onnx-cache-models');

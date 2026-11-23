@@ -1115,7 +1115,7 @@ const PROBE_EXTENSIONS = ['.mjs', '.js', '.ts', '.tsx', '.jsx', '.cjs', '.py'];
 const INDEX_FILES = ['/index.mjs', '/index.js', '/index.ts', '/index.tsx', '/index.jsx', '/__init__.py'];
 
 /**
- * Resolves an import specifier (`./lib/risk-policy.mjs`, `../runtime`, `core.eraser`, `.utils`)
+ * Resolves an import specifier (`./lib/risk-policy.mjs`, `../runtime`, `app.service`, `.utils`)
  * from `sourceFile` against the known repository `fileKeys` (Set or Array of POSIX relative paths).
  *
  * @param {string} sourceFile - Importer's relative path (e.g. `agent-team/scripts/orchestrator.mjs`)
@@ -1185,7 +1185,7 @@ export function resolveImportTarget(sourceFile, rawModule, fileKeys) {
     }
   }
 
-  // Case 3: Python Dotted Module or Workspace-Relative Import (`core.eraser`, `src/utils/math`)
+  // Case 3: Python Dotted Module or Workspace-Relative Import (`app.service`, `src/utils/math`)
   const slashSpec = spec.includes('/') ? spec : spec.replace(/\./g, '/');
   const direct = matchCandidate(slashSpec);
   if (direct) return direct;
