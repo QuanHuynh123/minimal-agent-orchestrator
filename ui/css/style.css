@@ -773,6 +773,37 @@ main.bento-container.sidebar-collapsed .left-col {
   color: #f87171;
   border: 1px solid rgba(239, 68, 68, 0.35);
 }
+.queue-item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.btn-queue-retry {
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.15);
+  color: #7dd3fc;
+  cursor: pointer;
+  line-height: 1.3;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.btn-queue-retry:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.28);
+  border-color: rgba(56, 189, 248, 0.75);
+}
+.btn-queue-retry:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.btn-banner-retry {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+}
 
 /* ==============================================================================
    4. RIGHT COLUMN: Central Stage Card & Live Console
@@ -1031,6 +1062,57 @@ main.bento-container.sidebar-collapsed .left-col {
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 1.2;
+}
+
+/* Stacked Models for Multi-Writer Squad */
+.spoke-node.stacked-models {
+  border-radius: 12px;
+  padding: 6px 12px 6px 8px;
+  align-items: flex-start;
+}
+.spoke-node.stacked-models .node-icon {
+  margin-top: 2px;
+}
+.spoke-node.stacked-models .node-status-dot {
+  margin-top: 6px;
+}
+.spoke-models-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 3px;
+}
+.spoke-model-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: #edeae3;
+  white-space: nowrap;
+}
+.spoke-model-bullet {
+  font-size: 7.5px;
+  color: #c45519;
+  line-height: 1;
+}
+.spoke-model-row.sub-writer .spoke-model-bullet {
+  color: #64748b;
+}
+.spoke-model-name {
+  max-width: 155px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-writer-row {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Unified Smoky Dark Icon Badges */
@@ -2938,6 +3020,474 @@ main.bento-container.sidebar-collapsed .left-col {
   padding: 4px 14px;
   border-radius: 3px;
   cursor: pointer;
+}
+
+/* ==============================================================================
+   10. ROLE GUIDE & TECHNICAL SPECIFICATION (2-Column Clean Engineering Layout)
+   ============================================================================== */
+.cov-pill-clickable {
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.cov-pill-clickable:hover {
+  border-color: var(--color-accent);
+  background: rgba(196, 85, 25, 0.12);
+  color: var(--text-primary);
+}
+.btn-role-guide-shortcut {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 2px 9px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: 4px;
+}
+.btn-role-guide-shortcut:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
+/* Subtle Technical Accent Variables per Role */
+.dossier-stage-grid {
+  --role-accent: #c45519;
+  --role-accent-rgb: 196, 85, 25;
+  --role-accent-soft: rgba(196, 85, 25, 0.1);
+}
+.dossier-stage-grid[data-active-role="router"] {
+  --role-accent: #c45519;
+  --role-accent-rgb: 196, 85, 25;
+  --role-accent-soft: rgba(196, 85, 25, 0.1);
+}
+.dossier-stage-grid[data-active-role="designer"] {
+  --role-accent: #d97706;
+  --role-accent-rgb: 217, 119, 6;
+  --role-accent-soft: rgba(217, 119, 6, 0.1);
+}
+.dossier-stage-grid[data-active-role="writer"] {
+  --role-accent: #38bdf8;
+  --role-accent-rgb: 56, 189, 248;
+  --role-accent-soft: rgba(56, 189, 248, 0.1);
+}
+.dossier-stage-grid[data-active-role="reviewer"] {
+  --role-accent: #818cf8;
+  --role-accent-rgb: 129, 140, 248;
+  --role-accent-soft: rgba(129, 140, 248, 0.1);
+}
+.dossier-stage-grid[data-active-role="validator"] {
+  --role-accent: #34d399;
+  --role-accent-rgb: 52, 211, 153;
+  --role-accent-soft: rgba(52, 211, 153, 0.1);
+}
+
+/* Top Role Selector Bar (Single-Row, Non-Wrapping) */
+.dossier-selector-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 18px;
+  background: #08080a;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.dossier-selector-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.dossier-bar-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.dossier-role-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+.dossier-role-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  font-family: var(--font-sans);
+}
+.dossier-role-tab:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+.dossier-role-tab.active {
+  background: rgba(196, 85, 25, 0.14);
+  border-color: var(--color-accent);
+  color: var(--text-primary);
+}
+.dossier-tab-idx {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+.dossier-role-tab.active .dossier-tab-idx {
+  background: var(--color-accent);
+  color: #ffffff;
+}
+.dossier-tab-name {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.btn-dossier-assign {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.btn-dossier-assign:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
+/* 2-Column Stage Grid: Left (Portrait & Model Config) | Right (Description & Specs) */
+.dossier-stage-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 276px 1fr;
+  gap: 18px;
+  padding: 16px 18px;
+  overflow-y: auto;
+  background: #070709;
+}
+
+.dossier-col-left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.dossier-col-right {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Left Column: Clean Fixed Portrait Frame */
+.dossier-portrait-stage {
+  position: relative;
+  background: #0d0d11;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dossier-portrait-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: #111116;
+}
+.dossier-phase-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--role-accent);
+  background: var(--role-accent-soft);
+  border: 1px solid rgba(var(--role-accent-rgb), 0.3);
+  padding: 1px 7px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.dossier-active-model-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  padding: 2px 7px;
+  border-radius: 3px;
+  max-width: 175px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dossier-artwork-container {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #09090c;
+  overflow: hidden;
+}
+.dossier-portrait-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Left Column Bottom: Model Recommendation Card */
+.dossier-rec-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 11px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.dossier-rec-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.dossier-rec-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+.dossier-tier-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+.dossier-rec-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.dossier-rec-lbl {
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+.dossier-rec-code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.07);
+  border: 1px solid rgba(74, 222, 128, 0.22);
+  padding: 3px 7px;
+  border-radius: 3px;
+  word-break: break-all;
+}
+.dossier-rec-code.secondary {
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border-color: var(--border);
+}
+.dossier-rec-reason {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 6px;
+}
+
+/* Right Column: Role Header, Metadata Strip & Specifications */
+.dossier-identity-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.dossier-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dossier-hero-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+.dossier-spec-path {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+.dossier-hero-subtitle {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+/* 2 Operational Metadata Cards */
+.dossier-kpi-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.dossier-kpi-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 9px 12px;
+}
+.dossier-kpi-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.dossier-kpi-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.dossier-kpi-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* Role Overview Box */
+.dossier-plain-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--role-accent);
+  border-radius: 5px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dossier-plain-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.dossier-plain-text {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+/* 2x2 Grid of Technical Specification Cards */
+.dossier-op-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.dossier-op-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.dossier-op-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dossier-op-title {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.dossier-op-tag {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  padding: 1px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.dossier-op-desc {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.48;
+}
+
+/* Operational & Quota Note Card */
+.dossier-protip-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dossier-protip-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+.dossier-protip-text {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.48;
+}
+
+@media (max-width: 860px) {
+  .dossier-stage-grid,
+  .dossier-op-list,
+  .dossier-kpi-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Reduced Motion Support */

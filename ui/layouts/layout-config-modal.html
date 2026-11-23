@@ -15,6 +15,10 @@
         <span>Đội ngũ AI (team.yaml)</span>
         <span id="squad-tab-count-badge" class="cfg-tab-counter">0</span>
       </button>
+      <button class="cfg-nav-tab" data-tab="roles" id="cfg-tab-btn-roles">
+        <span>Hồ sơ Vai trò (Role Guide)</span>
+        <span class="cfg-tab-counter">5</span>
+      </button>
       <button class="cfg-nav-tab" data-tab="project">
         <span>Chính sách &amp; Kiểm thử (policy.yaml)</span>
       </button>
@@ -55,10 +59,13 @@
             </div>
             <!-- Role Coverage Summary Mini -->
             <div class="role-coverage-pills" id="role-coverage-pills">
-              <span class="cov-mini-pill" id="cov-pill-router">Router: <strong>Khuyết</strong></span>
-              <span class="cov-mini-pill" id="cov-pill-writer">Writer: <strong>Khuyết</strong></span>
-              <span class="cov-mini-pill" id="cov-pill-designer">Designer: <strong>Khuyết</strong></span>
-              <span class="cov-mini-pill" id="cov-pill-reviewer">Reviewer: <strong>Khuyết</strong></span>
+              <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-router" data-role-jump="router" title="Bấm để xem Hồ sơ &amp; Model khuyên dùng cho Router">Router: <strong>Khuyết</strong></span>
+              <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-writer" data-role-jump="writer" title="Bấm để xem Hồ sơ &amp; Model khuyên dùng cho Writer">Writer: <strong>Khuyết</strong></span>
+              <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-designer" data-role-jump="designer" title="Bấm để xem Hồ sơ &amp; Model khuyên dùng cho Designer">Designer: <strong>Khuyết</strong></span>
+              <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-reviewer" data-role-jump="reviewer" title="Bấm để xem Hồ sơ &amp; Model khuyên dùng cho Reviewer">Reviewer: <strong>Khuyết</strong></span>
+              <button type="button" id="btn-open-role-guide" class="btn-role-guide-shortcut" title="Xem tài liệu đặc tả nhiệm vụ &amp; khuyến nghị Model cho từng vai trò">
+                <span>Hồ sơ Vai trò</span>
+              </button>
             </div>
           </div>
 
@@ -91,6 +98,125 @@
           <!-- Horizontal Scroll Container -->
           <div class="model-pool-horizontal-track" id="model-pool-grid">
             <!-- Render dynamically by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- PANEL 1.5: ROLE GUIDE (HỒ SƠ VAI TRÒ & ĐẶC TẢ VẬN HÀNH) -->
+      <div id="cfg-panel-roles" class="cfg-panel-content" style="display: none;">
+        <!-- Top Role Selector Bar -->
+        <div class="dossier-selector-bar">
+          <div class="dossier-selector-left">
+            <span class="dossier-bar-label">VAI TRÒ:</span>
+            <div class="dossier-role-tabs" id="dossier-role-tabs">
+              <button type="button" class="dossier-role-tab active" data-role="router">
+                <span class="dossier-tab-idx">01</span>
+                <span class="dossier-tab-name">Router</span>
+              </button>
+              <button type="button" class="dossier-role-tab" data-role="designer">
+                <span class="dossier-tab-idx">02</span>
+                <span class="dossier-tab-name">Designer</span>
+              </button>
+              <button type="button" class="dossier-role-tab" data-role="writer">
+                <span class="dossier-tab-idx">03</span>
+                <span class="dossier-tab-name">Writer</span>
+              </button>
+              <button type="button" class="dossier-role-tab" data-role="reviewer">
+                <span class="dossier-tab-idx">04</span>
+                <span class="dossier-tab-name">Reviewer</span>
+              </button>
+              <button type="button" class="dossier-role-tab" data-role="validator">
+                <span class="dossier-tab-idx">05</span>
+                <span class="dossier-tab-name">Gatekeeper</span>
+              </button>
+            </div>
+          </div>
+          <button type="button" id="btn-dossier-assign-shortcut" class="btn-dossier-assign">
+            <span>⇄ Chuyển sang Gán Model</span>
+          </button>
+        </div>
+
+        <!-- 2-Column Clean Technical Layout: Left (Portrait & Model Config) | Right (Role Description & Specs) -->
+        <div class="dossier-stage-grid" id="dossier-stage-grid" data-active-role="router">
+          <!-- COLUMN 1 (LEFT): PORTRAIT / VISUAL & MODEL RECOMMENDATION -->
+          <div class="dossier-col-left">
+            <div class="dossier-portrait-stage" id="dossier-portrait-stage">
+              <div class="dossier-portrait-top-bar">
+                <span id="dossier-phase-badge" class="dossier-phase-badge">PHA 01</span>
+                <span id="dossier-active-model-pill" class="dossier-active-model-pill">Đang gán: --</span>
+              </div>
+
+              <div class="dossier-artwork-container">
+                <img id="dossier-portrait-img" class="dossier-portrait-img" src="/assets/roles/router.png" alt="Role Portrait" />
+              </div>
+            </div>
+
+            <!-- Model Recommendation Card -->
+            <div class="dossier-rec-card">
+              <div class="dossier-rec-header">
+                <span class="dossier-rec-tag">KHUYẾN NGHỊ MODEL</span>
+                <span id="dossier-rec-tier-badge" class="dossier-tier-pill">Fast Tier</span>
+              </div>
+              <div class="dossier-rec-row">
+                <span class="dossier-rec-lbl">Khuyên dùng:</span>
+                <code id="dossier-rec-primary" class="dossier-rec-code">Năng lực: Suy luận nhanh, độ trễ thấp, xuất JSON hợp lệ trong 1 lượt</code>
+              </div>
+              <div class="dossier-rec-row">
+                <span class="dossier-rec-lbl">Dự phòng:</span>
+                <code id="dossier-rec-secondary" class="dossier-rec-code secondary">Năng lực dự phòng: Ngữ cảnh rộng hơn để leo thang khi JSON lỗi</code>
+              </div>
+              <p id="dossier-rec-reason" class="dossier-rec-reason">
+                Sử dụng ngữ cảnh từ bộ trinh sát từ khóa 0-token và Repo Map, đạt độ chính xác phân rã 100% trong 1 lượt gọi mà vẫn bảo toàn quota model mạnh.
+              </p>
+            </div>
+          </div>
+
+          <!-- COLUMN 2 (RIGHT): ROLE DESCRIPTION, OPERATIONAL SPECS & WORKFLOW BREAKDOWN -->
+          <div class="dossier-col-right">
+            <div class="dossier-identity-header">
+              <div class="dossier-title-row">
+                <h2 id="dossier-role-title" class="dossier-hero-title">ROUTER</h2>
+                <code id="dossier-spec-file" class="dossier-spec-path">roles/router.md</code>
+              </div>
+              <p id="dossier-role-subtitle" class="dossier-hero-subtitle">Phân tích yêu cầu &amp; Phân rã tác vụ (Goal Decomposition)</p>
+            </div>
+
+            <!-- Operational Metadata Strip -->
+            <div class="dossier-kpi-row">
+              <div class="dossier-kpi-card">
+                <span id="dossier-kpi-1-label" class="dossier-kpi-label">CƠ CHẾ VẬN HÀNH</span>
+                <strong id="dossier-kpi-1-val" class="dossier-kpi-val">1 lượt mặc định</strong>
+                <span id="dossier-kpi-1-sub" class="dossier-kpi-sub">Tự động mở tối đa 5 lượt nếu thiếu từ khóa</span>
+              </div>
+              <div class="dossier-kpi-card">
+                <span id="dossier-kpi-2-label" class="dossier-kpi-label">ĐỊNH MỨC TIÊU THỤ</span>
+                <strong id="dossier-kpi-2-val" class="dossier-kpi-val">~5.7K tokens / yêu cầu</strong>
+                <span id="dossier-kpi-2-sub" class="dossier-kpi-sub">Tiết kiệm ~80% so với quy trình 5 lượt</span>
+              </div>
+            </div>
+
+            <!-- Role Overview Summary -->
+            <div class="dossier-plain-box">
+              <div class="dossier-plain-label">TỔNG QUAN VAI TRÒ</div>
+              <p id="dossier-plain-summary" class="dossier-plain-text">
+                Tiếp nhận yêu cầu từ người dùng, đối chiếu với cấu trúc thư mục và Repo Map để tách thành 1–3 tác vụ độc lập (&lt;150 dòng thay đổi), đồng thời khóa chặt danh sách file được phép chỉnh sửa (scope).
+              </p>
+            </div>
+
+            <!-- 4 Specification Cards (2x2 Grid) -->
+            <div id="dossier-op-list" class="dossier-op-list">
+              <!-- Populated dynamically via safe DOM nodes in app.js -->
+            </div>
+
+            <!-- Operational & Quota Note -->
+            <div class="dossier-protip-card">
+              <div class="dossier-protip-header">
+                <span class="dossier-protip-badge">GHI CHÚ VẬN HÀNH &amp; QUOTA</span>
+              </div>
+              <p id="dossier-protip-text" class="dossier-protip-text">
+                Nên gán model nhanh làm Router mặc định trong team.yaml và giữ escalation_model dự phòng khi JSON trả về không hợp lệ, giúp bảo toàn quota cho Reviewer và Designer.
+              </p>
+            </div>
           </div>
         </div>
       </div>

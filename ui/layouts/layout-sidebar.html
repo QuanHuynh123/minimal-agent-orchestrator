@@ -70,6 +70,7 @@
         <span class="status-badge badge-idle" id="squad-status-validator">IDLE</span>
       </div>
     </div>
+    <div id="squad-circuit-breaker-status" class="squad-cb-banner" style="margin-top:8px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.03);font-size:11px;color:var(--text-secondary);">Circuit Breaker: OK (TTL 10m)</div>
   </div>
 
   <!-- Scoped Files Card -->
@@ -105,6 +106,24 @@
     <div class="queue-sub-header">Recent Tasks</div>
     <div class="queue-list-container" id="queue-items-list">
       <!-- Populated securely via DOM nodes -->
+    </div>
+    <div id="manual-review-section" style="display: none; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);">
+      <div class="queue-sub-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Chờ duyệt tay (review_unavailable)</span>
+        <span class="tag tag-attempt" id="cnt-manual-review">0</span>
+      </div>
+      <div class="queue-list-container" id="manual-review-list">
+        <!-- Populated securely via DOM nodes (.textContent) -->
+      </div>
+    </div>
+    <div id="unseen-exact-section" style="display: none; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);">
+      <div class="queue-sub-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Unseen Exact Matches</span>
+        <span class="tag tag-attempt" id="cnt-unseen-exact">0</span>
+      </div>
+      <div class="queue-list-container" id="unseen-exact-list">
+        <!-- Populated securely via DOM nodes (.textContent) -->
+      </div>
     </div>
   </div>
 

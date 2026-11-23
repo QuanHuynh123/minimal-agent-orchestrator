@@ -68,6 +68,12 @@
     const cntDone = document.getElementById('cnt-done');
     const cntBlocked = document.getElementById('cnt-blocked');
     const queueItemsList = document.getElementById('queue-items-list');
+    const manualReviewSection = document.getElementById('manual-review-section');
+    const cntManualReview = document.getElementById('cnt-manual-review');
+    const manualReviewList = document.getElementById('manual-review-list');
+    const unseenExactSection = document.getElementById('unseen-exact-section');
+    const cntUnseenExact = document.getElementById('cnt-unseen-exact');
+    const unseenExactList = document.getElementById('unseen-exact-list');
 
     // Error Callout Elements
     const lastErrorBanner = document.getElementById('last-error-banner');
@@ -97,6 +103,7 @@
     // Tab 0 Cockpit Elements
     const inpGoalText = document.getElementById('inp-goal-text');
     const selWorkflowPreset = document.getElementById('sel-workflow-preset');
+    const selGoalWriterModel = document.getElementById('sel-goal-writer-model');
     const btnDecomposeGoal = document.getElementById('btn-decompose-goal');
     const txtDecomposeBtn = document.getElementById('txt-decompose-btn');
     const spinDecompose = document.getElementById('spin-decompose');
@@ -200,11 +207,329 @@
 
     // Config Modal Overlay Handlers & Tab Switching
     let activeConfigTab = 'team';
+    let activeDossierRole = 'router';
     const cfgNavTabs = document.querySelectorAll('.cfg-nav-tab');
     const cfgPanelTeam = document.getElementById('cfg-panel-team');
+    const cfgPanelRoles = document.getElementById('cfg-panel-roles');
     const cfgPanelProject = document.getElementById('cfg-panel-project');
     const txtBtnSaveConfig = document.getElementById('txt-btn-save-config');
+    const btnSaveTeamConfigEl = document.getElementById('btn-save-team-config');
     let currentPolicyConfig = null;
+
+    // Role Reference Manual Data (Grounded in roles/*.md & Architecture v3.1)
+    const ROLE_DOSSIER_CATALOG = {
+      router: {
+        phase: 'PHA 01',
+        specFile: 'roles/router.md',
+        title: 'ROUTER',
+        subtitle: 'Phân tích yêu cầu & Phân rã tác vụ (Goal Decomposition)',
+        kpi1: { label: 'CƠ CHẾ VẬN HÀNH', val: '1 lượt mặc định', sub: 'Tự động mở tối đa 5 lượt nếu thiếu từ khóa' },
+        kpi2: { label: 'ĐỊNH MỨC TIÊU THỤ', val: '~5.7K tokens / yêu cầu', sub: 'Tiết kiệm ~80% nhờ trinh sát 0-token' },
+        rec: {
+          tier: 'Fast Tier',
+          primary: 'Năng lực: Suy luận nhanh, độ trễ thấp, xuất JSON hợp lệ trong 1 lượt',
+          secondary: 'Năng lực dự phòng: Ngữ cảnh rộng hơn để leo thang khi JSON lỗi',
+          reason: 'Ngữ cảnh đầu vào đã được bộ trinh sát từ khóa 0-token và Repo Map chuẩn bị sẵn. Model suy luận nhanh giúp phân rã tác vụ trong 1 lượt và giữ model mạnh cho Reviewer/Designer.'
+        },
+        plainSummary: 'Tiếp nhận yêu cầu từ người dùng, đối chiếu với cấu trúc thư mục và Repo Map để tách thành 1–3 tác vụ độc lập (<150 dòng thay đổi), đồng thời khóa chặt danh sách file được phép chỉnh sửa (scope).',
+        operations: [
+          {
+            title: '01. NHIỆM VỤ CỐT LÕI',
+            tag: 'JSON Plan',
+            desc: 'Phân tích mục tiêu → Chia thành 1–3 task nguyên tử, xác định danh sách file (scope), phân loại chế độ chạy (quick / standard / consult) và đặt tiêu chí nghiệm thu.'
+          },
+          {
+            title: '02. CƠ CHẾ THỰC THI',
+            tag: 'Hybrid Loop',
+            desc: 'Mặc định lập kế hoạch trong 1 lượt dựa trên đoạn code ứng viên 0-token. Chỉ mở rộng sang vòng lặp gọi tool (tối đa 5 lượt) khi yêu cầu trừu tượng chưa khớp từ khóa.'
+          },
+          {
+            title: '03. DỮ LIỆU ĐẦU VÀO',
+            tag: 'Read-Only',
+            desc: 'Nhận cây thư mục, Repo Map, các cửa sổ code khớp từ khóa (~25 dòng) và tự động đính kèm các file kiểm thử liên quan vào verification_commands.'
+          },
+          {
+            title: '04. GIỚI HẠN AN TOÀN',
+            tag: 'Zero Write',
+            desc: 'Không trực tiếp chỉnh sửa mã nguồn; không suy đoán tên file ngoài thực tế dự án; không vượt quá số lượng file tối đa mỗi task (max_files_per_task).'
+          }
+        ],
+        proTip: 'Nên gán model nhanh làm Router mặc định trong team.yaml và cấu hình escalation_model dự phòng khi JSON không hợp lệ, giúp bảo toàn quota cho Reviewer và Designer.',
+        defaultImg: '/assets/roles/router.png'
+      },
+      designer: {
+        phase: 'PHA 02',
+        specFile: 'roles/designer.md',
+        title: 'DESIGNER',
+        subtitle: 'Thẩm định giao diện & Đặc tả UI/UX (Visual & Frontend Specifier)',
+        kpi1: { label: 'ĐIỀU KIỆN KÍCH HOẠT', val: 'Tác vụ UI / Có ảnh', sub: 'Tự động SKIP_SPEC nếu chỉ sửa logic nhỏ' },
+        kpi2: { label: 'YÊU CẦU MODEL', val: 'Vision + CSS/DOM', sub: 'Đọc ảnh tham chiếu & bảo toàn cấu trúc DOM' },
+        rec: {
+          tier: 'Vision Tier',
+          primary: 'Năng lực: Hỗ trợ Vision (đọc ảnh chụp), phân tích bố cục DOM/CSS',
+          secondary: 'Năng lực dự phòng: Thẩm định giao diện khi model chính gián đoạn',
+          reason: 'Cần model hỗ trợ Vision để đọc ảnh chụp màn hình hoặc bản vẽ mẫu khi thiết kế lại bố cục phức tạp.'
+        },
+        plainSummary: 'Phân tích ảnh chụp giao diện hoặc yêu cầu UI/UX, kiểm tra bố cục, bảng màu và độ tương phản, sau đó xuất bản đặc tả kỹ thuật (CSS tokens, cấu trúc DOM) để Writer thi công.',
+        operations: [
+          {
+            title: '01. NHIỆM VỤ CỐT LÕI',
+            tag: 'UI/UX Spec',
+            desc: 'Đánh giá bố cục, hệ thống biến màu, độ tương phản (WCAG >= 4.5:1) và lập bản đặc tả thiết kế chi tiết cho giai đoạn viết code.'
+          },
+          {
+            title: '02. CƠ CHẾ BỎ QUA THÔNG MINH',
+            tag: 'Smart Skip',
+            desc: 'Nếu tác vụ chỉ điều chỉnh sự kiện JS hoặc sửa nút đơn giản đã rõ trong tiêu chí nghiệm thu, hệ thống trả về SKIP_SPEC ngay ở lượt đầu để tiết kiệm token.'
+          },
+          {
+            title: '03. CÔNG CỤ SỬ DỤNG',
+            tag: 'Vision + Read',
+            desc: 'Đọc hình ảnh đính kèm (--image), tra cứu các file HTML/CSS hiện hữu qua read_file và search_code để đồng bộ với hệ thống biến CSS của dự án.'
+          },
+          {
+            title: '04. GIỚI HẠN AN TOÀN',
+            tag: 'No Patching',
+            desc: 'Chỉ xuất tài liệu đặc tả vào thư mục chạy tạm (state/runs/); không trực tiếp sửa file mã nguồn và không tự ý thay đổi các ID/class đang gắn với logic JavaScript.'
+          }
+        ],
+        proTip: 'Sử dụng model Vision (cấu hình tại roles.designer trong team.yaml) khi tác vụ có kèm ảnh mẫu (--image) hoặc cần tái cấu trúc giao diện lớn.',
+        defaultImg: '/assets/roles/designer.png'
+      },
+      writer: {
+        phase: 'PHA 03',
+        specFile: 'roles/writer.md',
+        title: 'WRITER',
+        subtitle: 'Thi công mã nguồn & Tạo bản vá (Code Implementation)',
+        kpi1: { label: 'PHẠM VI CÔNG CỤ', val: '2–5 lượt', sub: 'Spec: 2 lượt | Quick (đủ): 3 | Smart/Standard: 5 (trần chung 12)' },
+        kpi2: { label: 'ĐỊNH DẠNG ĐẦU RA', val: 'SEARCH / REPLACE', sub: 'Tuân thủ 100% thụt lề TAB (\\t) cho Python' },
+        rec: {
+          tier: 'Coder Tier',
+          primary: 'Năng lực: Sinh mã & xuất khối SEARCH/REPLACE dài ổn định, đúng cú pháp',
+          secondary: 'Năng lực dự phòng: Viết mã thay thế khi provider/preflight gặp lỗi',
+          reason: 'Writer thực hiện nhiều lượt đọc file và tạo bản vá nhất. Model đầu tiên trong danh sách đảm nhiệm mọi miền; các model sau chỉ dự phòng khi lỗi preflight/provider.'
+        },
+        plainSummary: 'Đọc các file trong phạm vi cho phép (scope), đối chiếu với đặc tả kỹ thuật và xuất ra các khối mã SEARCH / REPLACE hoàn chỉnh để bộ Applier áp dụng vào dự án.',
+        operations: [
+          {
+            title: '01. NHIỆM VỤ CỐT LÕI',
+            tag: 'Code Patch',
+            desc: 'Hiện thực hóa yêu cầu kỹ thuật và đặc tả UI/UX trên các file thuộc scope thông qua định dạng khối tìm kiếm và thay thế (SEARCH / REPLACE).'
+          },
+          {
+            title: '02. TỐI ƯU NGÂN SÁCH ĐẦU RA',
+            tag: 'Compact Output',
+            desc: 'Giữ phần suy luận ngắn gọn để dành tối đa dung lượng token đầu ra cho việc sinh mã nguồn đầy đủ, tránh hiện tượng cắt cụt khối code.'
+          },
+          {
+            title: '03. PHÂN TÁCH MIỀN TỰ ĐỘNG',
+            tag: 'Bucket Split',
+            desc: 'Khi tác vụ bao gồm cả Backend (Python) và Frontend (HTML/JS) hoặc file dung lượng lớn (>55KB), hệ thống tự động chia thành các bước tuần tự.'
+          },
+          {
+            title: '04. GIỚI HẠN AN TOÀN',
+            tag: 'Strict Scope',
+            desc: 'Cấm sửa file ngoài scope; cấm lược bỏ code bằng chú thích rút gọn; bắt buộc dùng 100% TAB (\\t) cho Python và render an toàn (.textContent) cho giao diện.'
+          }
+        ],
+        proTip: 'Mọi bản vá của Writer đều được kiểm tra tự động bởi Gatekeeper (Applier + Tree-sitter + Unit Tests), do đó nên đặt model viết code tối ưu chi phí ở models[0] và model dự phòng ở models[1..].',
+        defaultImg: '/assets/roles/writer.png'
+      },
+      reviewer: {
+        phase: 'PHA 05',
+        specFile: 'roles/reviewer.md',
+        title: 'REVIEWER',
+        subtitle: 'Thẩm định chất lượng mã nguồn & Kiến trúc (Code Review)',
+        kpi1: { label: 'THỜI ĐIỂM CHẠY', val: 'Sau khi vượt qua Test', sub: 'Chỉ gọi 1 lượt ở chế độ Standard / High' },
+        kpi2: { label: 'DUNG LƯỢNG NGỮ CẢNH', val: '~1.1K – 3K tokens', sub: 'Chỉ đọc bản git diff đã lọc gọn (-U8)' },
+        rec: {
+          tier: 'Review Tier',
+          primary: 'Năng lực: Lập luận sâu, soát lỗi logic, bảo mật & sai khác hợp đồng',
+          secondary: 'Yêu cầu độc lập với Writer để bảo toàn chốt chặn Anti-Self-Review',
+          reason: 'Chỉ kích hoạt đúng 1 lượt ở cuối quy trình sau khi bản vá đã vượt qua toàn bộ kiểm thử tự động, tiêu tốn rất ít token (~0.1%–0.2% quota mỗi lần gọi).'
+        },
+        plainSummary: 'Đóng vai trò kiểm soát chất lượng cuối cùng trước khi tạo Git commit: đối chiếu bản thay đổi (git diff) với tiêu chí nghiệm thu để phát hiện lỗi logic, xung đột luồng hoặc rò rỉ tài nguyên.',
+        operations: [
+          {
+            title: '01. ĐỐI CHIẾU YÊU CẦU',
+            tag: 'Correctness',
+            desc: 'Kiểm tra bản git diff thực tế so với từng mục trong acceptance_criteria nhằm đảm bảo vấn đề được giải quyết tận gốc.'
+          },
+          {
+            title: '02. KIỂM TRA AN TOÀN HỆ THỐNG',
+            tag: 'Safety',
+            desc: 'Rà soát các rủi ro kỹ thuật như nghẽn luồng giao diện (UI blocking), race condition, thiếu timeout mạng hoặc vi phạm bảo mật.'
+          },
+          {
+            title: '03. KIỂM SOÁT PHẠM VI & TEST',
+            tag: 'Scope & Test',
+            desc: 'Đảm bảo bản vá không làm ảnh hưởng tới các chức năng ngoài mục tiêu (scope_adherence) và không làm suy yếu độ phủ kiểm thử.'
+          },
+          {
+            title: '04. PHÁN QUYẾT & DỰ PHÒNG',
+            tag: 'Verdict',
+            desc: 'Trả về kết quả JSON phê duyệt hoặc yêu cầu sửa lại. Nếu dịch vụ Review gián đoạn mạng, hệ thống tự động lưu file .patch đã pass test để duyệt thủ công.'
+          }
+        ],
+        proTip: 'Các tác vụ nhỏ (chế độ quick) tự động bỏ qua bước Reviewer. Với tác vụ chuẩn (standard), prompt đã được nén gọn nên có thể dùng model chất lượng cao cấu hình tại roles.reviewer trong team.yaml.',
+        defaultImg: '/assets/roles/reviewer.png'
+      },
+      validator: {
+        phase: 'PHA 04',
+        specFile: 'scripts/applier.mjs & validator.mjs',
+        title: 'GATEKEEPER',
+        subtitle: 'Hệ thống kiểm định cơ khí cục bộ (Applier • Tree-sitter • Unittest)',
+        kpi1: { label: 'CHI PHÍ TOKEN AI', val: '0 Token', sub: 'Thực thi 100% cục bộ bằng Node.js & Python' },
+        kpi2: { label: 'CƠ CHẾ BẢO VỆ', val: 'Tự động Git Rollback', sub: 'Ngăn chặn bản vá lỗi trước khi gọi Reviewer' },
+        rec: {
+          tier: 'Local Deterministic',
+          primary: 'Node.js Applier + Tree-sitter AST + Python Unittest',
+          secondary: 'Cấu hình tại tab: Chính sách & Kiểm thử (policy.yaml)',
+          reason: 'Thay vì dùng LLM để kiểm tra cú pháp sau mỗi bước, hệ thống sử dụng bộ kiểm định tất định chạy trực tiếp trên máy cục bộ với chi phí 0 token.'
+        },
+        plainSummary: 'Tầng kiểm duyệt tự động chạy ngay sau khi Writer xuất bản vá: kiểm tra quyền truy cập file, đối chiếu chữ ký hàm bằng AST, xác thực thụt lề TAB và thực thi toàn bộ Unit Test liên quan.',
+        operations: [
+          {
+            title: '01. KIỂM SOÁT PHẠM VI (APPLIER)',
+            tag: 'applier.mjs',
+            desc: 'Chặn mọi khối SEARCH/REPLACE tác động lên file nằm ngoài scope hoặc thuộc danh sách tệp bảo vệ (protected_files).'
+          },
+          {
+            title: '02. KIỂM TRA CHỮ KÝ HÀM (AST GATE)',
+            tag: 'Tree-sitter',
+            desc: 'Phân tích cú pháp trước và sau khi vá; tự động chặn nếu Writer thay đổi chữ ký hàm đang được gọi bởi các file ngoài scope.'
+          },
+          {
+            title: '03. BẢO VỆ TÍNH TOÀN VẸN TEST',
+            tag: 'Anti-Tamper',
+            desc: 'Ngăn chặn hành vi xóa hàm kiểm thử (def test_*), gắn cờ bỏ qua (@unittest.skip) hoặc làm sai lệch điều kiện assert.'
+          },
+          {
+            title: '04. CHẠY TEST & KHÔI PHỤC TỰ ĐỘNG',
+            tag: 'git-guard.mjs',
+            desc: 'Thực thi kiểm tra nhanh (Fast Check) và bộ Unit Test. Nếu thất bại sau số lần thử lại cho phép, tự động rollback mã nguồn về trạng thái sạch.'
+          }
+        ],
+        proTip: 'Có thể tùy chỉnh câu lệnh Fast Check, Suite Check, thời gian chờ (timeout) và danh sách tệp bảo vệ tại tab "Chính sách & Kiểm thử (policy.yaml)".',
+        defaultImg: '/assets/roles/gatekeeper.png'
+      }
+    };
+
+    // Clean up any legacy localStorage portrait keys so roles always load fixed static files
+    try {
+      ['router', 'designer', 'writer', 'reviewer', 'validator'].forEach(r => {
+        localStorage.removeItem(`cockpit_role_portrait_${r}`);
+      });
+    } catch {}
+
+    function getAssignedModelForRole(roleKey) {
+      if (roleKey === 'validator') {
+        return 'Local 0-Token Engine';
+      }
+      const matches = squadMembers.filter(m => m.role === roleKey);
+      if (matches.length > 0) {
+        const first = matches[0].name || matches[0].model.split('/').pop();
+        return matches.length === 1 ? first : `${first} (+${matches.length - 1})`;
+      }
+      const cfgRole = currentSquadRolesConfig?.[roleKey];
+      if (cfgRole && cfgRole.enabled !== false && (cfgRole.model || cfgRole.default_model)) {
+        const raw = cfgRole.display_name || cfgRole.model || cfgRole.default_model;
+        return String(raw).split('/').pop();
+      }
+      return 'Chưa gán';
+    }
+
+    function updateDossierPortraitImage(roleKey, roleInfo) {
+      const imgEl = document.getElementById('dossier-portrait-img');
+      if (!imgEl) return;
+      imgEl.src = roleInfo.defaultImg;
+    }
+
+    function renderRoleDossier(roleKey = 'router') {
+      const roleInfo = ROLE_DOSSIER_CATALOG[roleKey] || ROLE_DOSSIER_CATALOG.router;
+      activeDossierRole = roleKey;
+
+      const stageGrid = document.getElementById('dossier-stage-grid');
+      if (stageGrid) {
+        stageGrid.setAttribute('data-active-role', roleKey);
+      }
+
+      // Highlight active selector tab
+      document.querySelectorAll('.dossier-role-tab').forEach(btn => {
+        if (btn.dataset.role === roleKey) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+
+      // Text fields (Strict .textContent for Anti-XSS)
+      const setTxt = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+      };
+      setTxt('dossier-phase-badge', roleInfo.phase);
+      setTxt('dossier-spec-file', roleInfo.specFile);
+      setTxt('dossier-role-title', roleInfo.title);
+      setTxt('dossier-role-subtitle', roleInfo.subtitle);
+
+      setTxt('dossier-kpi-1-label', roleInfo.kpi1.label);
+      setTxt('dossier-kpi-1-val', roleInfo.kpi1.val);
+      setTxt('dossier-kpi-1-sub', roleInfo.kpi1.sub);
+
+      setTxt('dossier-kpi-2-label', roleInfo.kpi2.label);
+      setTxt('dossier-kpi-2-val', roleInfo.kpi2.val);
+      setTxt('dossier-kpi-2-sub', roleInfo.kpi2.sub);
+
+      // Recommended Model Card (read dynamically from live team.yaml when configured)
+      const cfgRole = currentSquadRolesConfig?.[roleKey];
+      const cfgPrimary = cfgRole && cfgRole.enabled !== false
+        ? (extractModelId(Array.isArray(cfgRole.models) ? cfgRole.models[0] : null) || cfgRole.default_model || cfgRole.model || '')
+        : '';
+      const cfgSecondary = cfgRole && cfgRole.enabled !== false
+        ? (extractModelId(Array.isArray(cfgRole.models) ? cfgRole.models[1] : null) || cfgRole.escalation_model || cfgRole.fallback_model || '')
+        : '';
+      setTxt('dossier-rec-tier-badge', roleInfo.rec.tier);
+      setTxt('dossier-rec-primary', cfgPrimary || roleInfo.rec.primary);
+      setTxt('dossier-rec-secondary', cfgSecondary || roleInfo.rec.secondary);
+      setTxt('dossier-rec-reason', roleInfo.rec.reason);
+
+      // Portrait & Assigned Model
+      setTxt('dossier-active-model-pill', `Đang gán: ${getAssignedModelForRole(roleKey)}`);
+      updateDossierPortraitImage(roleKey, roleInfo);
+
+      // Right Column: Overview, 4 Specification Cards & Quota Note
+      setTxt('dossier-plain-summary', roleInfo.plainSummary);
+      setTxt('dossier-protip-text', roleInfo.proTip);
+
+      const opListEl = document.getElementById('dossier-op-list');
+      if (opListEl) {
+        opListEl.textContent = '';
+        roleInfo.operations.forEach(op => {
+          const card = document.createElement('div');
+          card.className = 'dossier-op-card';
+
+          const top = document.createElement('div');
+          top.className = 'dossier-op-top';
+          const titleSpan = document.createElement('span');
+          titleSpan.className = 'dossier-op-title';
+          titleSpan.textContent = op.title;
+          const tagSpan = document.createElement('span');
+          tagSpan.className = 'dossier-op-tag';
+          tagSpan.textContent = op.tag;
+          top.appendChild(titleSpan);
+          top.appendChild(tagSpan);
+
+          const descP = document.createElement('p');
+          descP.className = 'dossier-op-desc';
+          descP.textContent = op.desc;
+
+          card.appendChild(top);
+          card.appendChild(descP);
+          opListEl.appendChild(card);
+        });
+      }
+    }
 
     function switchConfigTab(tabName) {
       activeConfigTab = tabName;
@@ -217,11 +542,21 @@
       });
       if (tabName === 'team') {
         if (cfgPanelTeam) cfgPanelTeam.style.display = 'flex';
+        if (cfgPanelRoles) cfgPanelRoles.style.display = 'none';
         if (cfgPanelProject) cfgPanelProject.style.display = 'none';
+        if (btnSaveTeamConfigEl) btnSaveTeamConfigEl.style.display = 'inline-flex';
         if (txtBtnSaveConfig) txtBtnSaveConfig.textContent = 'Lưu cấu hình (team.yaml)';
+      } else if (tabName === 'roles') {
+        if (cfgPanelTeam) cfgPanelTeam.style.display = 'none';
+        if (cfgPanelRoles) cfgPanelRoles.style.display = 'flex';
+        if (cfgPanelProject) cfgPanelProject.style.display = 'none';
+        if (btnSaveTeamConfigEl) btnSaveTeamConfigEl.style.display = 'none';
+        renderRoleDossier(activeDossierRole);
       } else {
         if (cfgPanelTeam) cfgPanelTeam.style.display = 'none';
+        if (cfgPanelRoles) cfgPanelRoles.style.display = 'none';
         if (cfgPanelProject) cfgPanelProject.style.display = 'flex';
+        if (btnSaveTeamConfigEl) btnSaveTeamConfigEl.style.display = 'inline-flex';
         if (txtBtnSaveConfig) txtBtnSaveConfig.textContent = 'Lưu chính sách (policy.yaml)';
         loadPolicyData();
       }
@@ -230,6 +565,35 @@
     cfgNavTabs.forEach(tab => {
       tab.addEventListener('click', () => switchConfigTab(tab.dataset.tab));
     });
+
+    // Role Dossier Tab Event Listeners
+    document.querySelectorAll('.dossier-role-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        renderRoleDossier(btn.dataset.role || 'router');
+      });
+    });
+
+    document.querySelectorAll('[data-role-jump]').forEach(pill => {
+      pill.addEventListener('click', () => {
+        const targetRole = pill.getAttribute('data-role-jump') || 'router';
+        activeDossierRole = targetRole;
+        switchConfigTab('roles');
+      });
+    });
+
+    const btnOpenRoleGuide = document.getElementById('btn-open-role-guide');
+    if (btnOpenRoleGuide) {
+      btnOpenRoleGuide.addEventListener('click', () => {
+        switchConfigTab('roles');
+      });
+    }
+
+    const btnDossierAssignShortcut = document.getElementById('btn-dossier-assign-shortcut');
+    if (btnDossierAssignShortcut) {
+      btnDossierAssignShortcut.addEventListener('click', () => {
+        switchConfigTab('team');
+      });
+    }
 
     function openConfigModal() {
       if (modalConfigOverlay) {
@@ -368,6 +732,18 @@
       btnReconnect9router.addEventListener('click', () => load9RouterModels(true));
     }
 
+    function extractModelId(entry) {
+      if (typeof entry === 'string') return entry.trim();
+      if (entry && typeof entry === 'object') {
+        return String(entry.id || entry.model || '').trim();
+      }
+      return '';
+    }
+
+    function isModelEntryDisabled(entry) {
+      return Boolean(entry && typeof entry === 'object' && entry.disabled === true);
+    }
+
     // Khởi tạo squadMembers từ snapshot config hiện có
     function initSquadFromConfig(force = false) {
       if (squadMembers.length > 0 && !force) {
@@ -378,16 +754,18 @@
       const roles = currentSquadRolesConfig || {};
 
       for (const [rKey, rSpec] of Object.entries(roles)) {
-        if (!rSpec || rSpec.enabled === false) continue;
-        const modelsList = Array.isArray(rSpec.models) && rSpec.models.length > 0
+        if (!rSpec || typeof rSpec !== 'object' || rSpec.enabled === false) continue;
+        const rawList = Array.isArray(rSpec.models) && rSpec.models.length > 0
           ? rSpec.models
           : (rSpec.model ? [rSpec.model] : []);
 
-        modelsList.forEach(mId => {
-          if (!mId) return;
+        rawList.forEach(entry => {
+          if (isModelEntryDisabled(entry)) return;
+          const cleanId = extractModelId(entry);
+          if (!cleanId) return;
           initial.push({
-            model: mId,
-            name: rSpec.display_name || mId.split('/').pop() || mId,
+            model: cleanId,
+            name: rSpec.display_name || cleanId.split('/').pop() || cleanId,
             role: rKey,
             latency_ms: null,
             status: 'ready'
@@ -441,6 +819,11 @@
                   : `<span class="test-result-badge badge-done">✓ ${member.latency_ms}ms</span>`)
               : '<span class="test-result-badge">Chưa test</span>');
 
+        const standardRoles = new Set(['standby', 'router', 'writer', 'designer', 'reviewer']);
+        const customRoleOpt = (!standardRoles.has(member.role) && member.role)
+          ? `<option value="${escapeHtml(member.role)}" selected>${escapeHtml(member.role)}</option>`
+          : '';
+
         row.innerHTML = `
           <div class="compact-left">
             <div class="compact-title-line">
@@ -456,6 +839,7 @@
               <option value="writer" ${member.role === 'writer' ? 'selected' : ''}>Writer (Code Generator)</option>
               <option value="designer" ${member.role === 'designer' ? 'selected' : ''}>Designer (Visual Auditor)</option>
               <option value="reviewer" ${member.role === 'reviewer' ? 'selected' : ''}>Reviewer (TechLead Reviewer)</option>
+              ${customRoleOpt}
             </select>
             ${latencyBadgeHtml}
             <button class="btn-compact-test btn-test-member" data-idx="${idx}" title="Đo độ trễ mạng thực tế">
@@ -1010,8 +1394,11 @@
               })).json();
           if (data.ok) {
             if (cfgSaveStatusMsg) {
-              cfgSaveStatusMsg.textContent = `✓ ${data.message}`;
-              cfgSaveStatusMsg.style.color = '#34d399';
+              const warnSuffix = (Array.isArray(data.warnings) && data.warnings.length > 0)
+                ? ` ⚠ ${data.warnings.join(' | ')}`
+                : '';
+              cfgSaveStatusMsg.textContent = `✓ ${data.message}${warnSuffix}`;
+              cfgSaveStatusMsg.style.color = warnSuffix ? '#fbbf24' : '#34d399';
             }
             if (txtBtnSaveConfig) {
               txtBtnSaveConfig.textContent = 'Lưu cấu hình (team.yaml)';
@@ -1088,21 +1475,23 @@
       }
 
       const preset = selWorkflowPreset ? selWorkflowPreset.value : 'auto';
+      const selectedWriterModel = selGoalWriterModel ? String(selGoalWriterModel.value || '').trim() : '';
       btnDecomposeGoal.disabled = true;
       spinDecompose.style.display = 'inline-block';
       txtDecomposeBtn.textContent = 'Router Agent đang khảo sát codebase...';
       lblDecomposeStatus.textContent = `Đang gọi Router Agent đọc cấu trúc code (Preset: ${preset.toUpperCase()})...`;
 
       try {
+        const decompPayload = { preset, ...(selectedWriterModel ? { writer_model: selectedWriterModel } : {}) };
         const data = window.CockpitApi?.decomposeGoal
-          ? await window.CockpitApi.decomposeGoal(goal, { preset })
+          ? await window.CockpitApi.decomposeGoal(goal, decompPayload)
           : await (await fetch('/api/decompose', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
                 'X-Dashboard-Token': csrfToken || ''
               },
-              body: JSON.stringify({ goal, preset })
+              body: JSON.stringify({ goal, ...decompPayload })
             })).json();
         if (!data || !data.ok) {
           throw new Error(data?.error || 'Lỗi bóc tách mục tiêu');
@@ -1153,14 +1542,22 @@
         badges.style.alignItems = 'center';
         badges.style.gap = '6px';
 
-        if (t.model) {
+        const effectiveTaskModel = t.writer_model || t.model;
+        if (effectiveTaskModel) {
+          const modelSrc = t.writer_model_source === 'router_hint' || t.model_source === 'router_hint'
+            ? 'router_hint'
+            : 'user';
           const modelTag = document.createElement('span');
           modelTag.className = 'tag';
-          modelTag.style.background = 'rgba(255, 255, 255, 0.04)';
-          modelTag.style.border = '1px solid rgba(255, 255, 255, 0.08)';
-          modelTag.style.color = 'var(--text-secondary)';
-          modelTag.textContent = t.model.split('/').pop();
-          modelTag.title = `Chỉ định model: ${t.model}`;
+          modelTag.style.background = modelSrc === 'router_hint'
+            ? 'rgba(245, 158, 11, 0.12)'
+            : 'rgba(56, 189, 248, 0.12)';
+          modelTag.style.border = modelSrc === 'router_hint'
+            ? '1px solid rgba(245, 158, 11, 0.35)'
+            : '1px solid rgba(56, 189, 248, 0.35)';
+          modelTag.style.color = modelSrc === 'router_hint' ? '#fbbf24' : '#38bdf8';
+          modelTag.textContent = `${effectiveTaskModel.split('/').pop()} • ${modelSrc}`;
+          modelTag.title = `Model: ${effectiveTaskModel} • Nguồn: ${modelSrc}`;
           badges.appendChild(modelTag);
         }
 
@@ -1323,7 +1720,11 @@
         if (taskDetailTitle) taskDetailTitle.value = t.title || '';
         if (taskDetailGoal) taskDetailGoal.value = t.goal || '';
         if (taskDetailOwner) taskDetailOwner.value = t.owner || 'writer';
-        if (taskDetailModel) taskDetailModel.value = t.model || '(Mặc định theo team.yaml)';
+        if (taskDetailModel) {
+          const effDetModel = t.writer_model || t.model;
+          const effDetSrc = t.writer_model_source || t.model_source || 'user';
+          taskDetailModel.value = effDetModel ? `${effDetModel} (${effDetSrc})` : '(Mặc định theo team.yaml)';
+        }
 
         // Scope pills
         if (taskDetailScopePills) {
@@ -1669,7 +2070,7 @@
 
       // 1. Router Agent
       if (squadModelRouter) {
-        squadModelRouter.textContent = getCleanRoleModelText(rolesConfig.router, 'kr/claude-sonnet-4.5-thinking');
+        squadModelRouter.textContent = getCleanRoleModelText(rolesConfig.router, 'Chưa cấu hình');
       }
       const cockpitRouterTag = document.getElementById('cockpit-router-model-tag');
       if (cockpitRouterTag) {
@@ -1696,7 +2097,17 @@
 
       // 2. Writer Agent
       if (squadModelWriter) {
-        squadModelWriter.textContent = getCleanRoleModelText(rolesConfig.writer, 'deepseek-ai/deepseek-v4.1-flash-1017');
+        const safeWriterModels = Array.isArray(rolesConfig.writer?.models)
+          ? rolesConfig.writer.models.filter(e => !isModelEntryDisabled(e)).map(extractModelId).filter(Boolean)
+          : [];
+        if (safeWriterModels.length > 1) {
+          squadModelWriter.innerHTML = safeWriterModels.map((m, idx) => {
+            const clean = m.split('/').pop() || m;
+            return `<div class="sidebar-writer-row">${idx === 0 ? '★ ' : '↳ '}${escapeHtml(clean)}</div>`;
+          }).join('');
+        } else {
+          squadModelWriter.textContent = getCleanRoleModelText(rolesConfig.writer, 'Chưa cấu hình');
+        }
       }
       if (squadStatusWriter) {
         if (!isRunning) {
@@ -1716,7 +2127,7 @@
 
       // 3. Designer Agent
       if (squadModelDesigner) {
-        squadModelDesigner.textContent = getCleanRoleModelText(rolesConfig.designer, 'ag/claude-sonnet-5-5');
+        squadModelDesigner.textContent = getCleanRoleModelText(rolesConfig.designer, 'Chưa cấu hình');
       }
       if (squadStatusDesigner) {
         if (!isRunning) {
@@ -1736,7 +2147,7 @@
 
       // 4. Reviewer Agent
       if (squadModelReviewer) {
-        squadModelReviewer.textContent = getCleanRoleModelText(rolesConfig.reviewer, 'ag/claude-opus-5-5-high');
+        squadModelReviewer.textContent = getCleanRoleModelText(rolesConfig.reviewer, 'Chưa cấu hình');
       }
       if (squadStatusReviewer) {
         if (!isRunning) {
@@ -1772,6 +2183,33 @@
           squadStatusValidator.textContent = 'IDLE';
           squadStatusValidator.className = 'status-badge badge-idle';
         }
+      }
+    }
+
+    function renderCircuitBreakerBanner(cbData) {
+      const el = document.getElementById('squad-circuit-breaker-status');
+      if (!el) return;
+      const ttlMs = Number(cbData?.ttl_ms) > 0 ? Number(cbData.ttl_ms) : 600000;
+      const ttlMin = Math.round(ttlMs / 60000);
+      const brokenList = Array.isArray(cbData?.models) ? cbData.models : [];
+      el.textContent = '';
+
+      if (brokenList.length === 0) {
+        el.style.color = 'var(--text-secondary)';
+        el.textContent = `Circuit Breaker: OK (TTL ${ttlMin}m)`;
+        return;
+      }
+
+      el.style.color = '#fbbf24';
+      const header = document.createElement('div');
+      header.textContent = `Circuit Breaker TRIPPED (${brokenList.length}, TTL ${ttlMin}m):`;
+      el.appendChild(header);
+
+      for (const item of brokenList) {
+        const row = document.createElement('div');
+        const remainSec = Math.max(0, Math.ceil(Number(item.remaining_ms || 0) / 1000));
+        row.textContent = `• ${String(item.model || '')} (${remainSec}s left) — ${String(item.reason || '')}`;
+        el.appendChild(row);
       }
     }
 
@@ -1833,19 +2271,34 @@
         });
       }
 
-      // Writer (Rendered with real model name from team.yaml)
-      if (rolesConfig.writer && rolesConfig.writer.enabled !== false && rolesConfig.writer.model) {
-        const wExtra = Array.isArray(rolesConfig.writer.models) && rolesConfig.writer.models.length > 1
-          ? ` (+${rolesConfig.writer.models.length - 1})`
-          : '';
+      // Writer (Rendered with stacked models if multiple)
+      if (rolesConfig.writer && rolesConfig.writer.enabled !== false && (rolesConfig.writer.model || (Array.isArray(rolesConfig.writer.models) && rolesConfig.writer.models.length > 0))) {
+        const rawModels = Array.isArray(rolesConfig.writer.models) && rolesConfig.writer.models.length > 0
+          ? rolesConfig.writer.models.filter(e => !isModelEntryDisabled(e)).map(extractModelId).filter(Boolean)
+          : [extractModelId(rolesConfig.writer.model)].filter(Boolean);
+
+        const writerModels = rawModels.map((m, idx) => {
+          let clean = m.split('/').pop() || m;
+          return {
+            id: m,
+            name: clean,
+            isPrimary: idx === 0,
+            tag: idx === 0 ? 'Primary Coder' : 'Fallback'
+          };
+        });
+
+        const isMulti = writerModels.length > 1;
+        const topPos = writerModels.length >= 4 ? '70%' : (writerModels.length === 3 ? '72%' : '74%');
+
         activeSpokeDefs.push({
           key: 'writer',
-          roleTag: 'Writer',
+          roleTag: isMulti ? `Writer Squad (${writerModels.length})` : 'Writer',
           icon: 'W',
-          modelName: formatCleanModel(rolesConfig.writer, 'Writer') + wExtra,
+          models: writerModels,
+          modelName: writerModels[0].name,
           fullModel: rolesConfig.writer.model,
-          tooltip: `Writer Agent (${rolesConfig.writer.model}) - Code Generator`,
-          defaultPos: { left: '20%', top: '74%' }
+          tooltip: `Writer Squad: ${writerModels.map(w => w.id).join(' | ')}`,
+          defaultPos: { left: '20%', top: topPos }
         });
       }
 
@@ -1898,9 +2351,26 @@
           lineClass = 'link-path done';
         }
 
+        const isStacked = Array.isArray(def.models) && def.models.length > 1;
+        let labelContentHtml = '';
+        if (isStacked) {
+          labelContentHtml = `
+            <div class="spoke-models-stack">
+              ${def.models.map(m => `
+                <div class="spoke-model-row ${m.isPrimary ? 'primary-writer' : 'sub-writer'}" title="${escapeHtml(m.id)} (${m.tag})">
+                  <span class="spoke-model-bullet">${m.isPrimary ? '●' : '○'}</span>
+                  <span class="spoke-model-name">${escapeHtml(m.name)}</span>
+                </div>
+              `).join('')}
+            </div>
+          `;
+        } else {
+          labelContentHtml = `<span class="node-label">${escapeHtml(def.modelName)}</span>`;
+        }
+
         // Spoke node element
         const nodeEl = document.createElement('div');
-        nodeEl.className = `ai-capsule-node spoke-node node-${def.key} ${statusClass}`.trim();
+        nodeEl.className = `ai-capsule-node spoke-node node-${def.key} ${statusClass} ${isStacked ? 'stacked-models' : ''}`.trim();
         nodeEl.id = `capsule-${def.key}`;
         nodeEl.title = def.tooltip;
         nodeEl.style.left = def.defaultPos.left;
@@ -1909,7 +2379,7 @@
           <div class="node-icon icon-${def.key}">${def.icon}</div>
           <div class="spoke-text">
             <span class="node-role-tag">${escapeHtml(def.roleTag)}</span>
-            <span class="node-label">${escapeHtml(def.modelName)}</span>
+            ${labelContentHtml}
           </div>
           <div class="node-status-dot"></div>
         `;
@@ -2014,10 +2484,68 @@
       };
     }
 
-    function renderLastError(errorText, isTaskDone) {
+    let bannerRetryBtn = null;
+
+    async function handleRetryBlockedTask(taskId, btnEl) {
+      if (!taskId) return;
+      const origText = btnEl ? btnEl.textContent : 'Retry';
+      try {
+        if (btnEl) {
+          btnEl.disabled = true;
+          btnEl.textContent = 'Retrying...';
+        }
+        const res = window.CockpitApi?.retryTask
+          ? await window.CockpitApi.retryTask(taskId)
+          : await (await fetch('/api/task/retry', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Dashboard-Token': csrfToken || ''
+              },
+              body: JSON.stringify({ task_id: taskId })
+            })).json();
+        if (!res.ok) throw new Error(res.error || 'Không thể retry task');
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.textContent = origText;
+        }
+        fetchSnapshot();
+      } catch (err) {
+        alert('Lỗi retry task: ' + err.message);
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.textContent = origText;
+        }
+      }
+    }
+
+    function ensureBannerRetryButton() {
+      if (bannerRetryBtn || !lastErrorTitle || !lastErrorTitle.parentElement) {
+        return bannerRetryBtn;
+      }
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn-queue-retry btn-banner-retry';
+      btn.style.display = 'none';
+      btn.textContent = 'Retry';
+      btn.title = 'Đưa task blocked về ready và chạy lại Orchestrator';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const tid = btn.dataset.taskId;
+        if (tid) handleRetryBlockedTask(tid, btn);
+      });
+      lastErrorTitle.parentElement.appendChild(btn);
+      bannerRetryBtn = btn;
+      return btn;
+    }
+
+    function renderLastError(errorText, isTaskDone, blockedTarget = null) {
+      const btnRetry = ensureBannerRetryButton();
+
       // AC-4: If task succeeded on retry (isTaskDone), suppress old error banner!
       if (isTaskDone) {
         lastErrorBanner.style.display = 'none';
+        if (btnRetry) btnRetry.style.display = 'none';
         return;
       }
 
@@ -2028,8 +2556,20 @@
         lastErrorSummary.textContent = parsed.summary;
         lastErrorTail.textContent = parsed.tail;
         lastErrorRaw.textContent = parsed.raw;
+        if (btnRetry) {
+          if (blockedTarget && blockedTarget.task_id) {
+            btnRetry.dataset.taskId = blockedTarget.task_id;
+            btnRetry.textContent = 'Retry';
+            btnRetry.title = `Retry ${blockedTarget.task_id} sau khi đã commit/stash`;
+            btnRetry.style.display = 'inline-flex';
+          } else {
+            btnRetry.dataset.taskId = '';
+            btnRetry.style.display = 'none';
+          }
+        }
       } else {
         lastErrorBanner.style.display = 'none';
+        if (btnRetry) btnRetry.style.display = 'none';
       }
     }
 
@@ -2139,12 +2679,30 @@
           left.appendChild(icon);
           left.appendChild(tid);
 
+          const actions = document.createElement('div');
+          actions.className = 'queue-item-actions';
+
+          const btnRetry = document.createElement('button');
+          btnRetry.type = 'button';
+          btnRetry.className = 'btn-queue-retry';
+          btnRetry.textContent = 'Retry';
+          btnRetry.title = t.task_id
+            ? `Retry ${t.task_id} sau khi đã xử lý nguyên nhân block`
+            : 'Retry task';
+          btnRetry.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (t.task_id) handleRetryBlockedTask(t.task_id, btnRetry);
+          });
+
           const badge = document.createElement('span');
           badge.className = 'queue-item-badge q-blocked';
           badge.textContent = 'BLOCKED';
 
+          actions.appendChild(btnRetry);
+          actions.appendChild(badge);
+
           item.appendChild(left);
-          item.appendChild(badge);
+          item.appendChild(actions);
           queueItemsList.appendChild(item);
         });
       }
@@ -2197,6 +2755,172 @@
         emptyDiv.textContent = '(Queue is empty)';
         queueItemsList.appendChild(emptyDiv);
       }
+
+      renderManualReviewQueue(q);
+      renderUnseenExactMatches(q);
+    }
+
+    function renderUnseenExactMatches(q) {
+      if (!unseenExactSection || !unseenExactList) return;
+      const items = Array.isArray(q?.unseen_exact_matches) ? q.unseen_exact_matches : [];
+      const totalBlocks = items.reduce((acc, entry) => acc + Number(entry?.block_count ?? entry?.blocks?.length ?? 0), 0);
+
+      if (cntUnseenExact) cntUnseenExact.textContent = String(totalBlocks);
+      unseenExactList.replaceChildren();
+
+      if (items.length === 0 || totalBlocks === 0) {
+        unseenExactSection.style.display = 'none';
+        return;
+      }
+
+      unseenExactSection.style.display = 'block';
+      items.forEach(entry => {
+        const card = document.createElement('div');
+        card.className = 'queue-item';
+        card.style.flexDirection = 'column';
+        card.style.alignItems = 'stretch';
+        card.style.gap = '4px';
+
+        const topRow = document.createElement('div');
+        topRow.style.display = 'flex';
+        topRow.style.justifyContent = 'space-between';
+        topRow.style.alignItems = 'center';
+        topRow.style.gap = '6px';
+
+        const tid = document.createElement('span');
+        tid.className = 'queue-item-id';
+        tid.textContent = entry.task_id || 'task';
+        tid.title = entry.title || entry.task_id || '';
+
+        const delCnt = Number(entry.delete_count || 0);
+        const blkCnt = Number(entry.block_count ?? entry.blocks?.length ?? 0);
+        const summaryTag = document.createElement('span');
+        summaryTag.className = delCnt > 0 ? 'queue-item-badge q-blocked' : 'queue-item-badge q-active';
+        summaryTag.textContent = delCnt > 0
+          ? `${blkCnt} block(s) • ${delCnt} DELETE`
+          : `${blkCnt} block(s)`;
+
+        topRow.appendChild(tid);
+        topRow.appendChild(summaryTag);
+        card.appendChild(topRow);
+
+        const blocks = Array.isArray(entry.blocks) ? entry.blocks : [];
+        blocks.forEach(blk => {
+          const row = document.createElement('div');
+          row.style.display = 'flex';
+          row.style.justifyContent = 'space-between';
+          row.style.alignItems = 'center';
+          row.style.gap = '6px';
+          row.style.fontSize = '10px';
+          row.style.color = 'var(--text-secondary)';
+
+          const locSpan = document.createElement('span');
+          locSpan.style.wordBreak = 'break-all';
+          locSpan.textContent = `#${blk.block || '?'} ${blk.file || ''}:${blk.start_line || 0}-${blk.end_line || 0}`;
+
+          const kindSpan = document.createElement('span');
+          const isDelete = Boolean(blk.is_delete || blk.action_kind === 'delete');
+          kindSpan.className = isDelete ? 'queue-item-badge q-blocked' : 'queue-item-badge q-done';
+          kindSpan.textContent = isDelete ? '[DELETE]' : '[MODIFY]';
+
+          row.appendChild(locSpan);
+          row.appendChild(kindSpan);
+          card.appendChild(row);
+        });
+
+        unseenExactList.appendChild(card);
+      });
+    }
+
+    function renderManualReviewQueue(q) {
+      if (!manualReviewSection || !manualReviewList) return;
+      const items = Array.isArray(q?.manual_review)
+        ? q.manual_review
+        : (Array.isArray(q?.blocked)
+            ? q.blocked.filter(t => t?.failure_class === 'review_unavailable' || /review_unavailable/i.test(String(t?.block_reason || '')))
+            : []);
+
+      if (cntManualReview) cntManualReview.textContent = String(items.length);
+      manualReviewList.replaceChildren();
+
+      if (items.length === 0) {
+        manualReviewSection.style.display = 'none';
+        return;
+      }
+
+      manualReviewSection.style.display = 'block';
+      items.forEach(entry => {
+        const card = document.createElement('div');
+        card.className = 'queue-item';
+        card.style.flexDirection = 'column';
+        card.style.alignItems = 'stretch';
+        card.style.gap = '4px';
+
+        const topRow = document.createElement('div');
+        topRow.style.display = 'flex';
+        topRow.style.justifyContent = 'space-between';
+        topRow.style.alignItems = 'center';
+        topRow.style.gap = '6px';
+
+        const tid = document.createElement('span');
+        tid.className = 'queue-item-id';
+        tid.textContent = entry.task_id || 'review-task';
+        tid.title = entry.title || entry.task_id || '';
+
+        const badge = document.createElement('span');
+        badge.className = 'queue-item-badge q-blocked';
+        badge.textContent = 'MANUAL REVIEW';
+
+        topRow.appendChild(tid);
+        topRow.appendChild(badge);
+        card.appendChild(topRow);
+
+        if (entry.pending_review_patch) {
+          const patchLine = document.createElement('div');
+          patchLine.style.fontSize = '10px';
+          patchLine.style.color = 'var(--text-secondary)';
+          patchLine.style.wordBreak = 'break-all';
+          patchLine.textContent = 'Patch: ' + String(entry.pending_review_patch);
+          card.appendChild(patchLine);
+        }
+
+        const applyCmd = entry.apply_command || (entry.pending_review_patch ? ('git apply ' + String(entry.pending_review_patch)) : '');
+        if (applyCmd) {
+          const cmdRow = document.createElement('div');
+          cmdRow.style.display = 'flex';
+          cmdRow.style.alignItems = 'center';
+          cmdRow.style.gap = '6px';
+
+          const cmdCode = document.createElement('code');
+          cmdCode.style.flex = '1';
+          cmdCode.style.fontSize = '10px';
+          cmdCode.style.padding = '3px 6px';
+          cmdCode.style.borderRadius = '4px';
+          cmdCode.style.background = 'rgba(0,0,0,0.28)';
+          cmdCode.style.overflowX = 'auto';
+          cmdCode.style.whiteSpace = 'nowrap';
+          cmdCode.textContent = applyCmd;
+
+          const copyBtn = document.createElement('button');
+          copyBtn.type = 'button';
+          copyBtn.className = 'btn-retry-task';
+          copyBtn.textContent = 'Copy';
+          copyBtn.title = 'Copy lệnh git apply patch';
+          copyBtn.addEventListener('click', () => {
+            if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+              navigator.clipboard.writeText(applyCmd).catch(() => {});
+            }
+            copyBtn.textContent = 'Copied ✓';
+            setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+          });
+
+          cmdRow.appendChild(cmdCode);
+          cmdRow.appendChild(copyBtn);
+          card.appendChild(cmdRow);
+        }
+
+        manualReviewList.appendChild(card);
+      });
     }
 
     // Render Logs securely with auto-scroll
@@ -2400,6 +3124,60 @@
       }
     }
 
+    function populateGoalWriterModelSelect(rosterModels, rolesConfig) {
+      if (!selGoalWriterModel) return;
+      const list = [];
+      const seen = new Set();
+      if (Array.isArray(rosterModels)) {
+        rosterModels.forEach(entry => {
+          const id = typeof entry === 'string' ? entry : entry?.model;
+          if (id && !seen.has(id)) {
+            seen.add(id);
+            list.push(id);
+          }
+        });
+      } else if (rolesConfig && typeof rolesConfig === 'object') {
+        Object.values(rolesConfig).forEach(r => {
+          if (!r || r.enabled === false) return;
+          const disabledSet = new Set(
+            (Array.isArray(r.disabled_models) ? r.disabled_models : [])
+              .map(d => (typeof d === 'string' ? d : (d?.disabled !== false ? (d?.id || d?.model) : '')))
+              .filter(Boolean)
+          );
+          const rawList = [
+            ...(Array.isArray(r.models) ? r.models.map(m => (typeof m === 'string' ? m : (m?.disabled ? '' : (m?.id || m?.model)))) : []),
+            r.default_model,
+            r.model,
+            r.fallback_model
+          ];
+          rawList.forEach(id => {
+            if (id && !disabledSet.has(id) && !seen.has(id)) {
+              seen.add(id);
+              list.push(id);
+            }
+          });
+        });
+      }
+      const prevVal = selGoalWriterModel.value;
+      const hash = list.join('|');
+      if (selGoalWriterModel.dataset.rosterHash === hash) return;
+      selGoalWriterModel.dataset.rosterHash = hash;
+      while (selGoalWriterModel.firstChild) {
+        selGoalWriterModel.removeChild(selGoalWriterModel.firstChild);
+      }
+      const defaultOpt = document.createElement('option');
+      defaultOpt.value = '';
+      defaultOpt.textContent = 'Writer: Mặc định (team.yaml)';
+      selGoalWriterModel.appendChild(defaultOpt);
+      list.forEach(id => {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = `Writer: ${id}`;
+        selGoalWriterModel.appendChild(opt);
+      });
+      selGoalWriterModel.value = list.includes(prevVal) ? prevVal : '';
+    }
+
     // Main Snapshot Fetcher
     async function fetchSnapshot() {
       try {
@@ -2544,8 +3322,10 @@
         const rolesStatus = live.roles_status || {};
         const rolesConfig = data.roles || {};
         currentSquadRolesConfig = rolesConfig;
+        populateGoalWriterModelSelect(data.roster_models, rolesConfig);
 
         renderWorkflowSquad(activeStage, rolesStatus, rolesConfig, live);
+        renderCircuitBreakerBanner(data.circuit_breakers);
 
         // 8. Update Adaptive Star Topology Network (Center Hub & Spoke Links)
         updateTopologyNetwork(activeStage, rolesStatus, rolesConfig, data);
@@ -2556,8 +3336,8 @@
         // 10. Task Queue List
         renderTaskQueue(data.queue || {});
 
-        // 10a. Auto-sync draft tasks in Cockpit (draft_review status)
-        const activeDrafts = (data.queue?.active || []).filter(t => t.status === 'draft_review');
+        // 10a. Auto-sync pending tasks in Cockpit (draft_review or ready status)
+        const activeDrafts = (data.queue?.active || []).filter(t => t.status === 'draft_review' || t.status === 'ready');
         if (currentDraftTasks.length === 0 && activeDrafts.length > 0) {
           currentDraftTasks = activeDrafts;
           renderDraftTasks(currentDraftTasks);
@@ -2574,7 +3354,10 @@
         renderSessionsList(data.sessions || []);
 
         // 11. Error Callout (Intelligent Failure Tail, suppressed if task is done)
-        renderLastError(live.last_error, isTaskDone);
+        const blockedList = Array.isArray(data.queue?.blocked) ? data.queue.blocked : [];
+        const blockedTarget = blockedList.find(t => t.task_id === live.current_task_id) || blockedList[0] || null;
+        const effectiveLastError = live.last_error || (blockedTarget?.block_reason || null);
+        renderLastError(effectiveLastError, isTaskDone, blockedTarget);
 
         // 12. Telemetry Footer Chips
         const out = data.latest_output || {};

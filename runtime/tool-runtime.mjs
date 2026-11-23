@@ -4,19 +4,25 @@
  * Part of Agent Runtime (agent-team/runtime/tool-runtime.mjs)
  */
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import YAML from 'yaml';
-import { applyEdits, normalizeOrThrow, resolveRepoRoot, TEAM_DIR } from '../scripts/applier.mjs';
+import { applyEdits, checkNoSymlinkEscape, normalizeOrThrow, resolveRepoRoot, TEAM_DIR } from '../scripts/applier.mjs';
+import { isIgnoredByRules, parseGitignoreRules } from '../scripts/lib/context-builders.mjs';
+import { loadMergedPolicy, resolveConfigDir } from '../scripts/lib/policy-loader.mjs';
 import { validateFast, validateSuite } from '../scripts/validator.mjs';
 import { isForbiddenAttachment } from './context-adapter.mjs';
 import { generateRepoMap } from './repo-map.mjs';
 
 export const MAX_READ_LINES = 300;
 export const MAX_READ_BYTES = 32768; // 32 KB hard ceiling per read_file call
+export const MAX_BATCH_READ_BYTES = 48 * 1024; // 48 KB combined cap across parallel read_file calls in 1 turn
 export const MAX_SINGLE_LINE_CHARS = 4096; // Cắt dòng đơn lẻ quá dài (minified files)
 export const MAX_SEARCH_RESULTS = 50;
+export const MAX_SEARCH_PATTERN_CHARS = 200;
+export const MAX_SEARCH_FILE_BYTES = 1024 * 1024; // 1 MB hard ceiling per searched file
 
 /**
  * Pre-registered OpenAI Tool Schemas
@@ -69,7 +75,7 @@ export const TOOL_SCHEMAS = {
     type: 'function',
     function: {
       name: 'read_file',
-      description: 'Read contents of a text file within line range (max 300 lines per call).',
+      description: 'Read text file lines (max 300/call). Supports parallel read_file calls in 1 turn.',
       parameters: {
         type: 'object',
         properties: {
@@ -191,29 +197,58 @@ export function getAvailableToolSchemas(allowedTools = []) {
 // Tool Implementations (Executed safely at local workspace)
 // -------------------------------------------------------------
 
+const UNSAFE_NESTED_QUANTIFIER_RE = /\([^)]*(?:\+|\*|\{[0-9,]+\})[^)]*\)\s*(?:\+|\*|\{[0-9,]*,[0-9]*\}|\{[2-9][0-9]*\})/;
+const UNSAFE_ALTERNATION_QUANTIFIER_RE = /\([^)]*\|[^)]*\)\s*(?:\+|\*|\{[0-9,]*,[0-9]*\}|\{[2-9][0-9]*\})/;
+
+export function isUnsafeSearchRegex(pattern = '') {
+  return UNSAFE_NESTED_QUANTIFIER_RE.test(pattern) || UNSAFE_ALTERNATION_QUANTIFIER_RE.test(pattern);
+}
+
 export function toolListFiles(repoRoot, args = {}) {
-  const relDir = args.dir ? normalizeOrThrow(repoRoot, args.dir) : '';
+  const resolvedRoot = path.resolve(repoRoot);
+  let relDir = '';
+  try {
+    relDir = args.dir ? normalizeOrThrow(resolvedRoot, args.dir) : '';
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+
   const maxResults = Math.min(args.max_results || 200, 500);
-  const targetDir = path.resolve(repoRoot, relDir);
+  const targetDir = path.resolve(resolvedRoot, relDir);
+
+  const symCheck = checkNoSymlinkEscape(resolvedRoot, targetDir);
+  if (!symCheck.ok) {
+    return { ok: false, error: symCheck.error };
+  }
 
   if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
     return { ok: false, error: `Directory not found: ${relDir || '.'}` };
   }
 
   const results = [];
-  const IGNORED_DIRS = new Set(['.git', 'node_modules', '.venv', '__pycache__', 'dist', 'build', '.gemini']);
+  const IGNORED_DIRS = new Set([
+    '.git', 'node_modules', '.venv', 'venv', '__pycache__', 'dist', 'build',
+    '.gemini', '.agents', 'sessions', 'runs', 'archive', '.pytest_cache', '.mypy_cache'
+  ]);
 
   function walk(currentDir) {
     if (results.length >= maxResults) return;
     const entries = fs.readdirSync(currentDir, { withFileTypes: true });
     for (const ent of entries) {
       if (results.length >= maxResults) break;
+      if (ent.isSymbolicLink()) continue;
+
+      const entryPath = path.join(currentDir, ent.name);
       if (ent.isDirectory()) {
-        if (!IGNORED_DIRS.has(ent.name)) {
-          walk(path.join(currentDir, ent.name));
+        const isAgentTeamState = ent.name === 'state' && currentDir.replace(/\\/g, '/').endsWith('agent-team');
+        if (!IGNORED_DIRS.has(ent.name) && !isAgentTeamState) {
+          const subCheck = checkNoSymlinkEscape(resolvedRoot, entryPath);
+          if (subCheck.ok) {
+            walk(entryPath);
+          }
         }
       } else if (ent.isFile()) {
-        const rel = path.relative(repoRoot, path.join(currentDir, ent.name)).split(path.sep).join('/');
+        const rel = path.relative(resolvedRoot, entryPath).split(path.sep).join('/');
         if (!isForbiddenAttachment(rel)) {
           results.push(rel);
         }
@@ -230,32 +265,111 @@ export function toolListFiles(repoRoot, args = {}) {
   };
 }
 
-export function toolSearchCode(repoRoot, args = {}) {
+function matchesContextExclude(relPath = '', excludeList = []) {
+  if (!Array.isArray(excludeList) || excludeList.length === 0) return false;
+  const norm = String(relPath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').toLowerCase();
+  if (!norm) return false;
+  for (const raw of excludeList) {
+    const clean = String(raw || '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').toLowerCase();
+    if (!clean) continue;
+    if (norm === clean || norm.startsWith(`${clean}/`)) return true;
+  }
+  return false;
+}
+
+export function toolSearchCode(repoRoot, args = {}, context = {}) {
   const pattern = args.pattern;
   if (!pattern || typeof pattern !== 'string') {
     return { ok: false, error: 'Search pattern is required' };
   }
+  if (pattern.length > MAX_SEARCH_PATTERN_CHARS) {
+    return { ok: false, error: `Search pattern exceeds maximum length (${MAX_SEARCH_PATTERN_CHARS} chars)` };
+  }
 
-  const listRes = toolListFiles(repoRoot, { dir: args.dir, max_results: 500 });
-  if (!listRes.ok) return listRes;
+  const resolvedRoot = path.resolve(repoRoot);
+  const hasExplicitDir = typeof args.dir === 'string' && args.dir.trim().length > 0;
+  const gitignoreRules = parseGitignoreRules(resolvedRoot);
+
+  let fallbackPolicy = null;
+  if (!hasExplicitDir && (!Array.isArray(context.allowedDirs) || !Array.isArray(context.contextExclude))) {
+    try {
+      fallbackPolicy = loadRuntimeScopePolicy({ configDir: context.configDir });
+    } catch {
+      fallbackPolicy = { allowedDirs: [], contextExclude: [] };
+    }
+  }
+  const effectiveContextExclude = Array.isArray(context.contextExclude)
+    ? context.contextExclude
+    : (fallbackPolicy?.contextExclude || []);
+
+  let candidateFiles = [];
+  if (hasExplicitDir) {
+    const listRes = toolListFiles(resolvedRoot, { dir: args.dir, max_results: 500 });
+    if (!listRes.ok) return listRes;
+    candidateFiles = listRes.files.filter(rel => !isIgnoredByRules(rel, false, gitignoreRules));
+  } else {
+    const configuredDirs = Array.isArray(context.allowedDirs)
+      ? context.allowedDirs
+      : (Array.isArray(fallbackPolicy?.allowedDirs) ? fallbackPolicy.allowedDirs : []);
+    const cleanAllowedDirs = configuredDirs
+      .map(d => String(d || '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, ''))
+      .filter(d => d && d !== 'agent-team' && !d.startsWith('agent-team/'));
+
+    const existingAllowedDirs = [];
+    for (const d of cleanAllowedDirs) {
+      const absDir = path.resolve(resolvedRoot, d);
+      try {
+        if (fs.existsSync(absDir) && fs.statSync(absDir).isDirectory()) {
+          existingAllowedDirs.push(d);
+        }
+      } catch {}
+    }
+
+    const dirsToScan = Array.isArray(context.allowedDirs)
+      ? existingAllowedDirs
+      : (existingAllowedDirs.length > 0 ? existingAllowedDirs : ['']);
+
+    const seen = new Set();
+    for (const dir of dirsToScan) {
+      const listRes = toolListFiles(resolvedRoot, { dir, max_results: 500 });
+      if (!listRes.ok) continue;
+      for (const rel of listRes.files) {
+        if (seen.has(rel)) continue;
+        if (rel === 'agent-team' || rel.startsWith('agent-team/')) continue;
+        if (rel.split('/').some(seg => seg.startsWith('.'))) continue;
+        if (isIgnoredByRules(rel, false, gitignoreRules)) continue;
+        if (matchesContextExclude(rel, effectiveContextExclude)) continue;
+        seen.add(rel);
+        candidateFiles.push(rel);
+      }
+    }
+  }
 
   const matches = [];
   let regex = null;
-  try {
-    regex = new RegExp(pattern, 'i');
-  } catch {
-    regex = null;
-  }
-
-  for (const relFile of listRes.files) {
-    if (matches.length >= MAX_SEARCH_RESULTS) break;
-    const fullPath = path.resolve(repoRoot, relFile);
+  if (!isUnsafeSearchRegex(pattern)) {
     try {
+      regex = new RegExp(pattern, 'i');
+    } catch {
+      regex = null;
+    }
+  }
+  const patternLower = pattern.toLowerCase();
+
+  for (const relFile of candidateFiles) {
+    if (matches.length >= MAX_SEARCH_RESULTS) break;
+    const fullPath = path.resolve(resolvedRoot, relFile);
+    try {
+      const symCheck = checkNoSymlinkEscape(resolvedRoot, fullPath);
+      if (!symCheck.ok) continue;
+      const stat = fs.statSync(fullPath);
+      if (!stat.isFile() || stat.size > MAX_SEARCH_FILE_BYTES) continue;
+
       const content = fs.readFileSync(fullPath, 'utf8');
       const lines = content.split(/\r?\n/);
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        const isMatch = regex ? regex.test(line) : line.includes(pattern);
+        const isMatch = regex ? regex.test(line) : line.toLowerCase().includes(patternLower);
         if (isMatch) {
           matches.push({
             file: relFile,
@@ -283,17 +397,24 @@ export function toolReadFile(repoRoot, args = {}, context = {}) {
   if (!relPath) return { ok: false, error: 'File path is required' };
 
   try {
-    const safeRel = normalizeOrThrow(repoRoot, relPath);
+    const resolvedRoot = path.resolve(repoRoot);
+    const safeRel = normalizeOrThrow(resolvedRoot, relPath);
     if (isForbiddenAttachment(safeRel)) {
       return { ok: false, error: `Access denied to sensitive file: ${safeRel}` };
     }
 
-    const fullPath = path.resolve(repoRoot, safeRel);
+    const fullPath = path.resolve(resolvedRoot, safeRel);
+    const symCheck = checkNoSymlinkEscape(resolvedRoot, fullPath);
+    if (!symCheck.ok) {
+      return { ok: false, error: symCheck.error };
+    }
+
     if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
       return { ok: false, error: `File not found: ${safeRel}` };
     }
 
     const raw = fs.readFileSync(fullPath, 'utf8');
+    const fileHash = crypto.createHash('sha256').update(raw, 'utf8').digest('hex');
     const lines = raw.split(/\r?\n/);
     const startLine = Math.max(1, parseInt(args.start_line, 10) || 1);
 
@@ -303,8 +424,10 @@ export function toolReadFile(repoRoot, args = {}, context = {}) {
 
     // Zero-Error Clamping: clamp end_line to MAX_READ_LINES window without throwing
     const rawEnd = parseInt(args.end_line, 10);
-    const requestedEnd = isNaN(rawEnd) ? (startLine + MAX_READ_LINES - 1) : rawEnd;
-    const effectiveEndLine = Math.min(lines.length, Math.min(requestedEnd, startLine + MAX_READ_LINES - 1));
+    const hasExplicitEnd = !isNaN(rawEnd);
+    const requestedEnd = hasExplicitEnd ? Math.max(startLine, rawEnd) : lines.length;
+    const targetEnd = Math.min(lines.length, requestedEnd);
+    const effectiveEndLine = Math.min(targetEnd, startLine + MAX_READ_LINES - 1);
 
     let actualEndLine = startLine - 1;
     let accumulatedBytes = 0;
@@ -326,24 +449,27 @@ export function toolReadFile(repoRoot, args = {}, context = {}) {
       actualEndLine = i + 1;
     }
 
-    const hasMore = actualEndLine < lines.length;
-    const isPartial = hasMore || startLine > 1;
+    const truncatedByRange = actualEndLine < targetEnd;
+    const isPartialFile = actualEndLine < lines.length || startLine > 1;
     let finalContent = numberedLines.join('\n');
     let navigationHint = null;
 
-    if (isPartial && numberedLines.length > 0) {
-      navigationHint = `[Showing lines ${startLine}-${actualEndLine} of ${lines.length} (${accumulatedBytes} bytes). To continue reading, call read_file with start_line=${actualEndLine + 1}]`;
+    if (numberedLines.length > 0 && (truncatedByRange || isPartialFile)) {
+      navigationHint = truncatedByRange
+        ? `[Showing lines ${startLine}-${actualEndLine} of ${lines.length} (${accumulatedBytes} bytes). To continue reading, call read_file with start_line=${actualEndLine + 1}]`
+        : `[Showing lines ${startLine}-${actualEndLine} of ${lines.length} (${accumulatedBytes} bytes)]`;
       finalContent = `${navigationHint}\n${finalContent}`;
     }
 
     return {
       ok: true,
       file: safeRel,
+      file_hash: fileHash,
       total_lines: lines.length,
       start_line: startLine,
       end_line: actualEndLine,
       total_bytes: accumulatedBytes,
-      truncated: hasMore,
+      truncated: truncatedByRange,
       navigation_hint: navigationHint,
       content: finalContent
     };
@@ -352,20 +478,13 @@ export function toolReadFile(repoRoot, args = {}, context = {}) {
   }
 }
 
-function loadRuntimeScopePolicy() {
-  const localPolicyPath = path.resolve(TEAM_DIR, 'config', 'policy.local.yaml');
-  const defaultPolicyPath = path.resolve(TEAM_DIR, 'config', 'policy.yaml');
-  const activePath = fs.existsSync(localPolicyPath) ? localPolicyPath : defaultPolicyPath;
-  let sc = {};
-  if (fs.existsSync(activePath)) {
-    try {
-      const parsed = YAML.parse(fs.readFileSync(activePath, 'utf8')) || {};
-      sc = parsed?.policy?.scope_control || parsed?.scope_control || {};
-    } catch {}
-  }
+export function loadRuntimeScopePolicy(options = {}) {
+  const merged = loadMergedPolicy({ configDir: resolveConfigDir(options.configDir) });
+  const sc = merged.policy.scope_control;
   return {
-    allowedDirs: Array.isArray(sc.allowed_dirs) ? sc.allowed_dirs : null,
+    allowedDirs: sc.allowed_dirs,
     protectedFiles: Array.isArray(sc.protected_files) ? sc.protected_files : [],
+    contextExclude: Array.isArray(sc.context_exclude) ? sc.context_exclude : [],
     allowNewFiles: sc.allow_new_files ?? true,
     newFilesOnlyInScope: sc.new_files_only_in_scope ?? true,
     maxScopeIncrease: sc.max_scope_increase ?? 1
@@ -385,22 +504,30 @@ export function toolApplyPatch(repoRoot, args = {}, context = {}) {
     forbidden_files: Array.isArray(context.forbiddenFiles) ? context.forbiddenFiles : []
   };
 
-  const defaultPolicy = loadRuntimeScopePolicy();
+  const needsDefaultPolicy = !Array.isArray(context.allowedDirs)
+    || !Array.isArray(context.protectedFiles)
+    || context.allowNewFiles === undefined
+    || context.newFilesOnlyInScope === undefined
+    || context.maxScopeIncrease === undefined;
+  const defaultPolicy = needsDefaultPolicy ? loadRuntimeScopePolicy() : {};
   const effectiveAllowedDirs = Array.isArray(context.allowedDirs)
     ? context.allowedDirs
     : defaultPolicy.allowedDirs;
   const effectiveProtectedFiles = Array.isArray(context.protectedFiles)
     ? context.protectedFiles
     : defaultPolicy.protectedFiles;
+  const effectiveAllowNewFiles = context.allowNewFiles ?? defaultPolicy.allowNewFiles;
+  const effectiveNewFilesOnlyInScope = context.newFilesOnlyInScope ?? defaultPolicy.newFilesOnlyInScope;
+  const effectiveMaxScopeIncrease = context.maxScopeIncrease ?? defaultPolicy.maxScopeIncrease;
 
   try {
     const applyRes = applyEdits(patch, fakeTask, {
       repoRoot,
       allowedDirs: effectiveAllowedDirs,
       protectedFiles: effectiveProtectedFiles,
-      allowNewFiles: defaultPolicy.allowNewFiles,
-      newFilesOnlyInScope: defaultPolicy.newFilesOnlyInScope,
-      maxScopeIncrease: defaultPolicy.maxScopeIncrease
+      allowNewFiles: effectiveAllowNewFiles,
+      newFilesOnlyInScope: effectiveNewFilesOnlyInScope,
+      maxScopeIncrease: effectiveMaxScopeIncrease
     });
     return applyRes;
   } catch (err) {
@@ -424,44 +551,136 @@ export async function toolRunValidator(args = {}) {
 
 export const DANGEROUS_COMMAND_PATTERNS = [
   /\bformat\s+[a-z]:/i,
-  /\bdel\b/i,
-  /\berase\b/i,
-  /\brmdir\b/i,
-  /\brd\s+/i,
-  /\brm\b/i,
+  /^\s*(?:del|erase|rmdir|rd|rm|type|cat|get-content|gc|set-content|sc|add-content|ac|out-file|remove-item|ri|copy-item|move-item|new-item|ni)\b/i,
   /\bshutdown\b/i,
   /\breg\s+(?:delete|add)\b/i,
   /\bnet\s+user\b/i,
   /\bvssadmin\b/i,
   /\bbcdedit\b/i,
   /\bdiskpart\b/i,
-  /\b(?:type|cat|get-content|gc|set-content|sc|add-content|ac|out-file|remove-item|ri|copy-item|move-item|new-item|ni)\b/i,
   /\.env\b/i,
   /\bgit\s+(?:commit|push|reset|checkout|clean|rebase|merge|am|apply|stash)\b/i,
+  /\bgit\b[\s\S]*(?:--output(?:\s|=|$)|--ext-diff\b|--exec(?:\s|=|$)|(?:^|\s)-c(?:\s|=|$))/i,
+  /\bgit\s+branch\b[\s\S]*(?:(?:^|\s)-[a-zA-Z]*[dDmMfFcC][a-zA-Z]*\b|--(?:delete|move|force|copy|edit-description|set-upstream-to|unset-upstream)(?:\s|=|$))/i,
   /\b(?:pip|pip3|npm|pnpm|yarn)\s+(?:install|i|add|remove|uninstall|update)\b/i,
-  /\b(?:open|writeFileSync|writeFile|appendFile|unlink|rmSync|rmdirSync|child_process|execSync|spawn)\b/i,
+  /\b(?:open\s*\(|writeFileSync|writeFile|appendFile|unlink|rmSync|rmdirSync|child_process|execSync|spawn)\b/i,
   /[;&|><`]|\$\(/
 ];
 
 export const ALLOWED_DIAGNOSTIC_COMMAND_PATTERNS = [
   /^node\s+--check\s+[\w./\\-]+$/i,
-  /^node\s+-e\s+(?:"[^"]+"|'[^']+')$/i,
   /^node\s+(?:agent-team\/)?scripts\/(?:test-[\w.-]+|validator\.mjs)(?:\s+[\w-]+)?$/i,
   /^npm\s+(?:test|run\s+test(?::[\w:-]+)?)$/i,
   /^(?:python|python3|\.\\\.venv\\Scripts\\python\.exe)\s+-m\s+(?:unittest|py_compile)\b[\w\s./\\-]*$/i,
   /^git\s+(?:status|diff|log|branch)(?:\s+[\w./\\-]+)*$/i
 ];
 
-export function isDangerousCommand(cmd = '') {
+const GIT_SAFE_BRANCH_FLAGS = new Set([
+  '-a', '--all', '-r', '--remotes', '-v', '-vv', '--verbose',
+  '-l', '--list', '--show-current', '--merged', '--no-merged',
+  '--contains', '--no-contains', '--abbrev', '--no-abbrev',
+  '--color', '--no-color', '--column', '--no-column'
+]);
+const GIT_DANGEROUS_ARG_RE = /^(?:--output(?:=.*)?|--ext-diff|--exec(?:=.*)?|-c|-C)$/i;
+const GIT_BRANCH_MUTATING_ARG_RE = /^(?:-[a-zA-Z]*[dDmMfFcC][a-zA-Z]*|--(?:delete|move|force|copy|edit-description|set-upstream-to|unset-upstream)(?:=.*)?)$/;
+
+export function parseDiagnosticCommand(cmd = '', platform = process.platform) {
   const normalized = String(cmd).trim();
-  if (!normalized) return true;
+  if (!normalized) {
+    return { ok: false, error: 'Command cannot be empty' };
+  }
+
   for (const pattern of DANGEROUS_COMMAND_PATTERNS) {
     if (pattern.test(normalized)) {
-      return true;
+      return {
+        ok: false,
+        error: `SECURITY_BLOCKED: Command was rejected by security guardrails: "${normalized.slice(0, 80)}"`
+      };
     }
   }
+
   const matchesWhitelist = ALLOWED_DIAGNOSTIC_COMMAND_PATTERNS.some(pattern => pattern.test(normalized));
-  return !matchesWhitelist;
+  if (!matchesWhitelist) {
+    return {
+      ok: false,
+      error: `SECURITY_BLOCKED: Command was rejected by security guardrails: "${normalized.slice(0, 80)}"`
+    };
+  }
+
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  const head = tokens[0].toLowerCase();
+
+  if (head === 'node') {
+    if (tokens[1] === '--check') {
+      const target = tokens[2] || '';
+      if (!target || target.split(/[\\/]/).includes('..')) {
+        return {
+          ok: false,
+          error: `SECURITY_BLOCKED: Invalid path argument for node --check: "${normalized.slice(0, 80)}"`
+        };
+      }
+    }
+    return { ok: true, executable: 'node', args: tokens.slice(1) };
+  }
+
+  if (head === 'npm') {
+    const npmArgs = tokens.slice(1);
+    if (platform === 'win32') {
+      return {
+        ok: true,
+        executable: process.env.ComSpec || 'cmd.exe',
+        args: ['/d', '/s', '/c', 'npm.cmd', ...npmArgs]
+      };
+    }
+    return { ok: true, executable: 'npm', args: npmArgs };
+  }
+
+  if (head === 'git') {
+    const sub = (tokens[1] || '').toLowerCase();
+    const gitRest = tokens.slice(2);
+    for (const arg of gitRest) {
+      if (GIT_DANGEROUS_ARG_RE.test(arg)) {
+        return {
+          ok: false,
+          error: `SECURITY_BLOCKED: Dangerous git flag rejected: "${arg}"`
+        };
+      }
+    }
+    if (sub === 'branch') {
+      let allowPatternArg = false;
+      for (const arg of gitRest) {
+        if (GIT_BRANCH_MUTATING_ARG_RE.test(arg)) {
+          return {
+            ok: false,
+            error: `SECURITY_BLOCKED: Mutating git branch flag rejected: "${arg}"`
+          };
+        }
+        if (arg.startsWith('-')) {
+          if (!GIT_SAFE_BRANCH_FLAGS.has(arg)) {
+            return {
+              ok: false,
+              error: `SECURITY_BLOCKED: Unsupported git branch flag rejected: "${arg}"`
+            };
+          }
+          if (arg === '-l' || arg === '--list' || arg === '--contains' || arg === '--no-contains' || arg === '--merged' || arg === '--no-merged') {
+            allowPatternArg = true;
+          }
+        } else if (!allowPatternArg) {
+          return {
+            ok: false,
+            error: `SECURITY_BLOCKED: Positional git branch argument rejected: "${arg}"`
+          };
+        }
+      }
+    }
+    return { ok: true, executable: 'git', args: tokens.slice(1) };
+  }
+
+  return { ok: true, executable: tokens[0], args: tokens.slice(1) };
+}
+
+export function isDangerousCommand(cmd = '') {
+  return !parseDiagnosticCommand(cmd).ok;
 }
 
 export function toolRunCommand(repoRoot, args = {}) {
@@ -470,10 +689,11 @@ export function toolRunCommand(repoRoot, args = {}) {
     return Promise.resolve({ ok: false, error: 'Command cannot be empty' });
   }
 
-  if (isDangerousCommand(rawCmd)) {
+  const parsed = parseDiagnosticCommand(rawCmd);
+  if (!parsed.ok) {
     return Promise.resolve({
       ok: false,
-      error: `SECURITY_BLOCKED: Command was rejected by security guardrails: "${rawCmd.slice(0, 80)}"`
+      error: parsed.error
     });
   }
 
@@ -482,11 +702,12 @@ export function toolRunCommand(repoRoot, args = {}) {
   const start = Date.now();
 
   return new Promise((resolve) => {
-    exec(rawCmd, {
+    execFile(parsed.executable, parsed.args, {
       cwd: repoRoot,
       timeout: timeoutMs,
       maxBuffer: 1024 * 1024,
-      windowsHide: true
+      windowsHide: true,
+      shell: false
     }, (error, stdout, stderr) => {
       const durationMs = Date.now() - start;
       const MAX_OUTPUT_CHARS = 4000;
@@ -570,7 +791,7 @@ export async function executeTool(toolName, args = {}, context = {}) {
     case 'list_files':
       return toolListFiles(repoRoot, args);
     case 'search_code':
-      return toolSearchCode(repoRoot, args);
+      return toolSearchCode(repoRoot, args, context);
     case 'read_file':
       return toolReadFile(repoRoot, args, context);
     case 'get_repo_map':

@@ -4,14 +4,134 @@
  * Part of Agent Runtime (agent-team/runtime/session-store.mjs)
  */
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { estimateTextTokens } from './provider-gateway.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 export const TEAM_DIR = path.resolve(__dirname, '..');
-export const SESSIONS_DIR = path.resolve(TEAM_DIR, 'state', 'sessions');
+export const SESSIONS_DIR = process.env.AGENT_TEAM_STATE_DIR
+  ? path.resolve(process.env.AGENT_TEAM_STATE_DIR, 'sessions')
+  : path.resolve(TEAM_DIR, 'state', 'sessions');
+
+/**
+ * Generates a collision-resistant per-run identifier so retries across orchestrator
+ * invocations never reuse previous runs' session JSON files.
+ */
+export function createTaskRunId(nowMs = Date.now()) {
+  const tsPart = Number(nowMs || Date.now()).toString(36);
+  const randPart = crypto.randomBytes(3).toString('hex');
+  return `run-${tsPart}-${randPart}`;
+}
+
+/**
+ * Builds a structured per-run session ID embedding `run_id`.
+ */
+export function buildTaskStepSessionId({
+  taskId = 'task',
+  runId = null,
+  role = 'writer',
+  step = null,
+  bucketIndex = null,
+  attempt = 1
+} = {}) {
+  const safeTask = String(taskId || 'task').replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+  const safeRun = String(runId || createTaskRunId()).replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+  const safeRole = String(role || 'writer').replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+  if (safeRole === 'consult') {
+    return `${safeTask}-${safeRun}-consult`;
+  }
+  if (step !== null && step !== undefined && step !== '') {
+    return `${safeTask}-${safeRun}-${safeRole}-step${step}-att${Number(attempt || 1)}`;
+  }
+  if (bucketIndex !== null && bucketIndex !== undefined && bucketIndex !== '') {
+    return `${safeTask}-${safeRun}-${safeRole}-b${bucketIndex}-att${Number(attempt || 1)}`;
+  }
+  return `${safeTask}-${safeRun}-${safeRole}-att${Number(attempt || 1)}`;
+}
+
+/**
+ * Archives previous/completed session JSON files for `taskId` out of `sessionsDir`
+ * into `state/runs/<task>/<run>/` WITHOUT deleting any session history.
+ */
+export function archivePriorTaskSessions({
+  taskId,
+  currentRunId = null,
+  onlyRunId = null,
+  sessionsDir = SESSIONS_DIR,
+  runsDir = path.resolve(TEAM_DIR, 'state', 'runs')
+} = {}) {
+  if (!taskId || !sessionsDir || !fs.existsSync(sessionsDir)) {
+    return { archived: [], count: 0 };
+  }
+  const safeTaskSession = String(taskId).replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+  const safeTaskRunDir = String(taskId).replace(/[^A-Za-z0-9_.-]/g, '_');
+  const safeCurrentRun = currentRunId ? String(currentRunId).replace(/[^a-zA-Z0-9_\-\.]/g, '_') : null;
+  const safeOnlyRun = onlyRunId ? String(onlyRunId).replace(/[^a-zA-Z0-9_\-\.]/g, '_') : null;
+
+  const archived = [];
+  let entries = [];
+  try {
+    entries = fs.readdirSync(sessionsDir, { withFileTypes: true });
+  } catch {
+    return { archived: [], count: 0 };
+  }
+
+  for (const ent of entries) {
+    if (!ent.isFile() || !ent.name.endsWith('.json')) continue;
+    const fileName = ent.name;
+    if (!fileName.startsWith(`${safeTaskSession}-`)) continue;
+
+    const remainder = fileName.slice(safeTaskSession.length + 1);
+    const runMatch = remainder.match(/^(run-[A-Za-z0-9]+-[A-Za-z0-9]+)-/);
+    const legacyMatch = remainder.match(/^(?:writer|frontend_writer|backend_writer|designer|architect|techlead|reviewer|consult|step\d+)(?:-|\.json$)/);
+    if (!runMatch && !legacyMatch) continue;
+
+    let runFolder = runMatch ? runMatch[1] : null;
+    if (safeOnlyRun && runFolder !== safeOnlyRun) continue;
+    if (safeCurrentRun && runFolder === safeCurrentRun) continue;
+
+    const srcPath = path.resolve(sessionsDir, fileName);
+    if (!runFolder) {
+      let tsTag = 'legacy';
+      try {
+        const raw = fs.readFileSync(srcPath, 'utf8').replace(/^\uFEFF/, '');
+        const parsed = JSON.parse(raw);
+        const iso = parsed?.timestamps?.created_at || parsed?.timestamps?.updated_at;
+        if (iso) {
+          tsTag = `legacy-${String(iso).replace(/[:.]/g, '-').slice(0, 19)}`;
+        }
+      } catch {}
+      runFolder = tsTag;
+    }
+
+    const destDir = path.resolve(runsDir, safeTaskRunDir, runFolder);
+    fs.mkdirSync(destDir, { recursive: true });
+    let destPath = path.resolve(destDir, fileName);
+    if (fs.existsSync(destPath)) {
+      const base = fileName.slice(0, -5);
+      destPath = path.resolve(destDir, `${base}.${Date.now()}.json`);
+    }
+
+    try {
+      fs.renameSync(srcPath, destPath);
+      archived.push({ from: srcPath, to: destPath, run_dir: runFolder });
+    } catch (err) {
+      if (err && err.code === 'EXDEV') {
+        fs.copyFileSync(srcPath, destPath);
+        if (fs.existsSync(destPath)) {
+          fs.unlinkSync(srcPath);
+          archived.push({ from: srcPath, to: destPath, run_dir: runFolder });
+        }
+      }
+    }
+  }
+
+  return { archived, count: archived.length };
+}
 
 /**
  * Initializes a new clean session object.
@@ -37,18 +157,19 @@ export function createNewSession(sessionId, role = 'general', model = '') {
 /**
  * Loads an existing session from disk or creates a new one.
  */
-export function loadSession(sessionId, role = 'general', model = '') {
+export function loadSession(sessionId, role = 'general', model = '', options = {}) {
   if (!sessionId || typeof sessionId !== 'string') {
     sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   }
 
   // Sanitize session ID for filesystem safety
   const safeId = sessionId.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
-  const sessionPath = path.resolve(SESSIONS_DIR, `${safeId}.json`);
+  const targetDir = options.sessionsDir ? path.resolve(options.sessionsDir) : SESSIONS_DIR;
+  const sessionPath = path.resolve(targetDir, `${safeId}.json`);
 
   if (fs.existsSync(sessionPath)) {
     try {
-      const raw = fs.readFileSync(sessionPath, 'utf8');
+      const raw = fs.readFileSync(sessionPath, 'utf8').replace(/^\uFEFF/, '');
       const parsed = JSON.parse(raw);
       return {
         ...createNewSession(safeId, role, model),
@@ -66,14 +187,15 @@ export function loadSession(sessionId, role = 'general', model = '') {
 /**
  * Saves session object atomically to disk (.tmp rename).
  */
-export function saveSession(session) {
+export function saveSession(session, options = {}) {
   if (!session || !session.session_id) return false;
 
   const safeId = session.session_id.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
-  const sessionPath = path.resolve(SESSIONS_DIR, `${safeId}.json`);
+  const targetDir = options.sessionsDir ? path.resolve(options.sessionsDir) : SESSIONS_DIR;
+  const sessionPath = path.resolve(targetDir, `${safeId}.json`);
   const tmpPath = `${sessionPath}.tmp.${Date.now()}`;
 
-  fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+  fs.mkdirSync(targetDir, { recursive: true });
 
   session.timestamps = session.timestamps || {};
   session.timestamps.updated_at = new Date().toISOString();
@@ -99,7 +221,7 @@ export function estimatePayloadTokens(messages = [], tools = []) {
   let totalTokens = 0;
 
   if (Array.isArray(tools) && tools.length > 0) {
-    totalTokens += Math.ceil(JSON.stringify(tools).length / 3.5);
+    totalTokens += estimateTextTokens(JSON.stringify(tools).length);
   }
 
   for (const m of (Array.isArray(messages) ? messages : [])) {
@@ -107,22 +229,22 @@ export function estimatePayloadTokens(messages = [], tools = []) {
     totalTokens += 4; // Per-message framing overhead
 
     if (typeof m.content === 'string') {
-      totalTokens += Math.ceil(m.content.length / 3.5);
+      totalTokens += estimateTextTokens(m.content.length);
     } else if (Array.isArray(m.content)) {
       for (const block of m.content) {
         if (!block) continue;
         if (block.type === 'image_url' || block.type === 'image') {
           totalTokens += 1024; // Normalized vision tile token budget
         } else if (typeof block.text === 'string') {
-          totalTokens += Math.ceil(block.text.length / 3.5);
+          totalTokens += estimateTextTokens(block.text.length);
         } else {
-          totalTokens += Math.ceil(JSON.stringify(block).length / 3.5);
+          totalTokens += estimateTextTokens(JSON.stringify(block).length);
         }
       }
     }
 
     if (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
-      totalTokens += Math.ceil(JSON.stringify(m.tool_calls).length / 3.5);
+      totalTokens += estimateTextTokens(JSON.stringify(m.tool_calls).length);
     }
   }
 

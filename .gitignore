@@ -5,8 +5,15 @@ config/*.local.yaml
 state/task-state.json
 state/morning-report.md
 state/live-status.json
+state/baseline-cache.json
+state/telemetry/
+state/reports/
 state/runs/
 state/sessions/*.json
+state/*.lock
+state/*.tmp*
+state/*.jsonl
+state/*.log
 tasks/active/*.yaml
 tasks/archive/*.yaml
 tasks/blocked/*.yaml

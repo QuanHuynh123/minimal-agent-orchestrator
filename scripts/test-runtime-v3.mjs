@@ -10,6 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { resolveRepoRoot } from './applier.mjs';
+import { materializeGitCommitSnapshot } from './lib/hermetic-fixture.mjs';
 import {
   buildUserMessage,
   encodeImageAttachment,
@@ -19,7 +20,10 @@ import {
 import {
   getModelCapabilities,
   parseToolCalls,
-  normalizeUsage
+  normalizeUsage,
+  isModelCircuitBroken,
+  tripModelCircuitBreaker,
+  resetCircuitBreaker
 } from '../runtime/provider-gateway.mjs';
 import {
   compactMessagesForContext,
@@ -34,6 +38,8 @@ import {
   executeTool,
   getAvailableToolSchemas,
   isDangerousCommand,
+  isUnsafeSearchRegex,
+  parseDiagnosticCommand,
   toolApplyPatch,
   toolGetRepoMap,
   toolListFiles,
@@ -42,7 +48,9 @@ import {
   toolSearchCode,
   MAX_READ_LINES,
   MAX_READ_BYTES,
-  MAX_SINGLE_LINE_CHARS
+  MAX_SINGLE_LINE_CHARS,
+  MAX_SEARCH_PATTERN_CHARS,
+  MAX_SEARCH_FILE_BYTES
 } from '../runtime/tool-runtime.mjs';
 import {
   computePersonalizedPageRank,
@@ -60,12 +68,15 @@ import {
   analyzeTaskDemand,
   resolveSquadRoster,
   resolveWriterHubWorkflow,
-  shouldRunReviewerGate
+  shouldRunReviewerGate,
+  splitPatchStepsByOutputBudget,
+  computeDynamicTaskTokenBudget
 } from './lib/risk-policy.mjs';
 import { verifyPlannedScope } from './goal-planner.mjs';
 import {
   buildConsolidatedSpecsContext,
   buildRouterContext,
+  buildScopedFilesContext,
   sanitizeProjectRules,
   loadProjectConventions
 } from './lib/context-builders.mjs';
@@ -347,9 +358,49 @@ assert.strictEqual(isDangerousCommand('git commit -m "bypass applier"'), true);
 assert.strictEqual(isDangerousCommand('pip install evil-pkg'), true);
 assert.strictEqual(isDangerousCommand('python -c "open(\'.env\').read()"'), true);
 assert.strictEqual(isDangerousCommand('git status && del x.py'), true);
+assert.strictEqual(isDangerousCommand('node -e "console.log(1)"'), true, 'node -e must be blocked');
+assert.strictEqual(isDangerousCommand('git log --output=leak.txt'), true, 'git --output= must be blocked');
+assert.strictEqual(isDangerousCommand('git log --output leak.txt'), true, 'git --output <file> must be blocked');
+assert.strictEqual(isDangerousCommand('git diff --output leak.txt'), true, 'git diff --output <file> must be blocked');
+assert.strictEqual(isDangerousCommand('git diff --ext-diff'), true, 'git --ext-diff must be blocked');
+assert.strictEqual(isDangerousCommand('git log -c'), true, 'git -c must be blocked');
+assert.strictEqual(isDangerousCommand('git log --exec evil'), true, 'git --exec must be blocked');
+assert.strictEqual(isDangerousCommand('git branch -d feat'), true, 'git branch -d must be blocked');
+assert.strictEqual(isDangerousCommand('git branch -D feat'), true, 'git branch -D must be blocked');
+assert.strictEqual(isDangerousCommand('git branch -m a b'), true, 'git branch -m must be blocked');
+assert.strictEqual(isDangerousCommand('git branch -M a b'), true, 'git branch -M must be blocked');
+assert.strictEqual(isDangerousCommand('git branch --delete feat'), true, 'git branch --delete must be blocked');
+assert.strictEqual(isDangerousCommand('git branch --move a b'), true, 'git branch --move must be blocked');
+assert.strictEqual(isDangerousCommand('git branch -f feat'), true, 'git branch -f must be blocked');
+assert.strictEqual(isDangerousCommand('git branch --force feat'), true, 'git branch --force must be blocked');
+assert.strictEqual(isDangerousCommand('git branch new-branch'), true, 'git branch positional creation must be blocked');
 assert.strictEqual(isDangerousCommand('git status --short'), false);
+assert.strictEqual(isDangerousCommand('git branch'), false);
+assert.strictEqual(isDangerousCommand('git branch -a'), false);
+assert.strictEqual(isDangerousCommand('git branch --show-current'), false);
+assert.strictEqual(isDangerousCommand('git diff -- core/type.py'), false, 'type in file arg must not trigger false positive');
+assert.strictEqual(isDangerousCommand('git diff -- core/cat.py'), false, 'cat in file arg must not trigger false positive');
+assert.strictEqual(isDangerousCommand('git diff -- core/open.py'), false, 'open in file arg must not trigger false positive');
+assert.strictEqual(isDangerousCommand('python -m unittest tests/test_open.py'), false, 'test_open.py must not trigger false positive');
+assert.strictEqual(isDangerousCommand('python -m unittest tests/test_cat.py'), false, 'test_cat.py must not trigger false positive');
 assert.strictEqual(isDangerousCommand('npm test'), false);
 assert.strictEqual(isDangerousCommand('node --check agent-team/scripts/applier.mjs'), false);
+
+// parseDiagnosticCommand argv splitting & Windows npm.cmd wrapper checks
+const parsedWinNpm = parseDiagnosticCommand('npm run test:clean', 'win32');
+assert.strictEqual(parsedWinNpm.ok, true);
+assert.ok(/cmd\.exe$/i.test(parsedWinNpm.executable));
+assert.deepStrictEqual(parsedWinNpm.args, ['/d', '/s', '/c', 'npm.cmd', 'run', 'test:clean']);
+
+const parsedLinuxNpm = parseDiagnosticCommand('npm test', 'linux');
+assert.strictEqual(parsedLinuxNpm.ok, true);
+assert.strictEqual(parsedLinuxNpm.executable, 'npm');
+assert.deepStrictEqual(parsedLinuxNpm.args, ['test']);
+
+const parsedNodeCheck = parseDiagnosticCommand('node --check agent-team/scripts/applier.mjs', 'win32');
+assert.strictEqual(parsedNodeCheck.ok, true);
+assert.strictEqual(parsedNodeCheck.executable, 'node');
+assert.deepStrictEqual(parsedNodeCheck.args, ['--check', 'agent-team/scripts/applier.mjs']);
 
 // toolApplyPatch enforces policy.yaml protected_files & allowed_dirs even when omitted from context
 const protectedPatchAttempt = `FILE: tests/test_indentation.py\n<<<<<<< SEARCH\nimport unittest\n=======\n# hacked\n>>>>>>> REPLACE`;
@@ -368,21 +419,206 @@ const outsideDirPatchRes = toolApplyPatch(REPO_ROOT, { patch: outsideDirPatchAtt
 assert.strictEqual(outsideDirPatchRes.ok, false, 'toolApplyPatch must block files outside allowed_dirs from policy.yaml');
 assert.ok(outsideDirPatchRes.error.includes('outside project.allowed_dirs'), `Expected allowed_dirs error, got: ${outsideDirPatchRes.error}`);
 
-// run_command execution
-const cmdSafe = await toolRunCommand(REPO_ROOT, { command: 'node -e "console.log(\'AGENT_CLI_OK\')"' });
+// run_command execution (execFile with shell: false; node -e blocked)
+const cmdNodeEvalBlocked = await toolRunCommand(REPO_ROOT, { command: 'node -e "console.log(\'AGENT_CLI_OK\')"' });
+assert.strictEqual(cmdNodeEvalBlocked.ok, false);
+assert.ok(cmdNodeEvalBlocked.error.includes('SECURITY_BLOCKED'));
+
+const cmdSafe = await toolRunCommand(REPO_ROOT, { command: 'node --check agent-team/scripts/applier.mjs' });
 assert.strictEqual(cmdSafe.ok, true);
-assert.ok(cmdSafe.stdout.includes('AGENT_CLI_OK'));
+assert.strictEqual(cmdSafe.exit_code, 0);
 
 const cmdBlocked = await toolRunCommand(REPO_ROOT, { command: 'del /f /s /q C:\\Windows\\System32' });
 assert.strictEqual(cmdBlocked.ok, false);
 assert.ok(cmdBlocked.error.includes('SECURITY_BLOCKED'));
 
-const cmdViaDispatch = await executeTool('run_command', { command: 'node -e "console.log(\'DISPATCH_OK\')"' }, {
+const cmdViaDispatch = await executeTool('run_command', { command: 'git status --short' }, {
   role: 'writer',
   allowedTools: ['run_command']
 });
 assert.strictEqual(cmdViaDispatch.ok, true);
-assert.ok(cmdViaDispatch.stdout.includes('DISPATCH_OK'));
+assert.strictEqual(cmdViaDispatch.exit_code, 0);
+
+// Symlink/Junction read escape guard + ReDoS/file-size limits in toolSearchCode + context.allowNewFiles override
+const tmpSecBase = fs.mkdtempSync(path.join(REPO_ROOT, 'agent-team', 'state', 'tmp-tool-sec-'));
+try {
+  const outsideDir = path.join(tmpSecBase, 'outside');
+  const fakeRepo = path.join(tmpSecBase, 'repo');
+  fs.mkdirSync(path.join(fakeRepo, 'core'), { recursive: true });
+  fs.mkdirSync(outsideDir, { recursive: true });
+  fs.writeFileSync(path.join(outsideDir, 'secret.txt'), 'TOP_SECRET_OUTSIDE_REPO\n', 'utf8');
+  fs.writeFileSync(path.join(fakeRepo, 'core', 'normal.txt'), 'hello (a+)+ world\nNEEDLE_SMALL\n', 'utf8');
+  fs.writeFileSync(path.join(fakeRepo, 'core', 'huge.txt'), 'NEEDLE_HUGE\n' + 'X'.repeat(MAX_SEARCH_FILE_BYTES + 128), 'utf8');
+
+  const linkDir = path.join(fakeRepo, 'linked_out');
+  let symlinkCreated = false;
+  try {
+    fs.symlinkSync(outsideDir, linkDir, process.platform === 'win32' ? 'junction' : 'dir');
+    symlinkCreated = true;
+  } catch (err) {
+    if (err.code !== 'EPERM') throw err;
+  }
+
+  if (symlinkCreated) {
+    const symlinkReadRes = toolReadFile(fakeRepo, { path: 'linked_out/secret.txt' });
+    assert.strictEqual(symlinkReadRes.ok, false, 'toolReadFile must block reading through symlink/junction outside repo');
+    assert.match(symlinkReadRes.error, /SECURITY/i);
+
+    const symlinkListDirRes = toolListFiles(fakeRepo, { dir: 'linked_out' });
+    assert.strictEqual(symlinkListDirRes.ok, false, 'toolListFiles must block explicit symlink/junction dir outside repo');
+    assert.match(symlinkListDirRes.error, /SECURITY/i);
+
+    const rootListRes = toolListFiles(fakeRepo, {});
+    assert.strictEqual(rootListRes.ok, true);
+    assert.strictEqual(rootListRes.files.some(f => f.includes('linked_out') || f.includes('secret.txt')), false, 'toolListFiles walk must skip symlinks/junctions');
+  } else {
+    // Restricted sandbox fallback: verify lstatSync/realpathSync/Dirent symlink guard behavior deterministically
+    const origLstat = fs.lstatSync;
+    const origReaddir = fs.readdirSync;
+    const linkFile = path.join(fakeRepo, 'core', 'link_secret.txt');
+    const linkSubDir = path.join(fakeRepo, 'core', 'sub_link');
+    fs.writeFileSync(linkFile, 'PLACEHOLDER', 'utf8');
+    fs.mkdirSync(linkSubDir, { recursive: true });
+    fs.writeFileSync(path.join(linkSubDir, 'hidden.txt'), 'HIDDEN', 'utf8');
+    try {
+      fs.lstatSync = (p, ...rest) => {
+        const st = origLstat.call(fs, p, ...rest);
+        const resolvedP = path.resolve(String(p));
+        if (resolvedP === path.resolve(linkFile) || resolvedP === path.resolve(linkSubDir)) {
+          return {
+            ...st,
+            isSymbolicLink: () => true,
+            isFile: () => false,
+            isDirectory: () => false
+          };
+        }
+        return st;
+      };
+      const stubReadRes = toolReadFile(fakeRepo, { path: 'core/link_secret.txt' });
+      assert.strictEqual(stubReadRes.ok, false, 'toolReadFile must reject symlink reported by lstatSync');
+      assert.match(stubReadRes.error, /SECURITY/i);
+
+      const stubListDirRes = toolListFiles(fakeRepo, { dir: 'core/sub_link' });
+      assert.strictEqual(stubListDirRes.ok, false, 'toolListFiles must reject symlink dir via checkNoSymlinkEscape');
+      assert.match(stubListDirRes.error, /SECURITY/i);
+
+      fs.readdirSync = (p, opts) => {
+        const entries = origReaddir.call(fs, p, opts);
+        if (opts && opts.withFileTypes && path.resolve(String(p)) === path.resolve(path.join(fakeRepo, 'core'))) {
+          return entries.map(ent => {
+            if (ent.name === 'link_secret.txt') {
+              return { name: ent.name, isSymbolicLink: () => true, isDirectory: () => false, isFile: () => false };
+            }
+            if (ent.name === 'sub_link') {
+              // Simulate OS where Dirent reports directory, verifying checkNoSymlinkEscape catches it in walk()
+              return { name: ent.name, isSymbolicLink: () => false, isDirectory: () => true, isFile: () => false };
+            }
+            return ent;
+          });
+        }
+        return entries;
+      };
+      const stubListRes = toolListFiles(fakeRepo, {});
+      assert.strictEqual(stubListRes.ok, true);
+      assert.strictEqual(
+        stubListRes.files.some(f => f.includes('link_secret.txt') || f.includes('hidden.txt')),
+        false,
+        'toolListFiles must skip symlink Dirent and symlinked subdirectories'
+      );
+    } finally {
+      fs.lstatSync = origLstat;
+      fs.readdirSync = origReaddir;
+    }
+  }
+
+  const longPatRes = toolSearchCode(fakeRepo, { pattern: 'a'.repeat(MAX_SEARCH_PATTERN_CHARS + 1) });
+  assert.strictEqual(longPatRes.ok, false, 'toolSearchCode must reject patterns > 200 chars');
+
+  assert.strictEqual(isUnsafeSearchRegex('(a+)+'), true);
+  assert.strictEqual(isUnsafeSearchRegex('(a|aa)+'), true);
+  assert.strictEqual(isUnsafeSearchRegex('single_writer_lock'), false);
+
+  const redosFallbackRes = toolSearchCode(fakeRepo, { pattern: '(a+)+' });
+  assert.strictEqual(redosFallbackRes.ok, true, 'Nested quantifier pattern must fall back safely to literal search');
+  assert.strictEqual(redosFallbackRes.count, 1);
+
+  const sizeSkipRes = toolSearchCode(fakeRepo, { pattern: 'NEEDLE_' });
+  assert.strictEqual(sizeSkipRes.ok, true);
+  assert.strictEqual(sizeSkipRes.count, 1, 'toolSearchCode must skip files > 1MB');
+  assert.strictEqual(sizeSkipRes.matches[0].file, 'core/normal.txt');
+
+  // Default search_code must restrict to allowed_dirs and exclude agent-team/**, .gitignore, and context_exclude
+  const searchScopeRepo = path.join(tmpSecBase, 'search-scope-repo');
+  fs.mkdirSync(path.join(searchScopeRepo, 'agent-team', 'scripts'), { recursive: true });
+  fs.mkdirSync(path.join(searchScopeRepo, 'core', 'propainter_repo'), { recursive: true });
+  fs.mkdirSync(path.join(searchScopeRepo, 'ui_web'), { recursive: true });
+  fs.mkdirSync(path.join(searchScopeRepo, 'ignored_dir'), { recursive: true });
+  fs.mkdirSync(path.join(searchScopeRepo, 'outside_dir'), { recursive: true });
+  fs.writeFileSync(path.join(searchScopeRepo, '.gitignore'), 'ignored_dir/\n*.log\n', 'utf8');
+  fs.writeFileSync(path.join(searchScopeRepo, '.clineignore'), 'history_target in dotfile\n', 'utf8');
+  fs.writeFileSync(path.join(searchScopeRepo, 'agent-team', 'scripts', 'noise.mjs'), 'const x = "history_target";\n', 'utf8');
+  fs.writeFileSync(path.join(searchScopeRepo, 'ignored_dir', 'skip.py'), 'x = "history_target"\n', 'utf8');
+  fs.writeFileSync(path.join(searchScopeRepo, 'core', 'debug.log'), 'history_target log\n', 'utf8');
+  fs.writeFileSync(path.join(searchScopeRepo, 'core', 'propainter_repo', 'vendor.py'), 'x = "history_target"\n', 'utf8');
+  fs.writeFileSync(path.join(searchScopeRepo, 'outside_dir', 'extra.py'), 'x = "history_target"\n', 'utf8');
+  fs.writeFileSync(path.join(searchScopeRepo, 'core', 'history.py'), 'def delete_history(): return "history_target"\n', 'utf8');
+  fs.writeFileSync(path.join(searchScopeRepo, 'ui_web', 'index.html'), '<div>history_target</div>\n', 'utf8');
+
+  const scopedSearch = toolSearchCode(
+    searchScopeRepo,
+    { pattern: 'history_target' },
+    { allowedDirs: ['core/', 'ui_web/'], contextExclude: ['core/propainter_repo/'] }
+  );
+  assert.strictEqual(scopedSearch.ok, true);
+  const scopedFiles = scopedSearch.matches.map(m => m.file).sort();
+  assert.deepStrictEqual(
+    scopedFiles,
+    ['core/history.py', 'ui_web/index.html'],
+    `Default search_code must only search allowed_dirs and skip agent-team/**, .gitignore & context_exclude, got: ${JSON.stringify(scopedFiles)}`
+  );
+
+  const dispatchedSearch = await executeTool(
+    'search_code',
+    { pattern: 'history_target' },
+    {
+      repoRoot: searchScopeRepo,
+      allowedTools: ['search_code'],
+      allowedDirs: ['core/', 'ui_web/'],
+      contextExclude: ['core/propainter_repo/']
+    }
+  );
+  assert.strictEqual(dispatchedSearch.ok, true);
+  assert.deepStrictEqual(
+    dispatchedSearch.matches.map(m => m.file).sort(),
+    ['core/history.py', 'ui_web/index.html'],
+    'executeTool(search_code) must forward allowedDirs & contextExclude to toolSearchCode'
+  );
+
+  const explicitDirSearch = toolSearchCode(searchScopeRepo, { pattern: 'history_target', dir: 'agent-team/scripts' });
+  assert.strictEqual(explicitDirSearch.ok, true);
+  assert.deepStrictEqual(
+    explicitDirSearch.matches.map(m => m.file),
+    ['agent-team/scripts/noise.mjs'],
+    'Explicit dir=agent-team/scripts must still be searchable when requested'
+  );
+
+  const disallowNewRes = toolApplyPatch(
+    fakeRepo,
+    { patch: 'FILE: core/new_file.py\n<<<<<<< SEARCH\n=======\nx = 1\n>>>>>>> REPLACE' },
+    {
+      sessionId: 'ctx-policy-check',
+      allowedScope: ['core/new_file.py'],
+      allowedDirs: ['core'],
+      protectedFiles: [],
+      allowNewFiles: false,
+      newFilesOnlyInScope: true,
+      maxScopeIncrease: 0
+    }
+  );
+  assert.strictEqual(disallowNewRes.ok, false, 'toolApplyPatch must honor context.allowNewFiles=false');
+} finally {
+  fs.rmSync(tmpSecBase, { recursive: true, force: true });
+}
 
 // get_repo_map tool & symbol extraction tests
 console.log('Testing Structural Repo-Map Engine & Tool...');
@@ -576,21 +812,30 @@ const partitioned = partitionScopeByDomain([
   'src/components/LoginModal.tsx',
   'tests/ui/test_modal.py'
 ]);
-assert.deepStrictEqual(partitioned.backendScope, ['src/services/auth.ts', 'tests/ui/test_modal.py']);
+assert.deepStrictEqual(partitioned.backendScope, ['src/services/auth.ts']);
 assert.deepStrictEqual(partitioned.frontendScope, ['ui/x.py', 'src/components/LoginModal.tsx']);
 assert.deepStrictEqual(partitioned.testScope, ['tests/ui/test_modal.py']);
 
-// 7.2 Unicode-Safe Vietnamese UI Intent Regex (NFC + NFD decomposed) & Effective Risk Escalation
-const nfdGoal = 'Cập nhật hiển thị và bố cục modal'.normalize('NFD');
-const uiDemand = analyzeTaskDemand({
+// 7.2 Unicode-Safe Vietnamese UI Intent Regex (NFC + NFD decomposed): only evaluated for Designer in standard + new UI
+const nfdGoal = 'Tạo giao diện hiển thị và bố cục modal mới'.normalize('NFD');
+const quickUiDemand = analyzeTaskDemand({
   title: 'Sửa giao diện',
   goal: nfdGoal,
   mode: 'quick',
   risk_level: 'low',
   scope: ['src/components/Modal.tsx']
 });
-assert.strictEqual(uiDemand.hasUiIntent, true, 'Must detect Vietnamese UI keywords even when NFD-decomposed');
-assert.strictEqual(uiDemand.needsDesignSpec, true, 'UI intent on frontend scope must request Design Spec');
+assert.strictEqual(quickUiDemand.hasUiIntent, false, 'quick + low + no images must not evaluate hasUiIntent for Designer');
+assert.strictEqual(quickUiDemand.needsDesignSpec, false, 'quick + low + no images must NOT request Design Spec');
+const uiDemand = analyzeTaskDemand({
+  title: 'Thiết kế giao diện mới',
+  goal: nfdGoal,
+  mode: 'standard',
+  risk_level: 'medium',
+  scope: ['src/components/Modal.tsx']
+});
+assert.strictEqual(uiDemand.hasUiIntent, true, 'Must detect Vietnamese UI keywords in standard mode even when NFD-decomposed');
+assert.strictEqual(uiDemand.needsDesignSpec, true, 'New UI intent in standard mode on frontend scope must request Design Spec');
 
 // Scope verification warns if UI intent has zero frontend files
 const missingUiVerify = verifyPlannedScope(['src/api/server.ts'], REPO_ROOT, analyzeTaskDemand({
@@ -711,16 +956,30 @@ const squad4ThreeRoles = {
     reviewer: { enabled: true, model: 'claude-opus-4.5' }
   }
 };
-const wfCombo4Mixed = resolveWriterHubWorkflow(taskMixedFullstack, squad4ThreeRoles);
-assertWorkflowInvariants(wfCombo4Mixed, analyzeTaskDemand(taskMixedFullstack), resolveSquadRoster(squad4ThreeRoles, taskMixedFullstack));
-assert.strictEqual(wfCombo4Mixed.length, 3, 'Combo 4 on Mixed task with distinct TechLead & Designer must run TechSpec -> DesignSpec -> Writer');
+// Low-risk mixed task without architect/spec_models MUST NOT pull Reviewer for pre-code TechSpec
+const wfCombo4LowMixed = resolveWriterHubWorkflow(taskMixedFullstack, squad4ThreeRoles);
+assert.strictEqual(
+  wfCombo4LowMixed.some(s => s.action === 'draft_spec' && s.role === 'reviewer'),
+  false,
+  'Low-risk task must NOT default spec drafting to Reviewer role'
+);
+
+// High-risk mixed task with 3 Specialist Roles -> TechSpec -> DesignSpec -> Writer
+const taskMixedHigh = { ...taskMixedFullstack, task_id: 'T-mixed-high', risk_level: 'high' };
+const wfCombo4Mixed = resolveWriterHubWorkflow(taskMixedHigh, squad4ThreeRoles);
+assertWorkflowInvariants(wfCombo4Mixed, analyzeTaskDemand(taskMixedHigh), resolveSquadRoster(squad4ThreeRoles, taskMixedHigh));
+assert.strictEqual(wfCombo4Mixed.length, 3, 'Combo 4 on High-risk Mixed task with distinct TechLead & Designer must run TechSpec -> DesignSpec -> Writer');
 assert.strictEqual(wfCombo4Mixed[0].role, 'reviewer');
+assert.deepStrictEqual(wfCombo4Mixed[0].sub_scope, ['src/api/profile.ts'], 'TechSpec must only receive backend/test sub_scope');
+assert.deepStrictEqual(wfCombo4Mixed[0].bridge_skeleton_scope, ['src/components/ProfileModal.tsx'], 'TechSpec must receive frontend bridge_skeleton_scope');
 assert.strictEqual(wfCombo4Mixed[1].role, 'designer');
+assert.deepStrictEqual(wfCombo4Mixed[1].sub_scope, ['src/components/ProfileModal.tsx'], 'DesignSpec must only receive frontend sub_scope');
+assert.deepStrictEqual(wfCombo4Mixed[1].bridge_skeleton_scope, ['src/api/profile.ts'], 'DesignSpec must receive backend bridge_skeleton_scope');
 assert.deepStrictEqual(wfCombo4Mixed[1].inputs, [wfCombo4Mixed[0].output_artifact], 'Designer must receive TechLead contract via inputs');
 assert.strictEqual(wfCombo4Mixed[2].action, 'apply_patch');
 
-// Combo 5: [BE Writer + FE Writer + Designer + TechLead] (4+ Models Full Squad)
-const squad5FullMultiWriter = {
+// Combo 5: [BE Writer + FE Writer (explicit frontend_writer override) + Designer + TechLead]
+const squad5WriterWithFallbackOnly = {
   roles: {
     writer: {
       enabled: true,
@@ -732,10 +991,31 @@ const squad5FullMultiWriter = {
     reviewer: { enabled: true, model: 'claude-opus-4.5' }
   }
 };
+const wfCombo5SingleWriter = resolveWriterHubWorkflow(taskMixedFullstack, squad5WriterWithFallbackOnly);
+assertWorkflowInvariants(wfCombo5SingleWriter, analyzeTaskDemand(taskMixedFullstack), resolveSquadRoster(squad5WriterWithFallbackOnly, taskMixedFullstack));
+assert.strictEqual(wfCombo5SingleWriter.length, 2, 'models[1] must stay fallback-only; merged apply_patch uses models[0]');
+assert.strictEqual(wfCombo5SingleWriter[1].model, 'deepseek-v4.1');
+
+const squad5FullMultiWriter = {
+  roles: {
+    writer: {
+      enabled: true,
+      model: 'deepseek-v4.1',
+      models: ['deepseek-v4.1', 'ag/gemini-3.8-flash']
+    },
+    frontend_writer: {
+      enabled: true,
+      model: 'ag/gemini-3.8-flash'
+    },
+    designer: { enabled: true, model: 'claude-sonnet-4.5' },
+    architect: { enabled: true, model: 'claude-sonnet-4.5' },
+    reviewer: { enabled: true, model: 'claude-opus-4.5' }
+  }
+};
 const wfCombo5Mixed = resolveWriterHubWorkflow(taskMixedFullstack, squad5FullMultiWriter);
 assertWorkflowInvariants(wfCombo5Mixed, analyzeTaskDemand(taskMixedFullstack), resolveSquadRoster(squad5FullMultiWriter, taskMixedFullstack));
 // Architect and Designer share claude-sonnet-4.5 -> auto-collapsed into 1 unified spec!
-// BE Writer (deepseek-v4.1) !== FE Writer (ag/gemini-3.8-flash) -> split into Step 2A (BE) -> Step 2B (FE with AST bridge)!
+// Explicit roles.frontend_writer (ag/gemini-3.8-flash) !== writer (deepseek-v4.1) -> split into Step 2A (BE) -> Step 2B (FE with AST bridge)!
 assert.strictEqual(wfCombo5Mixed.length, 3);
 assert.strictEqual(wfCombo5Mixed[0].action, 'draft_spec');
 assert.strictEqual(wfCombo5Mixed[0].spec_focus, 'unified_tech_and_ui');
@@ -937,7 +1217,109 @@ const visionMsg = [{ role: 'user', content: [{ type: 'text', text: 'Hello' }, { 
 const visionTokens = estimatePayloadTokens(visionMsg, [{ name: 'read_file', description: 'Read file' }]);
 assert.ok(visionTokens > 1024 && visionTokens < 1200, `Vision block must normalize to ~1024 tokens instead of raw base64 length (got ${visionTokens})`);
 
-console.log('✓ Universal Task-Demand × Squad-Roster Matrix & 4 Invariants tests passed.\n');
+// 7.7 0-Token Real-File Verification on Hard-Sub Eraser Task (core/eraser.py, ui_web/index.html, ui_bridge/js_api.py, tests/test_eraser.py)
+const realEraserTask = {
+  task_id: 'T-2026-11-09-6459-1-on-gian-hoa-hard-sub-eraser-gi',
+  title: 'Đơn giản hóa Hard-sub Eraser: giữ 2 chế độ (Blur & AI Inpaint)',
+  goal: "Loại bỏ 5 chế độ xóa dư thừa (delogo, hybrid, box, stroke_ffmpeg, inpaint_opencv) khỏi core/eraser.py và ui_web/index.html, chỉ giữ lại 2 chế độ chính: 'blur' và 'inpaint_ai'. Sửa BannerBoxDetector.suggested_mode trả về 'blur'.",
+  mode: 'standard',
+  risk_level: 'medium',
+  scope: ['core/eraser.py', 'ui_web/index.html', 'ui_bridge/js_api.py', 'tests/test_eraser.py'],
+  acceptance_criteria: [
+    "core/eraser.py build_filter_for_mode chỉ xử lý 2 modes: 'blur' và 'inpaint_ai'",
+    "ui_web/index.html chỉ hiển thị 2 nút mode",
+    "BannerBoxDetector.detect trả về suggested_mode='blur'",
+    "tests/test_eraser.py loại bỏ test cases cho 5 modes đã xóa"
+  ]
+};
+
+// Verify ui_bridge/js_api.py is partitioned into backendScope and tests/test_eraser.py into testScope!
+const realPartition = partitionScopeByDomain(realEraserTask.scope);
+assert.deepStrictEqual(realPartition.backendScope, ['core/eraser.py', 'ui_bridge/js_api.py'], 'ui_bridge/js_api.py must belong to backendScope');
+assert.deepStrictEqual(realPartition.frontendScope, ['ui_web/index.html'], 'Only ui_web/index.html belongs to frontendScope');
+assert.deepStrictEqual(realPartition.testScope, ['tests/test_eraser.py'], 'Test file belongs strictly to testScope');
+
+const snapRepo = materializeGitCommitSnapshot('210b0bc', [
+  'core/eraser.py',
+  'ui_bridge/js_api.py',
+  'tests/test_eraser.py',
+  'ui_web/index.html'
+]);
+try {
+  // Verify Output-Budget Bucket Splitting separates core/eraser.py (58KB), ui_bridge/js_api.py (78KB), and tests/test_eraser.py (40KB)
+  const rawPatchBuckets = [
+    { step: 1, role: 'writer', model: 'deepseek', domain: 'backend', action: 'apply_patch', sub_scope: [...realPartition.backendScope, ...realPartition.testScope] },
+    { step: 2, role: 'writer', model: 'gemini', domain: 'frontend', action: 'apply_patch', sub_scope: realPartition.frontendScope, inject_updated_repo_map_from: realPartition.backendScope }
+  ];
+  const splitBuckets = splitPatchStepsByOutputBudget(rawPatchBuckets, snapRepo);
+  assert.strictEqual(splitBuckets.length, 4, '3 large backend/test files + 1 frontend file must split into 4 sequential apply_patch sub-buckets');
+  assert.deepStrictEqual(splitBuckets[0].sub_scope, ['core/eraser.py']);
+  assert.deepStrictEqual(splitBuckets[1].sub_scope, ['ui_bridge/js_api.py']);
+  assert.deepStrictEqual(splitBuckets[1].inject_updated_repo_map_from, ['core/eraser.py']);
+  assert.deepStrictEqual(splitBuckets[2].sub_scope, ['tests/test_eraser.py']);
+  assert.deepStrictEqual(splitBuckets[2].inject_updated_repo_map_from, ['core/eraser.py', 'ui_bridge/js_api.py']);
+  assert.deepStrictEqual(splitBuckets[3].sub_scope, ['ui_web/index.html']);
+
+  // Measure real token budgets for TechSpec, DesignSpec, and each Coder bucket using calibrated estimatePayloadTokens (1.9x over raw 3.5 divisor)
+  const techSpecCtx = buildScopedFilesContext([...realPartition.backendScope, ...realPartition.testScope], snapRepo, realEraserTask, { tokenBudgetPerTask: 150000 });
+  const techSpecEstTokens = estimatePayloadTokens([{ role: 'user', content: techSpecCtx }], []);
+  assert.ok(techSpecEstTokens < 30400, `TechSpec calibrated scoped context must stay < 30,400 tokens (16,000 × 1.9; got ${techSpecEstTokens}, vs ~86k pre-AST)`);
+
+  const designSpecCtx = buildScopedFilesContext(realPartition.frontendScope, snapRepo, realEraserTask, { tokenBudgetPerTask: 150000 });
+  const designBridgeMap = generateRepoMap(snapRepo, { scopeFiles: realPartition.backendScope, maxChars: 2200 });
+  const designSpecEstTokens = estimatePayloadTokens([{ role: 'user', content: `${designBridgeMap}\n\n${designSpecCtx}` }], []);
+  assert.ok(designSpecEstTokens < 17100, `DesignSpec calibrated scoped context + bridge AST skeleton must stay < 17,100 tokens (9,000 × 1.9; got ${designSpecEstTokens}, vs ~90k pre-AST)`);
+
+  for (const b of splitBuckets) {
+    const bCtx = buildScopedFilesContext(b.sub_scope, snapRepo, { ...realEraserTask, scope: b.sub_scope }, { tokenBudgetPerTask: 150000 });
+    const bTokens = estimatePayloadTokens([{ role: 'user', content: bCtx }], []);
+    assert.ok(bTokens < 15200, `Coder sub-bucket [${b.sub_scope.join(', ')}] calibrated context must stay < 15,200 tokens (8,000 × 1.9; got ${bTokens})`);
+  }
+  console.log(`  [0-Token Real-File Proof] TechSpec=${techSpecEstTokens} tok (calibrated 1.9x) | DesignSpec=${designSpecEstTokens} tok (calibrated 1.9x) | 4 Split Coder Buckets all < 15,200 tok!`);
+} finally {
+  fs.rmSync(snapRepo, { recursive: true, force: true });
+}
+
+// Verify Pre-Call Token Brake in runAgent (0 network calls when Turn 1 input exceeds maxTokenBudget)
+const brakeRes = await runAgent({
+  role: 'writer',
+  prompt: 'Please modify files: ' + 'X'.repeat(2000),
+  maxTokenBudget: 100,
+  disableTools: true
+});
+assert.strictEqual(brakeRes.ok, false, 'Pre-call token brake must reject call when estimated input > maxTokenBudget');
+assert.strictEqual(brakeRes.budget_exceeded, true, 'Must set budget_exceeded: true');
+assert.match(brakeRes.error, /Pre-call token brake triggered/);
+
+// Verify In-Session Circuit Breaker
+resetCircuitBreaker();
+assert.strictEqual(isModelCircuitBroken('deepseek-ai/deepseek-v4.1-flash-1017'), false);
+tripModelCircuitBreaker('deepseek-ai/deepseek-v4.1-flash-1017', 'HTTP 404: No active credentials for provider: deepseek-ai');
+assert.strictEqual(isModelCircuitBroken('deepseek-ai/deepseek-v4.1-flash-1017'), true);
+resetCircuitBreaker();
+
+// Verify Dynamic Cognitive Budgeting (Calibrated to ~2x p90 actuals: 375k-480k ceiling, NOT 1,125,000)
+const quickBudget = computeDynamicTaskTokenBudget(
+  { mode: 'quick', risk_level: 'low', scope: ['core/downloader.py'] },
+  [{ action: 'apply_patch' }],
+  { policy: { retry_and_escalation: { token_budget_per_task: 150000, base_token_budget_per_agent: 60000 } } }
+);
+assert.strictEqual(quickBudget, 150000, 'Quick mode 1-agent task must get min floor budget (150k)');
+
+const standardMultiAgentBudget = computeDynamicTaskTokenBudget(
+  realEraserTask,
+  [
+    { action: 'draft_spec' },
+    { action: 'draft_spec' },
+    { action: 'apply_patch' },
+    { action: 'apply_patch' }
+  ],
+  { policy: { retry_and_escalation: { token_budget_per_task: 150000, base_token_budget_per_agent: 60000 } } }
+);
+// 5 agents/steps (2 specs + 2 patches + 1 reviewer) * 60,000 * 1.25 (medium risk & 4 files) = 375,000 tokens (bounded <= 480k)!
+assert.strictEqual(standardMultiAgentBudget, 375000, '4-file medium task with 5 squad steps must receive calibrated 375,000 tokens dynamic budget');
+
+console.log('✓ Universal Task-Demand × Squad-Roster Matrix, 0-Token Real-File Proof, Token Brake, Circuit Breaker & Dynamic Adaptive Budget passed.\n');
 
 console.log('====================================================');
 console.log('ALL AGENT RUNTIME V3.0 CORE TESTS PASSED! 🚀🎯');

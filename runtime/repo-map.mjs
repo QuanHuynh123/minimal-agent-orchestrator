@@ -142,22 +142,73 @@ try {
 // ---------------------------------------------------------------------------
 // 2. AST Symbol & Import Extraction (Tree-Sitter WASM + Regex Fallback)
 // ---------------------------------------------------------------------------
-function cleanParams(raw = '') {
+function splitTopLevelParams(stripped = '') {
+  const parts = [];
+  let buf = '';
+  let depth = 0;
+  let quote = '';
+  let escapeNext = false;
+  for (let i = 0; i < stripped.length; i++) {
+    const ch = stripped[i];
+    if (escapeNext) {
+      buf += ch;
+      escapeNext = false;
+      continue;
+    }
+    if (quote) {
+      buf += ch;
+      if (ch === '\\') {
+        escapeNext = true;
+      } else if (ch === quote) {
+        quote = '';
+      }
+      continue;
+    }
+    if (ch === '\'' || ch === '"' || ch === '`') {
+      quote = ch;
+      buf += ch;
+      continue;
+    }
+    if (ch === '(' || ch === '[' || ch === '{') {
+      depth++;
+      buf += ch;
+      continue;
+    }
+    if (ch === ')' || ch === ']' || ch === '}') {
+      if (depth > 0) depth--;
+      buf += ch;
+      continue;
+    }
+    if (ch === ',' && depth === 0) {
+      parts.push(buf);
+      buf = '';
+      continue;
+    }
+    buf += ch;
+  }
+  if (buf.trim()) parts.push(buf);
+  return parts;
+}
+
+function cleanParams(raw = '', { maxParams = 4 } = {}) {
   if (!raw) return '';
-  const stripped = String(raw).trim().replace(/^\(/, '').replace(/\)$/, '');
+  const stripped = String(raw).trim().replace(/^\(/, '').replace(/\)$/, '').trim();
   if (!stripped) return '';
-  const parts = stripped
-    .split(',')
-    .map(p => p.trim())
-    .filter(p => p && p !== 'self' && p !== 'cls');
-  return parts.slice(0, 4).join(', ') + (parts.length > 4 ? ', ...' : '');
+  const parts = splitTopLevelParams(stripped)
+    .map(p => p.replace(/\s+/g, ' ').trim())
+    .filter((p, idx) => p && !(idx === 0 && (p === 'self' || p === 'cls')));
+  if (Number.isFinite(maxParams) && parts.length > maxParams) {
+    return parts.slice(0, maxParams).join(', ') + ', ...';
+  }
+  return parts.join(', ');
 }
 
 function stripQuotes(str = '') {
   return String(str).trim().replace(/^['"`]|['"`]$/g, '');
 }
 
-function extractJsAstSymbols(rootNode, filePath) {
+function extractJsAstSymbols(rootNode, filePath, options = {}) {
+  const maxParams = options.maxParams ?? 4;
   const classes = [];
   const functions = [];
   const imports = [];
@@ -235,7 +286,7 @@ function extractJsAstSymbols(rootNode, filePath) {
           if (mName) {
             clsObj.methods.push({
               name: mName,
-              params: cleanParams(mParams),
+              params: cleanParams(mParams, { maxParams }),
               returns: mRet,
               line: member.startPosition.row + 1
             });
@@ -253,7 +304,7 @@ function extractJsAstSymbols(rootNode, filePath) {
     const retText = fnNode.childForFieldName('return_type')?.text?.replace(/^:\s*/, '') || '';
     functions.push({
       name: nameNode.text,
-      params: cleanParams(paramsText),
+      params: cleanParams(paramsText, { maxParams }),
       returns: retText,
       line: fnNode.startPosition.row + 1
     });
@@ -272,7 +323,7 @@ function extractJsAstSymbols(rootNode, filePath) {
         const retNode = valNode.childForFieldName('return_type');
         functions.push({
           name: nameNode.text,
-          params: cleanParams(paramsNode ? paramsNode.text : ''),
+          params: cleanParams(paramsNode ? paramsNode.text : '', { maxParams }),
           returns: retNode ? retNode.text.replace(/^:\s*/, '') : '',
           line: decl.startPosition.row + 1
         });
@@ -340,7 +391,8 @@ function extractJsAstSymbols(rootNode, filePath) {
   return { filePath, classes, functions, imports, callers: [], parser: 'tree-sitter-wasm' };
 }
 
-function extractPythonAstSymbols(rootNode, filePath) {
+function extractPythonAstSymbols(rootNode, filePath, options = {}) {
+  const maxParams = options.maxParams ?? 4;
   const classes = [];
   const functions = [];
   const imports = [];
@@ -362,7 +414,7 @@ function extractPythonAstSymbols(rootNode, filePath) {
     const retNode = fnNode.childForFieldName('return_type');
     targetArray.push({
       name,
-      params: cleanParams(paramsNode ? paramsNode.text : ''),
+      params: cleanParams(paramsNode ? paramsNode.text : '', { maxParams }),
       returns: retNode ? retNode.text.trim() : '',
       line: fnNode.startPosition.row + 1
     });
@@ -610,7 +662,7 @@ export function extractSymbolsWithRegex(filePath, content = '') {
  * Extracts classes, methods, functions, and imports from code.
  * Uses Tree-Sitter WASM AST when initialized; falls back to Regex otherwise.
  */
-export function extractSymbolsFromCode(filePath, content = '') {
+export function extractSymbolsFromCode(filePath, content = '', options = {}) {
   const ext = path.extname(filePath).toLowerCase();
   if (wasmReady && TsParserClass && wasmLanguages.has(ext)) {
     try {
@@ -623,8 +675,8 @@ export function extractSymbolsFromCode(filePath, content = '') {
       const tree = parser.parse(String(content || ''));
       if (tree && tree.rootNode) {
         const res = ext === '.py'
-          ? extractPythonAstSymbols(tree.rootNode, filePath)
-          : extractJsAstSymbols(tree.rootNode, filePath);
+          ? extractPythonAstSymbols(tree.rootNode, filePath, options)
+          : extractJsAstSymbols(tree.rootNode, filePath, options);
         tree.delete();
         return res;
       }
@@ -632,6 +684,428 @@ export function extractSymbolsFromCode(filePath, content = '') {
   }
 
   return extractSymbolsWithRegex(filePath, content);
+}
+
+/**
+ * Extracts top-level declared identifiers (functions, classes, methods, and module/script variables)
+ * via Tree-sitter WASM AST with regex fallback.
+ */
+export function extractAstDeclaredIdentifiers(filePath, content = '') {
+  const ext = path.extname(String(filePath || '')).toLowerCase();
+  const text = String(content || '');
+  const declarations = [];
+  const seen = new Set();
+  const addDecl = (name, kind, line = 0) => {
+    if (!name || typeof name !== 'string') return;
+    const key = `${kind}:${name}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    declarations.push({ name, kind, line });
+  };
+
+  if (wasmReady && TsParserClass && wasmLanguages.has(ext)) {
+    try {
+      let parser = wasmParsers.get(ext);
+      if (!parser) {
+        parser = new TsParserClass();
+        parser.setLanguage(wasmLanguages.get(ext));
+        wasmParsers.set(ext, parser);
+      }
+      const tree = parser.parse(text);
+      if (tree && tree.rootNode) {
+        const root = tree.rootNode;
+        if (ext === '.py') {
+          for (let i = 0; i < root.namedChildCount; i++) {
+            let node = root.namedChild(i);
+            if (!node) continue;
+            if (node.type === 'decorated_definition') {
+              node = node.childForFieldName('definition');
+            }
+            if (!node) continue;
+            if (node.type === 'function_definition') {
+              const nameNode = node.childForFieldName('name');
+              if (nameNode) addDecl(nameNode.text, 'function', node.startPosition.row + 1);
+            } else if (node.type === 'class_definition') {
+              const nameNode = node.childForFieldName('name');
+              if (nameNode) addDecl(nameNode.text, 'class', node.startPosition.row + 1);
+              const bodyNode = node.childForFieldName('body');
+              if (bodyNode) {
+                for (let j = 0; j < bodyNode.namedChildCount; j++) {
+                  let mNode = bodyNode.namedChild(j);
+                  if (mNode?.type === 'decorated_definition') mNode = mNode.childForFieldName('definition');
+                  if (mNode?.type === 'function_definition') {
+                    const mName = mNode.childForFieldName('name')?.text;
+                    if (mName && (!mName.startsWith('__') || mName === '__init__')) {
+                      addDecl(mName, 'method', mNode.startPosition.row + 1);
+                    }
+                  }
+                }
+              }
+            } else if (node.type === 'expression_statement') {
+              const assign = node.namedChild(0);
+              if (assign?.type === 'assignment') {
+                const left = assign.childForFieldName('left') || assign.namedChild(0);
+                if (left?.type === 'identifier') {
+                  addDecl(left.text, 'variable', left.startPosition.row + 1);
+                }
+              }
+            }
+          }
+        } else {
+          const visitJsTop = (node) => {
+            if (!node) return;
+            if (node.type === 'export_statement') {
+              const decl = node.childForFieldName('declaration');
+              if (decl) visitJsTop(decl);
+              return;
+            }
+            if (node.type === 'function_declaration' || node.type === 'generator_function_declaration') {
+              const nameNode = node.childForFieldName('name');
+              if (nameNode) addDecl(nameNode.text, 'function', node.startPosition.row + 1);
+            } else if (node.type === 'class_declaration' || node.type === 'class') {
+              const nameNode = node.childForFieldName('name');
+              if (nameNode) addDecl(nameNode.text, 'class', node.startPosition.row + 1);
+              const bodyNode = node.childForFieldName('body');
+              if (bodyNode) {
+                for (let j = 0; j < bodyNode.namedChildCount; j++) {
+                  const member = bodyNode.namedChild(j);
+                  if (member?.type === 'method_definition' || member?.type === 'method_signature') {
+                    const mName = member.childForFieldName('name')?.text;
+                    if (mName && mName !== 'constructor') {
+                      addDecl(mName, 'method', member.startPosition.row + 1);
+                    }
+                  }
+                }
+              }
+            } else if (node.type === 'lexical_declaration' || node.type === 'variable_declaration') {
+              for (let j = 0; j < node.namedChildCount; j++) {
+                const decl = node.namedChild(j);
+                if (decl?.type !== 'variable_declarator') continue;
+                const nameNode = decl.childForFieldName('name');
+                const valNode = decl.childForFieldName('value');
+                if (!nameNode || nameNode.type !== 'identifier') continue;
+                const isFn = valNode && ['arrow_function', 'function_expression', 'function'].includes(valNode.type);
+                addDecl(nameNode.text, isFn ? 'function' : 'variable', decl.startPosition.row + 1);
+              }
+            }
+          };
+          for (let i = 0; i < root.namedChildCount; i++) {
+            visitJsTop(root.namedChild(i));
+          }
+        }
+        tree.delete();
+        return { filePath, parser: 'tree-sitter-wasm', identifiers: declarations };
+      }
+    } catch {}
+  }
+
+  const fallback = extractSymbolsWithRegex(filePath, text);
+  for (const fn of fallback.functions || []) {
+    addDecl(fn.name, 'function', fn.line || 0);
+  }
+  for (const cls of fallback.classes || []) {
+    addDecl(cls.name, 'class', cls.line || 0);
+    for (const m of cls.methods || []) {
+      addDecl(m.name, 'method', m.line || 0);
+    }
+  }
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (ext === '.py') {
+      const m = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=/);
+      if (m) addDecl(m[1], 'variable', i + 1);
+    } else {
+      const m = line.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=/);
+      if (m) addDecl(m[1], 'variable', i + 1);
+    }
+  }
+  return { filePath, parser: fallback.parser || 'regex-fallback', identifiers: declarations };
+}
+
+/**
+ * Collects 0-based enclosing AST block spans (functions, methods, classes, callback functions)
+ * via Tree-sitter WASM for JS/TS, Python, and inline <script> blocks inside HTML/Vue/Svelte.
+ */
+export function extractEnclosingAstBlockSpans(filePath, content = '') {
+  const ext = path.extname(String(filePath || '')).toLowerCase();
+  const text = String(content || '');
+  const spans = [];
+
+  const collectCodeSpans = (codeExt, codeText, lineOffset = 0) => {
+    if (!wasmReady || !TsParserClass || !wasmLanguages.has(codeExt)) return;
+    let tree = null;
+    try {
+      let parser = wasmParsers.get(codeExt);
+      if (!parser) {
+        parser = new TsParserClass();
+        parser.setLanguage(wasmLanguages.get(codeExt));
+        wasmParsers.set(codeExt, parser);
+      }
+      tree = parser.parse(codeText);
+      if (!tree || !tree.rootNode) return;
+
+      const pyEnclosing = new Set(['function_definition', 'class_definition', 'decorated_definition']);
+      const jsEnclosing = new Set([
+        'function_declaration', 'generator_function_declaration', 'method_definition',
+        'arrow_function', 'function_expression', 'function', 'class_declaration'
+      ]);
+      const targetSet = codeExt === '.py' ? pyEnclosing : jsEnclosing;
+
+      const stack = [{ node: tree.rootNode, depth: 0 }];
+      while (stack.length > 0) {
+        const { node, depth } = stack.pop();
+        if (!node) continue;
+        let nextDepth = depth;
+        if (targetSet.has(node.type)) {
+          let startRow = node.startPosition.row + lineOffset;
+          let endRow = node.endPosition.row + lineOffset;
+          if (node.type === 'decorated_definition') {
+            const inner = node.childForFieldName('definition');
+            if (inner && (inner.type === 'function_definition' || inner.type === 'class_definition')) {
+              endRow = inner.endPosition.row + lineOffset;
+            }
+          }
+          if (endRow - startRow >= 2) {
+            spans.push({ startLine: startRow, endLine: endRow, type: node.type, depth });
+            nextDepth = depth + 1;
+          }
+        }
+        for (let i = node.namedChildCount - 1; i >= 0; i--) {
+          stack.push({ node: node.namedChild(i), depth: nextDepth });
+        }
+      }
+    } catch {
+      // Ignore AST parse failures cleanly and allow caller fallback
+    } finally {
+      try { if (tree) tree.delete(); } catch {}
+    }
+  };
+
+  if (['.html', '.htm', '.vue', '.svelte'].includes(ext)) {
+    const scriptRe = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+    let m;
+    while ((m = scriptRe.exec(text)) !== null) {
+      const bodyOffset = m[0].indexOf('>') + 1;
+      const beforeBody = text.slice(0, m.index + bodyOffset);
+      const lineOffset = beforeBody.split(/\r?\n/).length - 1;
+      collectCodeSpans('.js', m[1], lineOffset);
+    }
+  } else {
+    const normExt = wasmLanguages.has(ext) ? ext : (/^\s*(?:def|class)\s+\w+/m.test(text) ? '.py' : '.js');
+    collectCodeSpans(normExt, text, 0);
+  }
+
+  return spans;
+}
+
+/**
+ * Extracts normalized, non-truncated public symbol signatures via Tree-sitter AST
+ * for post-patch before/after signature diff checking.
+ */
+export function extractPublicSymbolSignatures(filePath, content = '') {
+  const parsed = extractSymbolsFromCode(filePath, content, { maxParams: Infinity });
+  const symbols = {};
+
+  for (const fn of (parsed.functions || [])) {
+    if (!fn?.name || fn.name.startsWith('_')) continue;
+    const normRet = fn.returns ? fn.returns.replace(/\s+/g, ' ').trim() : '';
+    symbols[fn.name] = {
+      kind: 'function',
+      name: fn.name,
+      shortName: fn.name,
+      signature: `(${fn.params || ''})${normRet ? ` -> ${normRet}` : ''}`,
+      line: fn.line || 0
+    };
+  }
+
+  for (const cls of (parsed.classes || [])) {
+    if (!cls?.name || cls.name.startsWith('_')) continue;
+    const normInherits = cls.inherits ? cls.inherits.replace(/\s+/g, ' ').trim() : '';
+    symbols[cls.name] = {
+      kind: 'class',
+      name: cls.name,
+      shortName: cls.name,
+      signature: `class(${normInherits})`,
+      line: cls.line || 0
+    };
+    for (const m of (cls.methods || [])) {
+      if (!m?.name || (m.name.startsWith('_') && m.name !== '__init__')) continue;
+      const qName = `${cls.name}.${m.name}`;
+      const normRet = m.returns ? m.returns.replace(/\s+/g, ' ').trim() : '';
+      symbols[qName] = {
+        kind: 'method',
+        name: qName,
+        shortName: m.name,
+        className: cls.name,
+        signature: `(${m.params || ''})${normRet ? ` -> ${normRet}` : ''}`,
+        line: m.line || 0
+      };
+    }
+  }
+
+  return { filePath, parser: parsed.parser, symbols };
+}
+
+/**
+ * Compares before/after public symbol signature maps and returns any public symbols
+ * whose signature changed or which were removed/renamed.
+ */
+export function diffPublicSymbolSignatures(beforeResult = {}, afterResult = {}) {
+  const beforeSymbols = beforeResult?.symbols || {};
+  const afterSymbols = afterResult?.symbols || {};
+  const changes = [];
+
+  for (const [symKey, beforeEntry] of Object.entries(beforeSymbols)) {
+    const afterEntry = afterSymbols[symKey];
+    if (!afterEntry) {
+      changes.push({
+        symbol: symKey,
+        shortName: beforeEntry.shortName || symKey,
+        className: beforeEntry.className || null,
+        kind: beforeEntry.kind,
+        changeType: 'removed_or_renamed',
+        before: beforeEntry.signature,
+        after: null
+      });
+    } else if (afterEntry.signature !== beforeEntry.signature) {
+      changes.push({
+        symbol: symKey,
+        shortName: beforeEntry.shortName || symKey,
+        className: beforeEntry.className || null,
+        kind: beforeEntry.kind,
+        changeType: 'signature_changed',
+        before: beforeEntry.signature,
+        after: afterEntry.signature
+      });
+    }
+  }
+
+  return changes;
+}
+
+const PY_IMPORT_TYPES = new Set(['import_statement', 'import_from_statement', 'future_import_statement']);
+const IDENTIFIER_NODE_TYPES = new Set([
+  'identifier',
+  'property_identifier',
+  'field_identifier',
+  'shorthand_property_identifier',
+  'type_identifier'
+]);
+
+function isPythonAllExportStatement(node) {
+  if (!node || node.type !== 'expression_statement') return false;
+  const child = node.namedChild(0);
+  if (!child || child.type !== 'assignment') return false;
+  const left = child.childForFieldName('left') || child.namedChild(0);
+  return Boolean(left && left.text === '__all__');
+}
+
+function isPythonDocstringStatement(node) {
+  if (!node || node.type !== 'expression_statement' || node.namedChildCount !== 1) return false;
+  return node.namedChild(0)?.type === 'string';
+}
+
+/**
+ * Uses Tree-sitter WASM AST to extract identifier/property references in executable code
+ * (skipping import headers, comments, strings, and barrel `__all__` export lists).
+ */
+export function extractTreeSitterSymbolUsage(filePath, content = '') {
+  const ext = path.extname(filePath).toLowerCase();
+  const executableRefs = new Set();
+  const reexportedSymbols = new Set();
+  let isPureBarrelReexport = false;
+  let parserMode = 'regex-fallback';
+
+  if (wasmReady && TsParserClass && wasmLanguages.has(ext)) {
+    try {
+      let parser = wasmParsers.get(ext);
+      if (!parser) {
+        parser = new TsParserClass();
+        parser.setLanguage(wasmLanguages.get(ext));
+        wasmParsers.set(ext, parser);
+      }
+      const tree = parser.parse(String(content || ''));
+      if (tree && tree.rootNode) {
+        parserMode = 'tree-sitter-wasm';
+        const root = tree.rootNode;
+
+        // Detect barrel/re-export files (__init__.py / index.js only exporting imported symbols)
+        let topAllReexport = root.namedChildCount > 0;
+        for (let i = 0; i < root.namedChildCount; i++) {
+          const ch = root.namedChild(i);
+          if (!ch || ch.type === 'comment') continue;
+          if (ext === '.py') {
+            if (PY_IMPORT_TYPES.has(ch.type) || isPythonDocstringStatement(ch)) continue;
+            if (isPythonAllExportStatement(ch)) {
+              const allStrs = ch.text.match(/['"]([A-Za-z_][A-Za-z0-9_]*)['"]/g) || [];
+              for (const q of allStrs) reexportedSymbols.add(q.slice(1, -1));
+              continue;
+            }
+            topAllReexport = false;
+            break;
+          } else {
+            if (ch.type === 'import_statement') continue;
+            if (ch.type === 'export_statement' && ch.childForFieldName('source')) continue;
+            topAllReexport = false;
+            break;
+          }
+        }
+        isPureBarrelReexport = topAllReexport;
+
+        const stack = [];
+        for (let i = 0; i < root.namedChildCount; i++) {
+          stack.push(root.namedChild(i));
+        }
+        while (stack.length > 0) {
+          const node = stack.pop();
+          if (!node) continue;
+          if (
+            node.type === 'comment' ||
+            node.type === 'string' ||
+            node.type === 'string_fragment' ||
+            node.type === 'template_string' ||
+            PY_IMPORT_TYPES.has(node.type) ||
+            node.type === 'import_statement' ||
+            isPythonAllExportStatement(node)
+          ) {
+            continue;
+          }
+          if (node.type === 'export_statement' && node.childForFieldName('source')) {
+            continue;
+          }
+          if (IDENTIFIER_NODE_TYPES.has(node.type) && node.text) {
+            executableRefs.add(node.text);
+          }
+          for (let i = node.namedChildCount - 1; i >= 0; i--) {
+            stack.push(node.namedChild(i));
+          }
+        }
+        tree.delete();
+        return {
+          parser: parserMode,
+          isPureBarrelReexport,
+          executableRefs,
+          reexportedSymbols
+        };
+      }
+    } catch {}
+  }
+
+  // Regex fallback when Tree-sitter WASM is unavailable for this extension
+  const strippedLines = String(content || '')
+    .split(/\r?\n/)
+    .filter(l => !/^\s*(?:from\s+\S+\s+import|import\s+|#)/.test(l))
+    .join('\n');
+  for (const m of strippedLines.matchAll(/\b[A-Za-z_][A-Za-z0-9_]*\b/g)) {
+    executableRefs.add(m[0]);
+  }
+  return {
+    parser: parserMode,
+    isPureBarrelReexport,
+    executableRefs,
+    reexportedSymbols
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -729,7 +1203,10 @@ export function resolveImportTarget(sourceFile, rawModule, fileKeys) {
 // ---------------------------------------------------------------------------
 // 4. Workspace Scanner & Dependency Graph Construction
 // ---------------------------------------------------------------------------
-export function scanWorkspaceSymbols(repoRoot, allowedDirs = []) {
+export function scanWorkspaceSymbols(repoRoot, allowedDirs = [], options = {}) {
+  const shouldIgnoreRelPath = typeof options.shouldIgnoreRelPath === 'function'
+    ? options.shouldIgnoreRelPath
+    : null;
   let dirs = (Array.isArray(allowedDirs) && allowedDirs.length > 0 && !allowedDirs.includes('*'))
     ? allowedDirs
     : [];
@@ -757,12 +1234,13 @@ export function scanWorkspaceSymbols(repoRoot, allowedDirs = []) {
     for (const ent of entries) {
       if (IGNORED_DIRS.has(ent.name) || ent.name.startsWith('.')) continue;
       const absPath = path.resolve(currentDir, ent.name);
+      const relPath = path.relative(repoRoot, absPath).replace(/\\/g, '/');
+      if (shouldIgnoreRelPath && shouldIgnoreRelPath(relPath, ent.isDirectory())) continue;
       if (ent.isDirectory()) {
         walk(absPath);
       } else if (ent.isFile()) {
         const ext = path.extname(ent.name).toLowerCase();
         if (['.py', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx'].includes(ext)) {
-          const relPath = path.relative(repoRoot, absPath).replace(/\\/g, '/');
           try {
             const stat = fs.statSync(absPath);
             const currentMode = wasmReady && wasmLanguages.has(ext) ? 'wasm' : 'regex';
@@ -980,7 +1458,9 @@ export function generateRepoMap(repoRoot, options = {}) {
     : String(rawQuery).toLowerCase().split(/[\s,._-]+/).filter(k => k.length >= 3);
   const scopeFiles = Array.isArray(options.scopeFiles) ? options.scopeFiles : [];
 
-  const fileMap = scanWorkspaceSymbols(repoRoot, options.allowedDirs);
+  const fileMap = scanWorkspaceSymbols(repoRoot, options.allowedDirs, {
+    shouldIgnoreRelPath: options.shouldIgnoreRelPath
+  });
   if (fileMap.size === 0) return '';
 
   const pageRanks = computePersonalizedPageRank(fileMap, { keywords, scopeFiles });

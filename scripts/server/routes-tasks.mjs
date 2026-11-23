@@ -10,14 +10,76 @@ import {
   isProcessAlive,
   loadYamlSafe
 } from './state-reader.mjs';
+import { loadMergedPolicy } from '../lib/policy-loader.mjs';
+import { readLockFile } from '../lib/runtime-lock.mjs';
+import { mutateVersionedJsonAtomic } from '../lib/state-store.mjs';
+import { mutateTaskStateAtomic } from '../lib/task-persistence.mjs';
+import {
+  computeCanonicalQueueState,
+  findTaskYamlFile,
+  syncCanonicalTaskState,
+  writeMorningReportFile,
+  writeTaskYamlAtomic
+} from '../lib/queue-state.mjs';
 import { decomposeGoal } from '../goal-planner.mjs';
 
+const inFlightRunnerSpawns = new Map();
+
+export function ensureOrchestratorRunning({ lockFile, liveStatusFile, orchestratorScript, teamDir }) {
+  const absLock = path.resolve(lockFile);
+  const lockData = readLockFile(absLock);
+  if (lockData && isProcessAlive(lockData.pid)) {
+    return { alreadyRunning: true, pid: lockData.pid, reason: 'lock' };
+  }
+
+  const inFlight = inFlightRunnerSpawns.get(absLock);
+  if (inFlight && inFlight.exitCode === null && isProcessAlive(inFlight.pid)) {
+    return { alreadyRunning: true, pid: inFlight.pid, reason: 'in_flight' };
+  }
+
+  if (liveStatusFile && fs.existsSync(liveStatusFile)) {
+    try {
+      const live = JSON.parse(fs.readFileSync(liveStatusFile, 'utf8').replace(/^\uFEFF/, ''));
+      if (live && live.active === true && Number.isInteger(live.pid) && live.pid > 0 && isProcessAlive(live.pid)) {
+        return { alreadyRunning: true, pid: live.pid, reason: 'live_status' };
+      }
+    } catch {}
+  }
+
+  const resolvedScript = orchestratorScript
+    ? path.resolve(orchestratorScript)
+    : path.resolve(teamDir, 'scripts', 'orchestrator.mjs');
+  const child = spawn(process.execPath, [resolvedScript, 'run'], {
+    cwd: path.resolve(teamDir, '..'),
+    detached: true,
+    stdio: 'ignore',
+    env: { ...process.env }
+  });
+  inFlightRunnerSpawns.set(absLock, child);
+  child.once('exit', () => {
+    if (inFlightRunnerSpawns.get(absLock) === child) {
+      inFlightRunnerSpawns.delete(absLock);
+    }
+  });
+  child.unref();
+  return { alreadyRunning: false, pid: child.pid, reason: 'spawned' };
+}
+
+function sendJson(res, statusCode, payload) {
+  res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify(payload));
+}
+
 export async function handleTasksRoutes(req, res, url, options = {}) {
-  const sessionsDir = options.SESSIONS_DIR || path.resolve('agent-team/state/sessions');
-  const tasksActiveDir = options.TASKS_ACTIVE_DIR || path.resolve('agent-team/tasks/active');
-  const lockFile = options.LOCK_FILE || path.resolve('agent-team/.orchestrator.lock');
-  const teamDir = options.TEAM_DIR || path.resolve('agent-team');
   const snapshotPaths = options.snapshotPaths || {};
+  const sessionsDir = options.SESSIONS_DIR || snapshotPaths.SESSIONS_DIR || path.resolve('agent-team/state/sessions');
+  const tasksActiveDir = options.TASKS_ACTIVE_DIR || snapshotPaths.TASKS_ACTIVE_DIR || path.resolve('agent-team/tasks/active');
+  const lockFile = options.LOCK_FILE || snapshotPaths.LOCK_FILE || path.resolve('agent-team/.orchestrator.lock');
+  const teamDir = options.TEAM_DIR || snapshotPaths.TEAM_DIR || path.resolve('agent-team');
+  const tasksArchiveDir = options.TASKS_ARCHIVE_DIR || snapshotPaths.TASKS_ARCHIVE_DIR || path.resolve(teamDir, 'tasks', 'archive');
+  const taskStateFile = options.TASK_STATE_FILE || snapshotPaths.TASK_STATE_FILE || path.resolve(teamDir, 'state', 'task-state.json');
+  const liveStatusFile = options.LIVE_STATUS_FILE || snapshotPaths.LIVE_STATUS_FILE || path.resolve(teamDir, 'state', 'live-status.json');
+  const reportFile = options.REPORT_FILE || snapshotPaths.REPORT_FILE || path.resolve(teamDir, 'state', 'morning-report.md');
 
   if (req.method === 'GET' && url.pathname === '/api/snapshot') {
     try {
@@ -94,6 +156,8 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
     }
 
     try {
+      const cfgDir = snapshotPaths.CONFIG_DIR || path.resolve(teamDir, 'config');
+      loadMergedPolicy({ configDir: cfgDir });
       const body = await parseJsonBody(req);
       const goal = String(body.goal || '').trim();
       if (!goal) {
@@ -104,13 +168,15 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
 
       const preset = String(body.preset || 'auto').trim();
       const modeOverride = preset === 'consult' ? 'consult' : (body.mode || null);
-      console.log(`[Dashboard API] Decomposing goal with Router Agent (preset=${preset}): "${goal}"...`);
+      const writerModel = body.writer_model ? String(body.writer_model).trim() : null;
+      console.log(`[Dashboard API] Decomposing goal with Router Agent (preset=${preset}${writerModel ? `, writer_model=${writerModel}` : ''}): "${goal}"...`);
       const decompRes = await decomposeGoal(goal, {
         dryRun: false,
         preset,
-        mode: modeOverride
+        mode: modeOverride,
+        writerModel
       });
-      res.writeHead(decompRes.ok ? 200 : 500, {
+      res.writeHead(decompRes.ok ? 200 : (decompRes.validation_error ? 400 : 500), {
         'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-cache'
       });
@@ -131,6 +197,8 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
     }
 
     try {
+      const cfgDir = snapshotPaths.CONFIG_DIR || path.resolve(teamDir, 'config');
+      loadMergedPolicy({ configDir: cfgDir });
       const body = await parseJsonBody(req);
       const targetIds = (Array.isArray(body.task_ids) && body.task_ids.length > 0) ? new Set(body.task_ids) : null;
 
@@ -155,35 +223,34 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
         }
       }
 
-      // 2. Check if Orchestrator is already running
-      const lockData = fs.existsSync(lockFile) ? loadYamlSafe(lockFile) : null;
-      if (lockData && isProcessAlive(lockData.pid)) {
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({
-          ok: true,
-          approved_count: approvedCount,
-          message: 'Tasks approved. Orchestrator is already actively running.'
-        }));
-        return true;
+      // 2. Ensure at most one Orchestrator is running in detached background process
+      let launchInfo = { started: false, already_running: false, pid: null };
+      if (body.start_orchestrator !== false) {
+        const launchRes = ensureOrchestratorRunning({ lockFile, liveStatusFile, teamDir });
+        if (launchRes.alreadyRunning) {
+          sendJson(res, 200, {
+            ok: true,
+            approved_count: approvedCount,
+            started: false,
+            already_running: true,
+            pid: launchRes.pid,
+            message: 'Tasks approved. Orchestrator is already actively running.'
+          });
+          return true;
+        }
+        launchInfo = { started: true, already_running: false, pid: launchRes.pid };
       }
 
-      // 3. Spawn Orchestrator in detached background process
-      const orchestratorScript = path.resolve(teamDir, 'scripts', 'orchestrator.mjs');
-      const child = spawn(process.execPath, [orchestratorScript, 'run'], {
-        cwd: path.resolve(teamDir, '..'),
-        detached: true,
-        stdio: 'ignore',
-        env: { ...process.env }
-      });
-      child.unref();
-
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({
+      sendJson(res, 200, {
         ok: true,
         approved_count: approvedCount,
-        message: `Approved ${approvedCount} task(s) and launched Orchestrator in background.`,
-        pid: child.pid
-      }));
+        started: launchInfo.started,
+        already_running: launchInfo.already_running,
+        pid: launchInfo.pid,
+        message: launchInfo.started
+          ? `Approved ${approvedCount} task(s) and launched Orchestrator in background.`
+          : `Approved ${approvedCount} task(s).`
+      });
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ ok: false, error: err.message }));
@@ -266,6 +333,8 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
     }
 
     try {
+      const cfgDir = snapshotPaths.CONFIG_DIR || path.resolve(teamDir, 'config');
+      loadMergedPolicy({ configDir: cfgDir });
       const body = await parseJsonBody(req);
       const taskId = String(body.task_id || '').trim();
       if (!taskId || taskId.includes('..') || taskId.includes('/') || taskId.includes('\\')) {
@@ -307,6 +376,108 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
     return true;
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/task/retry') {
+    const auth = verifyCsrfAndOrigin(req);
+    if (!auth.ok) {
+      sendJson(res, auth.status, { ok: false, error: auth.error });
+      return true;
+    }
+
+    try {
+      const cfgDir = snapshotPaths.CONFIG_DIR || path.resolve(teamDir, 'config');
+      loadMergedPolicy({ configDir: cfgDir });
+      const body = await parseJsonBody(req);
+      const taskId = String(body.task_id || '').trim();
+      if (!taskId || taskId.includes('..') || taskId.includes('/') || taskId.includes('\\')) {
+        sendJson(res, 400, { ok: false, error: 'Invalid task_id' });
+        return true;
+      }
+
+      const targetPath = findTaskYamlFile(tasksActiveDir, taskId);
+      if (!targetPath) {
+        sendJson(res, 404, { ok: false, error: `Task "${taskId}" not found in active queue.` });
+        return true;
+      }
+
+      const parsed = loadYamlSafe(targetPath);
+      if (!parsed || typeof parsed !== 'object') {
+        sendJson(res, 400, { ok: false, error: `Task file "${taskId}" is unreadable or invalid YAML.` });
+        return true;
+      }
+
+      const raw = (parsed.task && typeof parsed.task === 'object') ? parsed.task : parsed;
+      const currentStatus = String(raw.status || '').toLowerCase();
+      if (currentStatus !== 'blocked' && currentStatus !== 'failed') {
+        sendJson(res, 409, { ok: false, error: `Task "${taskId}" has status "${currentStatus}" and cannot be retried.` });
+        return true;
+      }
+
+      const nowIso = new Date().toISOString();
+      raw.status = 'ready';
+      delete raw.block_reason;
+      delete raw.last_error;
+      delete raw.failure_class;
+      delete raw.pending_review_patch;
+      raw.retried_at = nowIso;
+      raw.updated_at = nowIso;
+      writeTaskYamlAtomic(targetPath, parsed);
+
+      let canonical = null;
+      mutateTaskStateAtomic(taskStateFile, (taskState) => {
+        canonical = writeMorningReportFile(taskState, {
+          tasksActiveDir,
+          tasksArchiveDir,
+          reportFile
+        });
+        syncCanonicalTaskState(taskState, canonical);
+      }, { fallbackFactory: () => ({ active_tasks: [], completed_tasks: [], blocked_tasks: [], metrics: {} }) });
+
+      mutateVersionedJsonAtomic(liveStatusFile, (existingLive) => {
+        const livePatch = {
+          queue_stats: canonical.counts,
+          updated_at: new Date().toISOString()
+        };
+        if (existingLive.current_task_id === taskId || (canonical.counts.blocked === 0 && existingLive.current_stage === 'blocked')) {
+          livePatch.last_error = null;
+          livePatch.task_final_status = 'ready';
+          if (existingLive.current_stage === 'blocked') {
+            livePatch.current_stage = 'idle';
+          }
+        }
+        return {
+          ...existingLive,
+          ...livePatch
+        };
+      }, { allowCorruptFallback: true, fallbackFactory: () => ({}) });
+
+      let launchInfo = { started: false, already_running: false, pid: null };
+      if (body.start_orchestrator !== false) {
+        const launchRes = ensureOrchestratorRunning({ lockFile, liveStatusFile, teamDir });
+        launchInfo = {
+          started: true,
+          already_running: launchRes.alreadyRunning,
+          pid: launchRes.pid
+        };
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        task_id: taskId,
+        status: 'ready',
+        queue_stats: canonical.counts,
+        ...launchInfo,
+        message: launchInfo.already_running
+          ? `Reset task "${taskId}" to ready. Orchestrator is already running.`
+          : (launchInfo.started
+              ? `Reset task "${taskId}" to ready and launched Orchestrator.`
+              : `Reset task "${taskId}" to ready.`)
+      });
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err.message });
+    }
+    return true;
+  }
+
   // Hook reserved for task editing & saving
   if (req.method === 'POST' && url.pathname === '/api/task/save') {
     const auth = verifyCsrfAndOrigin(req);
@@ -317,6 +488,8 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
     }
 
     try {
+      const cfgDir = snapshotPaths.CONFIG_DIR || path.resolve(teamDir, 'config');
+      loadMergedPolicy({ configDir: cfgDir });
       const body = await parseJsonBody(req);
       const taskId = String(body.task_id || '').trim();
       if (!taskId || taskId.includes('..') || taskId.includes('/') || taskId.includes('\\')) {
@@ -341,7 +514,13 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
       if (body.raw_yaml && typeof body.raw_yaml === 'string') {
         yamlContent = body.raw_yaml;
       } else if (body.task && typeof body.task === 'object') {
-        const existing = fs.existsSync(targetPath) ? loadYamlSafe(targetPath) : {};
+        let existing = {};
+        if (fs.existsSync(targetPath)) {
+          existing = loadYamlSafe(targetPath);
+          if (!existing || typeof existing !== 'object') {
+            throw new Error(`Existing task file is unreadable or invalid YAML: ${targetPath}`);
+          }
+        }
         const container = (existing?.task && typeof existing.task === 'object')
           ? { task: { ...existing.task, ...body.task, updated_at: new Date().toISOString() } }
           : { task: { ...body.task, updated_at: new Date().toISOString() } };

@@ -2,25 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import { DASHBOARD_CSRF_TOKEN } from './security.mjs';
+import { loadMergedPolicy, loadMergedTeamConfig, loadYamlSafe, resolveCockpitConfig } from '../lib/policy-loader.mjs';
+import { collectActiveRosterModels } from '../lib/client-9router.mjs';
+import { computeCanonicalQueueState } from '../lib/queue-state.mjs';
+import { isProcessAlive } from '../lib/runtime-lock.mjs';
+import { resolveCircuitBreakerTtlMs } from '../lib/risk-policy.mjs';
+import { parseJsonNoBom, stripUtf8Bom } from '../lib/state-store.mjs';
+import { getCircuitBreakerSnapshot } from '../../runtime/provider-gateway.mjs';
 
-export function isProcessAlive(pid) {
-  if (!pid || typeof pid !== 'number') return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return err.code === 'EPERM';
-  }
-}
-
-export function loadYamlSafe(filePath) {
-  try {
-    if (fs.existsSync(filePath)) {
-      return YAML.parse(fs.readFileSync(filePath, 'utf8'));
-    }
-  } catch {}
-  return null;
-}
+export { loadYamlSafe, isProcessAlive };
 
 let routerHealthCache = {
   checked_at: 0,
@@ -220,7 +210,7 @@ export function scanSessions(sessionsDir) {
     return files.map(filePath => {
       try {
         const stat = fs.statSync(filePath);
-        const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        const raw = parseJsonNoBom(fs.readFileSync(filePath, 'utf8'), filePath);
         const msgs = Array.isArray(raw.messages) ? raw.messages : [];
         const receipts = Array.isArray(raw.tool_receipts) ? raw.tool_receipts : [];
         return {
@@ -251,7 +241,7 @@ export function readSessionDetails(sessionId, sessionsDir) {
   const sessionPath = path.resolve(sessionsDir, `${safeId}.json`);
   if (!fs.existsSync(sessionPath)) return null;
   try {
-    return JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+    return parseJsonNoBom(fs.readFileSync(sessionPath, 'utf8'), sessionPath);
   } catch {
     return null;
   }
@@ -278,6 +268,9 @@ export function scanTaskDir(dirPath) {
         scope: Array.isArray(raw.scope) ? raw.scope : [],
         goal: raw.goal || null,
         model: raw.model || null,
+        model_source: raw.model_source || null,
+        writer_model: raw.writer_model || null,
+        writer_model_source: raw.writer_model_source || null,
         acceptance_criteria: Array.isArray(raw.acceptance_criteria) ? raw.acceptance_criteria : [],
         constraints: Array.isArray(raw.constraints) ? raw.constraints : [],
         writer_hub_workflow: Array.isArray(raw.writer_hub_workflow) ? raw.writer_hub_workflow : [],
@@ -296,6 +289,7 @@ export function scanTaskDir(dirPath) {
 export async function createSnapshot(paths = {}) {
   const configDir = paths.CONFIG_DIR || path.resolve('agent-team/config');
   const lockFile = paths.LOCK_FILE || path.resolve('agent-team/.orchestrator.lock');
+  const cockpitLockFile = paths.COCKPIT_LOCK_FILE || path.resolve('agent-team/.cockpit.lock');
   const liveStatusFile = paths.LIVE_STATUS_FILE || path.resolve('agent-team/state/live-status.json');
   const taskStateFile = paths.TASK_STATE_FILE || path.resolve('agent-team/state/task-state.json');
   const tasksActiveDir = paths.TASKS_ACTIVE_DIR || path.resolve('agent-team/tasks/active');
@@ -304,42 +298,58 @@ export async function createSnapshot(paths = {}) {
   const sessionsDir = paths.SESSIONS_DIR || path.resolve('agent-team/state/sessions');
   const teamDir = paths.TEAM_DIR || path.resolve('agent-team');
 
-  // 1. Team & Project & Policy
-  const teamYaml = loadYamlSafe(path.resolve(configDir, 'team.local.yaml'))
-    || loadYamlSafe(path.resolve(configDir, 'team.yaml'))
-    || {};
+  // 1. Team & Project & Policy (Merged base + local, Fail-Closed on base policy.yaml)
+  const teamYaml = loadMergedTeamConfig({ configDir });
   const roles = teamYaml.roles || {};
 
-  const policyYaml = loadYamlSafe(path.resolve(configDir, 'policy.yaml')) || {};
-  const rawPolicy = policyYaml.policy || {};
+  const policyYaml = loadMergedPolicy({ configDir });
+  const rawPolicy = policyYaml.policy;
+  const cockpitConfig = resolveCockpitConfig({ policyConfig: policyYaml, configDir });
   const project = {
-    id: rawPolicy.project_id || 'workspace',
+    id: rawPolicy.project_id.trim(),
     language: rawPolicy.language || 'python',
-    allowed_dirs: rawPolicy.scope_control?.allowed_dirs || ['*']
+    allowed_dirs: rawPolicy.scope_control.allowed_dirs
   };
   const policy = {
-    project_id: rawPolicy.project_id || 'workspace',
+    project_id: rawPolicy.project_id.trim(),
     language: rawPolicy.language || 'python',
-    scope_control: rawPolicy.scope_control || {},
+    scope_control: rawPolicy.scope_control,
     task_modes: rawPolicy.task_modes || {},
     approval_gates: rawPolicy.approval_gates || {},
     retry_and_escalation: rawPolicy.retry_and_escalation || {},
     execution_guardrails: rawPolicy.execution_guardrails || {},
     git_hygiene: rawPolicy.git_hygiene || {},
-    validation: rawPolicy.validation || { fast_checks: [], suite_checks: [] }
+    validation: rawPolicy.validation || { fast_checks: [], suite_checks: [] },
+    cockpit: { host: cockpitConfig.host, port: cockpitConfig.port }
   };
 
-  // 2. Orchestrator Process & Lock
+  // 2. Orchestrator & Cockpit Process & Locks
   let orchestratorRunning = false;
   let orchestratorLock = null;
   if (fs.existsSync(lockFile)) {
     try {
-      const lockData = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+      const lockData = parseJsonNoBom(fs.readFileSync(lockFile, 'utf8'), lockFile);
       if (lockData.pid && isProcessAlive(lockData.pid)) {
         orchestratorRunning = true;
         orchestratorLock = {
           pid: lockData.pid,
           started_at: lockData.started_at
+        };
+      }
+    } catch {}
+  }
+
+  let cockpitRunning = false;
+  let cockpitLock = null;
+  if (fs.existsSync(cockpitLockFile)) {
+    try {
+      const cLock = parseJsonNoBom(fs.readFileSync(cockpitLockFile, 'utf8'), cockpitLockFile);
+      if (cLock.pid && isProcessAlive(cLock.pid)) {
+        cockpitRunning = true;
+        cockpitLock = {
+          pid: cLock.pid,
+          port: cLock.port ?? cockpitConfig.port,
+          started_at: cLock.started_at
         };
       }
     } catch {}
@@ -370,7 +380,7 @@ export async function createSnapshot(paths = {}) {
 
   if (fs.existsSync(liveStatusFile)) {
     try {
-      const parsed = JSON.parse(fs.readFileSync(liveStatusFile, 'utf8'));
+      const parsed = parseJsonNoBom(fs.readFileSync(liveStatusFile, 'utf8'), liveStatusFile);
       liveStatus = {
         ...liveStatus,
         ...parsed,
@@ -387,67 +397,48 @@ export async function createSnapshot(paths = {}) {
     liveStatus.current_stage = 'idle';
   }
 
-  // 4. Deduplicated Task Lists
-  const activeMap = scanTaskDir(tasksActiveDir);
-  const archiveMap = scanTaskDir(tasksArchiveDir);
-
+  // 4. Canonical Single-Source-of-Truth Task Lists & Counts
   let taskState = { active_tasks: [], completed_tasks: [], blocked_tasks: [], metrics: {} };
   if (fs.existsSync(taskStateFile)) {
+    const rawTaskState = stripUtf8Bom(fs.readFileSync(taskStateFile, 'utf8'));
+    let parsedTaskState;
     try {
-      taskState = JSON.parse(fs.readFileSync(taskStateFile, 'utf8'));
-    } catch {}
+      parsedTaskState = JSON.parse(rawTaskState);
+    } catch (err) {
+      throw new Error(`[StateReader] Corrupt JSON in "${taskStateFile}" (refusing to treat as empty task history): ${err.message}`);
+    }
+    if (!parsedTaskState || typeof parsedTaskState !== 'object' || Array.isArray(parsedTaskState)) {
+      throw new Error(`[StateReader] Corrupt task-state root in "${taskStateFile}": expected JSON object`);
+    }
+    taskState = parsedTaskState;
   }
 
-  const completedMap = new Map(archiveMap);
-  for (const t of (taskState.completed_tasks || [])) {
-    const tid = t.task_id || t.id;
-    if (tid && !completedMap.has(tid)) {
-      completedMap.set(tid, {
-        task_id: tid,
-        title: t.title || t.goal || '',
-        mode: t.mode || 'quick',
-        status: 'done',
-        retries: t.retries || 0,
-        commit_hash: t.commit_hash || null,
-        completed_at: t.completed_at || null
-      });
-    }
-  }
+  const canonical = computeCanonicalQueueState({
+    tasksActiveDir,
+    tasksArchiveDir,
+    taskState
+  });
+  const activeList = canonical.active;
+  const blockedList = canonical.blocked;
+  const completedList = canonical.completed;
 
-  const blockedMap = new Map();
-  for (const [tid, t] of activeMap) {
-    if (t.status === 'blocked' && !completedMap.has(tid)) {
-      blockedMap.set(tid, t);
-    }
-  }
-  for (const t of (taskState.blocked_tasks || [])) {
-    const tid = t.task_id || t.id;
-    if (tid && !blockedMap.has(tid) && !completedMap.has(tid)) {
-      blockedMap.set(tid, {
-        task_id: tid,
-        title: t.title || t.goal || '',
-        mode: t.mode || 'quick',
-        status: 'blocked',
-        risk_level: t.risk_level || 'low',
-        block_reason: t.block_reason || t.last_error || 'Blocked'
-      });
-    }
-  }
+  const completedById = new Map(completedList.map(t => [t.task_id, t]));
+  const blockedById = new Map(blockedList.map(t => [t.task_id, t]));
 
-  if (!liveStatus.active && liveStatus.current_task_id && completedMap.has(liveStatus.current_task_id)) {
-    const doneTask = completedMap.get(liveStatus.current_task_id);
+  if (!liveStatus.active && liveStatus.current_task_id && completedById.has(liveStatus.current_task_id)) {
+    const doneTask = completedById.get(liveStatus.current_task_id);
     liveStatus.task_final_status = 'done';
     liveStatus.task_completed_at = liveStatus.task_completed_at || doneTask.completed_at || liveStatus.updated_at || null;
     liveStatus.recovered_on_retry = (liveStatus.attempt || 1) > 1 || (doneTask.retries || 0) > 0;
     liveStatus.last_error = null;
-  } else if (!liveStatus.active && liveStatus.current_task_id && blockedMap.has(liveStatus.current_task_id)) {
+  } else if (!liveStatus.active && liveStatus.current_task_id && blockedById.has(liveStatus.current_task_id)) {
+    const blkTask = blockedById.get(liveStatus.current_task_id);
     liveStatus.task_final_status = 'blocked';
     liveStatus.task_completed_at = liveStatus.task_completed_at || liveStatus.updated_at || null;
+    liveStatus.last_error = liveStatus.last_error || blkTask?.block_reason || null;
   }
 
-  const activeList = Array.from(activeMap.values()).filter(t => t.status !== 'blocked');
-  const blockedList = Array.from(blockedMap.values());
-  const completedList = Array.from(completedMap.values());
+  liveStatus.queue_stats = { ...canonical.counts };
 
   // 5. Latest Writer Output File
   const latestOutput = readLatestRunOutput(liveStatus.current_task_id, liveStatus.raw_log_path, runsDir, teamDir);
@@ -455,8 +446,41 @@ export async function createSnapshot(paths = {}) {
   // 6. Last Completed Task Summary
   const lastCompletedTask = completedList.length > 0 ? completedList[completedList.length - 1] : null;
 
-  // 7. 9Router Health Check
+  // 7. 9Router Health Check & Circuit Breaker Status (TTL-bounded)
   const routerHealth = await get9RouterHealth();
+  const cbTtlMs = resolveCircuitBreakerTtlMs(policyYaml);
+  const nowMs = Date.now();
+  const inProcCb = getCircuitBreakerSnapshot({ now: nowMs, ttlMs: cbTtlMs });
+  const mergedCbMap = new Map();
+  for (const item of inProcCb.models) {
+    mergedCbMap.set(item.model, item);
+  }
+  const diskCbList = Array.isArray(liveStatus.circuit_broken_models) ? liveStatus.circuit_broken_models : [];
+  for (const item of diskCbList) {
+    if (!item || !item.model) continue;
+    const trippedAt = Number(item.tripped_at);
+    const effectiveTtl = (Number(item.ttl_ms) > 0 && Number(item.ttl_ms) <= cbTtlMs) ? Number(item.ttl_ms) : cbTtlMs;
+    const expiresAt = Number.isFinite(trippedAt) ? trippedAt + effectiveTtl : Number(item.expires_at);
+    if (!Number.isFinite(expiresAt) || expiresAt <= nowMs) continue;
+    if (!mergedCbMap.has(item.model)) {
+      mergedCbMap.set(item.model, {
+        model: item.model,
+        reason: String(item.reason || ''),
+        status: item.status ?? null,
+        tripped_at: trippedAt || null,
+        ttl_ms: effectiveTtl,
+        expires_at: expiresAt,
+        remaining_ms: Math.max(0, expiresAt - nowMs)
+      });
+    }
+  }
+  const cbModels = Array.from(mergedCbMap.values());
+  const circuitBreakers = {
+    active_count: cbModels.length,
+    ttl_ms: cbTtlMs,
+    checked_at: nowMs,
+    models: cbModels
+  };
 
   return {
     timestamp: new Date().toISOString(),
@@ -467,19 +491,33 @@ export async function createSnapshot(paths = {}) {
       pid: orchestratorLock?.pid || null,
       started_at: orchestratorLock?.started_at || null
     },
+    cockpit: {
+      host: cockpitConfig.host,
+      port: cockpitConfig.port,
+      url: cockpitConfig.url,
+      running: cockpitRunning,
+      pid: cockpitLock?.pid || null,
+      started_at: cockpitLock?.started_at || null
+    },
     router_health: routerHealth,
+    circuit_breakers: circuitBreakers,
     router_provider: teamYaml.team?.providers?.local_9router || { base_url: 'http://127.0.0.1:20128/v1', default_key: 'sk-default' },
     roles,
+    roster_models: collectActiveRosterModels(teamYaml),
     policy,
     live_status: liveStatus,
     last_completed_task: lastCompletedTask,
     queue: {
-      active_count: activeList.length,
-      completed_count: completedList.length,
-      blocked_count: blockedList.length,
+      active_count: canonical.counts.active,
+      completed_count: canonical.counts.completed,
+      blocked_count: canonical.counts.blocked,
+      manual_review_count: (canonical.manual_review || []).length,
+      unseen_exact_match_count: canonical.unseen_exact_match_count || 0,
       active: activeList,
       recent_completed: completedList.slice(-5).reverse(),
-      blocked: blockedList
+      blocked: blockedList,
+      manual_review: canonical.manual_review || [],
+      unseen_exact_matches: canonical.unseen_exact_matches || []
     },
     latest_output: latestOutput,
     sessions: scanSessions(sessionsDir).slice(0, 15)

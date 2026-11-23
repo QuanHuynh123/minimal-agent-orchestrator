@@ -1,29 +1,19 @@
 #!/usr/bin/env node
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
+import { loadMergedPolicy } from './lib/policy-loader.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 export const TEAM_DIR = path.resolve(__dirname, '..');
 
-export function resolveRepoRoot(projectConfig = null) {
+export function resolveRepoRoot(projectConfig = null, options = {}) {
   let cfg = projectConfig;
   if (!cfg) {
-    const localPolicyPath = path.resolve(TEAM_DIR, 'config', 'policy.local.yaml');
-    if (fs.existsSync(localPolicyPath)) {
-      try {
-        cfg = YAML.parse(fs.readFileSync(localPolicyPath, 'utf8'));
-      } catch {}
-    } else {
-      const policyPath = path.resolve(TEAM_DIR, 'config', 'policy.yaml');
-      if (fs.existsSync(policyPath)) {
-        try {
-          cfg = YAML.parse(fs.readFileSync(policyPath, 'utf8'));
-        } catch {}
-      }
-    }
+    cfg = loadMergedPolicy({ configDir: options.configDir });
   }
   const configuredRoot = cfg?.policy?.repo_root || cfg?.project?.repo_root || '..';
   return path.resolve(TEAM_DIR, configuredRoot);
@@ -257,6 +247,419 @@ export function parseSearchReplaceBlocks(content) {
   return blocks;
 }
 
+function normalizeSearchForFingerprint(searchText = '') {
+  return String(searchText || '').replace(/\r\n/g, '\n').replace(/\s+/g, ' ').trim();
+}
+
+export function computeApplierErrorHash({ errorCode = 'apply_error', file = '', search = '', fallbackMessage = '' } = {}) {
+  const normSearch = normalizeSearchForFingerprint(search);
+  const searchFingerprint = normSearch
+    ? crypto.createHash('sha1').update(normSearch).digest('hex').slice(0, 16)
+    : '';
+  const signature = JSON.stringify({
+    code: String(errorCode || 'apply_error'),
+    file: String(file || ''),
+    search_fp: searchFingerprint,
+    detail: searchFingerprint ? '' : String(fallbackMessage || '')
+  });
+  return crypto.createHash('sha1').update(signature).digest('hex');
+}
+
+function merge1BasedIntervals(intervals = []) {
+  const clean = (Array.isArray(intervals) ? intervals : [])
+    .filter(r => Array.isArray(r) && Number.isFinite(Number(r[0])) && Number.isFinite(Number(r[1])) && Number(r[1]) >= Number(r[0]))
+    .map(r => [Math.max(1, Math.trunc(Number(r[0]))), Math.max(1, Math.trunc(Number(r[1])))])
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const merged = [];
+  for (const [s, e] of clean) {
+    if (merged.length === 0 || s > merged[merged.length - 1][1] + 1) {
+      merged.push([s, e]);
+    } else {
+      merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], e);
+    }
+  }
+  return merged;
+}
+
+function intervalOverlapsRanges(startLine, endLine, ranges = []) {
+  for (const [s, e] of ranges) {
+    if (startLine <= e && endLine >= s) return true;
+  }
+  return false;
+}
+
+function computeRemainingOmitted(omittedRanges = [], seenRanges = []) {
+  const omitted = merge1BasedIntervals(omittedRanges);
+  const seen = merge1BasedIntervals(seenRanges);
+  if (omitted.length === 0) return [];
+  if (seen.length === 0) return omitted;
+
+  const remaining = [];
+  for (const [os, oe] of omitted) {
+    let cursor = os;
+    for (const [ss, se] of seen) {
+      if (se < cursor) continue;
+      if (ss > oe) break;
+      if (ss > cursor) {
+        remaining.push([cursor, Math.min(oe, ss - 1)]);
+      }
+      cursor = Math.max(cursor, se + 1);
+      if (cursor > oe) break;
+    }
+    if (cursor <= oe) {
+      remaining.push([cursor, oe]);
+    }
+  }
+  return remaining;
+}
+
+function isIndentSensitivePath(relPath = '') {
+  const clean = String(relPath || '').trim().replace(/\\/g, '/').toLowerCase();
+  const base = path.posix.basename(clean);
+  if (base === 'makefile' || base.endsWith('.mk')) return true;
+  return /\.(?:py|pyw|yaml|yml)$/.test(base);
+}
+
+/**
+ * Strips leading/trailing whitespace and collapses horizontal whitespace [ \t]+ to a single space
+ * ONLY outside quoted string literals ('...', "...", `...`). Never strips spaces inside strings.
+ */
+function normalizeCodeLineOutsideStrings(line = '') {
+  const trimmed = String(line || '').replace(/[ \t]+$/g, '').trimStart();
+  if (!trimmed) return '';
+  let out = '';
+  let inQuote = null;
+  let inSpaceRun = false;
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (inQuote) {
+      out += ch;
+      if (ch === '\\' && i + 1 < trimmed.length) {
+        out += trimmed[i + 1];
+        i++;
+        continue;
+      }
+      if (ch === inQuote) {
+        inQuote = null;
+      }
+      continue;
+    }
+
+    if (ch === '\'' || ch === '"' || ch === '`') {
+      if (inSpaceRun && out.length > 0) {
+        out += ' ';
+      }
+      inSpaceRun = false;
+      inQuote = ch;
+      out += ch;
+    } else if (ch === ' ' || ch === '\t') {
+      inSpaceRun = true;
+    } else {
+      if (inSpaceRun && out.length > 0) {
+        out += ' ';
+      }
+      inSpaceRun = false;
+      out += ch;
+    }
+  }
+  return out;
+}
+
+function gcdPositive(a, b) {
+  let x = Math.abs(Math.trunc(a));
+  let y = Math.abs(Math.trunc(b));
+  while (y !== 0) {
+    const t = y;
+    y = x % y;
+    x = t;
+  }
+  return x;
+}
+
+function inferSpaceIndentUnit(lines = [], relPath = '') {
+  const defaultUnit = /\.ya?ml$/i.test(String(relPath || '')) ? 2 : 4;
+  const counts = [];
+  for (const ln of lines) {
+    if (!ln || !ln.trim()) continue;
+    const m = /^ +/.exec(ln);
+    if (m && m[0].length > 0) counts.push(m[0].length);
+  }
+  if (counts.length === 0) return defaultUnit;
+  let g = counts[0];
+  for (let i = 1; i < counts.length; i++) {
+    g = gcdPositive(g, counts[i]);
+  }
+  return Math.max(1, Math.min(g, 8));
+}
+
+function computeIndentLevel(line = '', spaceUnit = 4) {
+  const lead = /^[ \t]*/.exec(String(line || ''))?.[0] || '';
+  const tabs = (lead.match(/\t/g) || []).length;
+  const spaces = (lead.match(/ /g) || []).length;
+  if (tabs > 0 && spaces > 0) {
+    return tabs + (spaces / spaceUnit);
+  }
+  return tabs > 0 ? tabs : (spaces / spaceUnit);
+}
+
+function checkIndentHierarchyMatch(searchLines, matchedLines, relPath) {
+  const searchSpaceUnit = inferSpaceIndentUnit(searchLines, relPath);
+  const fileSpaceUnit = inferSpaceIndentUnit(matchedLines, relPath);
+
+  let baseSearchLevel = null;
+  let baseFileLevel = null;
+
+  for (let k = 0; k < searchLines.length; k++) {
+    const sLine = searchLines[k] || '';
+    const fLine = matchedLines[k] || '';
+    if (!sLine.trim() && !fLine.trim()) continue;
+
+    const sLevel = computeIndentLevel(sLine, searchSpaceUnit);
+    const fLevel = computeIndentLevel(fLine, fileSpaceUnit);
+
+    if (baseSearchLevel === null) {
+      baseSearchLevel = sLevel;
+      baseFileLevel = fLevel;
+      continue;
+    }
+
+    const sDelta = sLevel - baseSearchLevel;
+    const fDelta = fLevel - baseFileLevel;
+    if (Math.abs(sDelta - fDelta) > 1e-6) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function reindentReplaceForMatch(normReplace, searchLines, matchedLines, relPath, currentContent) {
+  const replaceLines = String(normReplace || '').split('\n');
+  const firstSearchLine = searchLines.find(l => l.trim().length > 0) || '';
+  const firstMatchLine = matchedLines.find(l => l.trim().length > 0) || '';
+
+  const matchUsesTabs = /^\t+/m.test(matchedLines.join('\n')) || (/^\t+/m.test(currentContent) && !/^  +/m.test(matchedLines.join('\n')));
+  const searchSpaceUnit = inferSpaceIndentUnit([...searchLines, ...replaceLines], relPath);
+  const fileSpaceUnit = inferSpaceIndentUnit(matchedLines, relPath);
+
+  const searchBaseLevel = computeIndentLevel(firstSearchLine, searchSpaceUnit);
+  const targetBaseIndent = /^[ \t]*/.exec(firstMatchLine)?.[0] || '';
+  const targetUnitStr = matchUsesTabs ? '\t' : ' '.repeat(fileSpaceUnit);
+
+  const trimOneUnit = (indentStr) => {
+    if (matchUsesTabs) return indentStr.replace(/\t$/, '');
+    return indentStr.length >= fileSpaceUnit ? indentStr.slice(0, indentStr.length - fileSpaceUnit) : '';
+  };
+
+  return replaceLines.map(rLine => {
+    const body = rLine.trimStart();
+    if (!body) return '';
+    const rLevel = computeIndentLevel(rLine, searchSpaceUnit);
+    const relDepth = Math.round(rLevel - searchBaseLevel);
+    if (relDepth >= 0) {
+      return targetBaseIndent + targetUnitStr.repeat(relDepth) + body;
+    }
+    let reduced = targetBaseIndent;
+    for (let u = 0; u < Math.abs(relDepth); u++) {
+      reduced = trimOneUnit(reduced);
+    }
+    return reduced + body;
+  }).join('\n');
+}
+
+function tryUniqueWhitespaceMatch(currentContent, normSearch, relPath = '') {
+  const searchLines = normSearch.split('\n');
+  const normSearchLines = searchLines.map(normalizeCodeLineOutsideStrings);
+  const hasAnyNonEmpty = normSearchLines.some(l => l.length > 0);
+  if (!hasAnyNonEmpty) return { found: false, multiple: false, match: null };
+
+  const fileLines = currentContent.split('\n');
+  const winLen = searchLines.length;
+  if (winLen === 0 || winLen > fileLines.length) {
+    return { found: false, multiple: false, match: null };
+  }
+
+  // Precompute character start offsets for every line in currentContent
+  const lineOffsets = new Array(fileLines.length);
+  let pos = 0;
+  for (let idx = 0; idx < fileLines.length; idx++) {
+    lineOffsets[idx] = pos;
+    pos += fileLines[idx].length + 1;
+  }
+
+  const indentSensitive = isIndentSensitivePath(relPath);
+  const matches = [];
+  for (let start = 0; start <= fileLines.length - winLen; start++) {
+    let linesOk = true;
+    for (let k = 0; k < winLen; k++) {
+      if (normalizeCodeLineOutsideStrings(fileLines[start + k]) !== normSearchLines[k]) {
+        linesOk = false;
+        break;
+      }
+    }
+    if (!linesOk) continue;
+
+    const candidateSliceLines = fileLines.slice(start, start + winLen);
+    if (indentSensitive && !checkIndentHierarchyMatch(searchLines, candidateSliceLines, relPath)) {
+      continue;
+    }
+
+    const matchedText = candidateSliceLines.join('\n');
+    const startOffset = lineOffsets[start];
+    const endOffset = startOffset + matchedText.length;
+    matches.push({
+      startLine: start + 1,
+      endLine: start + winLen,
+      startOffset,
+      endOffset,
+      matchedText,
+      matchedLines: candidateSliceLines
+    });
+  }
+
+  if (matches.length === 1) {
+    return { found: true, multiple: false, match: matches[0] };
+  }
+  if (matches.length > 1) {
+    return { found: false, multiple: true, count: matches.length, match: null };
+  }
+  return { found: false, multiple: false, match: null };
+}
+
+function tokenizeForSimilarity(line = '') {
+  return new Set((String(line || '').toLowerCase().match(/[a-z0-9_$-]{2,}/g)) || []);
+}
+
+function lineSimilarity(a = '', b = '') {
+  const ta = String(a || '').trim();
+  const tb = String(b || '').trim();
+  if (!ta && !tb) return 0.5;
+  if (!ta || !tb) return 0;
+  if (ta === tb) return 1.0;
+
+  const setA = tokenizeForSimilarity(ta);
+  const setB = tokenizeForSimilarity(tb);
+  let tokenJaccard = 0;
+  if (setA.size > 0 && setB.size > 0) {
+    let inter = 0;
+    for (const tok of setA) {
+      if (setB.has(tok)) inter++;
+    }
+    tokenJaccard = inter / (setA.size + setB.size - inter);
+  }
+
+  const normA = ta.replace(/\s+/g, ' ');
+  const normB = tb.replace(/\s+/g, ' ');
+  let bigramDice = 0;
+  if (normA.length >= 2 && normB.length >= 2) {
+    const bigramsA = new Map();
+    for (let i = 0; i < normA.length - 1; i++) {
+      const bg = normA.slice(i, i + 2);
+      bigramsA.set(bg, (bigramsA.get(bg) || 0) + 1);
+    }
+    let overlap = 0;
+    for (let i = 0; i < normB.length - 1; i++) {
+      const bg = normB.slice(i, i + 2);
+      const cnt = bigramsA.get(bg) || 0;
+      if (cnt > 0) {
+        overlap++;
+        bigramsA.set(bg, cnt - 1);
+      }
+    }
+    bigramDice = (2 * overlap) / ((normA.length - 1) + (normB.length - 1));
+  }
+  return Math.max(tokenJaccard, 0.55 * tokenJaccard + 0.45 * bigramDice);
+}
+
+function findBestApproximateRegion(relPath, fileLines = [], searchLines = [], allowedRanges = null) {
+  const totalLines = fileLines.length;
+  if (totalLines === 0) {
+    return { bestLine: 1, similarity: 0, snippetStart: 1, snippetEnd: 1, formattedSnippet: '' };
+  }
+
+  const nonEmptySearch = searchLines
+    .map((text, idx) => ({ text: text.trim(), idx }))
+    .filter(x => x.text.length > 0);
+  const anchors = nonEmptySearch.slice(0, 4);
+  const compareLen = Math.min(Math.max(1, searchLines.length), 20);
+
+  const candidateStarts = new Set();
+  const isAllowed = (line1Based) => !Array.isArray(allowedRanges) || allowedRanges.length === 0 || intervalOverlapsRanges(line1Based, line1Based, allowedRanges);
+
+  if (totalLines <= 300) {
+    for (let i = 0; i < totalLines; i++) {
+      if (isAllowed(i + 1)) candidateStarts.add(i);
+    }
+  } else {
+    const scoredLines = [];
+    for (let i = 0; i < totalLines; i++) {
+      if (!isAllowed(i + 1)) continue;
+      let maxAnchorSim = 0;
+      let bestOffset = 0;
+      for (const anc of anchors) {
+        const sim = lineSimilarity(anc.text, fileLines[i]);
+        if (sim > maxAnchorSim) {
+          maxAnchorSim = sim;
+          bestOffset = anc.idx;
+        }
+      }
+      if (maxAnchorSim >= 0.25) {
+        scoredLines.push({ start: Math.max(0, i - bestOffset), sim: maxAnchorSim });
+      }
+    }
+    scoredLines.sort((a, b) => b.sim - a.sim);
+    for (const item of scoredLines.slice(0, 30)) {
+      candidateStarts.add(item.start);
+    }
+    if (candidateStarts.size === 0 && Array.isArray(allowedRanges) && allowedRanges.length > 0) {
+      candidateStarts.add(Math.max(0, allowedRanges[0][0] - 1));
+    } else if (candidateStarts.size === 0) {
+      candidateStarts.add(0);
+    }
+  }
+
+  let bestLine = 1;
+  let bestScore = 0;
+
+  for (const startIdx of candidateStarts) {
+    if (!isAllowed(startIdx + 1)) continue;
+    let sumSim = 0;
+    let weightSum = 0;
+    for (let k = 0; k < compareLen; k++) {
+      if (startIdx + k >= totalLines) break;
+      const sLine = searchLines[k] || '';
+      const weight = sLine.trim().length > 0 ? 1.0 : 0.2;
+      sumSim += lineSimilarity(sLine, fileLines[startIdx + k]) * weight;
+      weightSum += weight;
+    }
+    const avgSim = weightSum > 0 ? sumSim / weightSum : 0;
+    if (avgSim > bestScore) {
+      bestScore = avgSim;
+      bestLine = startIdx + 1;
+    }
+  }
+
+  const snippetStart = Math.max(1, bestLine - 8);
+  const snippetEnd = Math.min(totalLines, snippetStart + 29); // Strictly max 30 lines
+  const numbered = [];
+  for (let ln = snippetStart; ln <= snippetEnd; ln++) {
+    numbered.push(`${ln}: ${fileLines[ln - 1]}`);
+  }
+  const formattedSnippet = [
+    `=== ACTUAL FILE CONTENT (${relPath}:${snippetStart}-${snippetEnd}) ===`,
+    ...numbered,
+    '=== END ACTUAL FILE CONTENT ==='
+  ].join('\n');
+
+  return {
+    bestLine,
+    similarity: Number(bestScore.toFixed(4)),
+    snippetStart,
+    snippetEnd,
+    formattedSnippet
+  };
+}
+
 /**
  * 8-Step Pipeline for Applying Edits:
  * 1. Parse Search/Replace blocks
@@ -275,7 +678,9 @@ export function applyEdits(rawOutput, task = {}, options = {}) {
     maxScopeIncrease = 1,
     allowNewFiles = true,
     newFilesOnlyInScope = true,
-    repoRoot = REPO_ROOT
+    repoRoot = REPO_ROOT,
+    contextMeta = null,
+    readRanges = []
   } = options;
 
   const taskScope = task.scope || [];
@@ -383,6 +788,8 @@ export function applyEdits(rawOutput, task = {}, options = {}) {
 
   // BƯỚC 7: All-or-Nothing In-Memory Simulation
   const simulatedOutputs = {};
+  let fuzzyWhitespaceMatches = 0;
+  const unseenExactMatches = [];
 
   for (const [relPath, fileBlocks] of Object.entries(byFile)) {
     const absPath = path.resolve(repoRoot, relPath);
@@ -430,7 +837,21 @@ export function applyEdits(rawOutput, task = {}, options = {}) {
       }
     }
 
-    let currentContent = originalRaw.replace(/\r\n/g, '\n');
+    const origNormContent = originalRaw.replace(/\r\n/g, '\n');
+    const origFileLines = origNormContent.split('\n');
+
+    // Resolve seen vs omitted line ranges in ORIGINAL file coordinates when smart context windowing was used
+    const fileMeta = contextMeta?.byFile?.[relPath] || null;
+    const readsForFile = (Array.isArray(readRanges) ? readRanges : [])
+      .filter(r => r && String(r.path || '').trim().replace(/\\/g, '/').replace(/^\.\//, '') === relPath)
+      .map(r => [r.start_line, r.end_line]);
+    const initialSent = Array.isArray(fileMeta?.sentRanges) ? fileMeta.sentRanges : [];
+    const initialOmitted = Array.isArray(fileMeta?.omittedRanges) ? fileMeta.omittedRanges : [];
+    const seenRanges = merge1BasedIntervals([...initialSent, ...readsForFile]);
+    const remainingOmitted = computeRemainingOmitted(initialOmitted, seenRanges);
+    const hasSmartWindowGuard = Boolean(fileExists && fileMeta && initialOmitted.length > 0 && seenRanges.length > 0);
+
+    const plannedEdits = [];
 
     for (let i = 0; i < fileBlocks.length; i++) {
       const b = fileBlocks[i];
@@ -439,40 +860,214 @@ export function applyEdits(rawOutput, task = {}, options = {}) {
 
       const lazyError = checkLazyGuard(normReplace);
       if (lazyError) {
+        const errorHash = computeApplierErrorHash({
+          errorCode: 'lazy_guard',
+          file: relPath,
+          search: normSearch,
+          fallbackMessage: lazyError
+        });
         return {
           ok: false,
+          error_hash: errorHash,
+          failed_block: { index: i + 1, file: relPath, error_code: 'lazy_guard' },
           error: `Block ${i + 1} for "${relPath}": ${lazyError}`
         };
       }
 
       if (!normSearch) {
-        if (fileExists && currentContent.trim().length > 0) {
+        if (fileExists && origNormContent.trim().length > 0) {
+          const msg = `Block ${i + 1} for "${relPath}": Empty SEARCH block is only permitted when creating a new file or editing an empty file.`;
           return {
             ok: false,
-            error: `Block ${i + 1} for "${relPath}": Empty SEARCH block is only permitted when creating a new file or editing an empty file.`
+            error_hash: computeApplierErrorHash({ errorCode: 'empty_search_nonempty_file', file: relPath, search: '', fallbackMessage: msg }),
+            failed_block: { index: i + 1, file: relPath, error_code: 'empty_search_nonempty_file' },
+            error: msg
           };
         }
-        currentContent = normReplace;
+        plannedEdits.push({
+          blockIndex: i + 1,
+          startOffset: 0,
+          endOffset: origNormContent.length,
+          startLine: 1,
+          endLine: origFileLines.length,
+          normSearch,
+          replaceText: normReplace
+        });
         continue;
       }
 
-      const firstIdx = currentContent.indexOf(normSearch);
-      if (firstIdx === -1) {
+      const searchLines = normSearch.split('\n');
+      const firstNonEmptyLine = (searchLines.find(l => l.trim().length > 0) || searchLines[0] || '').trim().slice(0, 100);
+
+      const makeSeenWindowError = (suggestedOmittedRanges = remainingOmitted) => {
+        const omitDesc = suggestedOmittedRanges.length > 0
+          ? suggestedOmittedRanges.map(([s, e]) => `OMITTED LINES ${s}..${e}`).join(', ')
+          : initialOmitted.map(([s, e]) => `OMITTED LINES ${s}..${e}`).join(', ');
+        const msg = `SEARCH block #${i + 1} không nằm trong phần văn bản đã thấy in "${relPath}". Read the unseen section(s) with read_file first (${omitDesc || 'call read_file on target lines'}). First SEARCH line: "${firstNonEmptyLine}"`;
         return {
           ok: false,
-          error: `SEARCH block ${i + 1} not found in "${relPath}". Check exact indentation and whitespace.`
+          error_hash: computeApplierErrorHash({ errorCode: 'not_in_seen_window', file: relPath, search: normSearch }),
+          failed_block: { index: i + 1, file: relPath, error_code: 'not_in_seen_window' },
+          error: msg
+        };
+      };
+
+      const firstIdx = origNormContent.indexOf(normSearch);
+      if (firstIdx !== -1) {
+        const secondIdx = origNormContent.indexOf(normSearch, firstIdx + 1);
+        if (secondIdx !== -1) {
+          const msg = `SEARCH block ${i + 1} matches multiple times in "${relPath}". Add more surrounding context lines.`;
+          return {
+            ok: false,
+            error_hash: computeApplierErrorHash({ errorCode: 'multiple_matches', file: relPath, search: normSearch }),
+            failed_block: { index: i + 1, file: relPath, error_code: 'multiple_matches' },
+            error: msg
+          };
+        }
+
+        const matchStartLine = origNormContent.slice(0, firstIdx).split('\n').length;
+        const matchEndLine = matchStartLine + searchLines.length - 1;
+        if (hasSmartWindowGuard && !intervalOverlapsRanges(matchStartLine, matchEndLine, seenRanges)) {
+          const nonEmptySearchLines = searchLines.filter(l => l.trim().length > 0).length;
+          if (nonEmptySearchLines >= 3) {
+            // Cổng seen_window chỉ chặn khối <3 dòng hoặc dùng để giải thích khi KHÔNG khớp;
+            // khối khớp chính xác + duy nhất + >=3 dòng không rỗng được áp dụng và ghi telemetry unseen_exact_match.
+            const isDeleteBlock = normReplace.trim().length === 0;
+            unseenExactMatches.push({
+              block: i + 1,
+              file: relPath,
+              start_line: matchStartLine,
+              end_line: matchEndLine,
+              non_empty_lines: nonEmptySearchLines,
+              is_delete: isDeleteBlock,
+              action_kind: isDeleteBlock ? 'delete' : 'modify'
+            });
+          } else {
+            const targetGap = remainingOmitted.filter(([s, e]) => intervalOverlapsRanges(matchStartLine, matchEndLine, [[s, e]]));
+            return makeSeenWindowError(targetGap.length > 0 ? targetGap : remainingOmitted);
+          }
+        }
+
+        plannedEdits.push({
+          blockIndex: i + 1,
+          startOffset: firstIdx,
+          endOffset: firstIdx + normSearch.length,
+          startLine: matchStartLine,
+          endLine: matchEndLine,
+          normSearch,
+          replaceText: normReplace
+        });
+        continue;
+      }
+
+      // Branch (c): Strict whitespace/indentation-only fuzzy match on original file, ONLY when unique
+      const wsRes = tryUniqueWhitespaceMatch(origNormContent, normSearch, relPath);
+      if (wsRes.multiple) {
+        const msg = `SEARCH block ${i + 1} matches multiple locations (after whitespace normalization) in "${relPath}". Add more surrounding context lines.`;
+        return {
+          ok: false,
+          error_hash: computeApplierErrorHash({ errorCode: 'multiple_matches', file: relPath, search: normSearch }),
+          failed_block: { index: i + 1, file: relPath, error_code: 'multiple_matches' },
+          error: msg
+        };
+      }
+      if (wsRes.found && wsRes.match) {
+        if (hasSmartWindowGuard && !intervalOverlapsRanges(wsRes.match.startLine, wsRes.match.endLine, seenRanges)) {
+          const targetGap = remainingOmitted.filter(([s, e]) => intervalOverlapsRanges(wsRes.match.startLine, wsRes.match.endLine, [[s, e]]));
+          return makeSeenWindowError(targetGap.length > 0 ? targetGap : remainingOmitted);
+        }
+        const effectiveReplace = reindentReplaceForMatch(
+          normReplace,
+          searchLines,
+          wsRes.match.matchedLines,
+          relPath,
+          origNormContent
+        );
+        plannedEdits.push({
+          blockIndex: i + 1,
+          startOffset: wsRes.match.startOffset,
+          endOffset: wsRes.match.endOffset,
+          startLine: wsRes.match.startLine,
+          endLine: wsRes.match.endLine,
+          normSearch,
+          replaceText: effectiveReplace
+        });
+        fuzzyWhitespaceMatches++;
+        continue;
+      }
+
+      // Neither exact nor whitespace-only unique match found. Check (a) unseen-window vs (b) closest-match diagnostic.
+      if (hasSmartWindowGuard && remainingOmitted.length > 0) {
+        const bestInSeen = findBestApproximateRegion(relPath, origFileLines, searchLines, seenRanges);
+        if (bestInSeen.similarity < 0.45) {
+          const bestOverall = findBestApproximateRegion(relPath, origFileLines, searchLines, null);
+          const matchingGaps = bestOverall.similarity >= 0.45
+            ? remainingOmitted.filter(([s, e]) => intervalOverlapsRanges(bestOverall.bestLine, bestOverall.bestLine, [[s, e]]))
+            : [];
+          return makeSeenWindowError(matchingGaps.length > 0 ? matchingGaps : remainingOmitted);
+        }
+        const pct = Math.round(bestInSeen.similarity * 100);
+        const msg = [
+          `SEARCH block ${i + 1} not found in "${relPath}".`,
+          `First SEARCH line: "${firstNonEmptyLine}"`,
+          `Closest match at line ${bestInSeen.bestLine} (similarity ${pct}%).`,
+          bestInSeen.formattedSnippet
+        ].join('\n');
+        return {
+          ok: false,
+          error_hash: computeApplierErrorHash({ errorCode: 'search_not_found', file: relPath, search: normSearch }),
+          failed_block: { index: i + 1, file: relPath, error_code: 'search_not_found', closest_line: bestInSeen.bestLine, similarity: bestInSeen.similarity },
+          revealed_range: { path: relPath, start_line: bestInSeen.snippetStart, end_line: bestInSeen.snippetEnd, content: bestInSeen.formattedSnippet },
+          error: msg
         };
       }
 
-      const secondIdx = currentContent.indexOf(normSearch, firstIdx + 1);
-      if (secondIdx !== -1) {
-        return {
-          ok: false,
-          error: `SEARCH block ${i + 1} matches multiple times in "${relPath}". Add more surrounding context lines.`
-        };
-      }
+      // Branch (b): Full-file or legacy check with closest line + similarity + <=30 lines of ACTUAL FILE CONTENT
+      const bestFull = findBestApproximateRegion(relPath, origFileLines, searchLines, null);
+      const pctFull = Math.round(bestFull.similarity * 100);
+      const msgFull = [
+        `SEARCH block ${i + 1} not found in "${relPath}".`,
+        `First SEARCH line: "${firstNonEmptyLine}"`,
+        `Closest match at line ${bestFull.bestLine} (similarity ${pctFull}%).`,
+        bestFull.formattedSnippet
+      ].join('\n');
+      return {
+        ok: false,
+        error_hash: computeApplierErrorHash({ errorCode: 'search_not_found', file: relPath, search: normSearch }),
+        failed_block: { index: i + 1, file: relPath, error_code: 'search_not_found', closest_line: bestFull.bestLine, similarity: bestFull.similarity },
+        revealed_range: { path: relPath, start_line: bestFull.snippetStart, end_line: bestFull.snippetEnd, content: bestFull.formattedSnippet },
+        error: msgFull
+      };
+    }
 
-      currentContent = currentContent.slice(0, firstIdx) + normReplace + currentContent.slice(firstIdx + normSearch.length);
+    // Detect overlapping spans on original file coordinates before splicing atomically
+    if (plannedEdits.length > 1) {
+      const sortedAsc = [...plannedEdits].sort((a, b) => a.startOffset - b.startOffset || a.endOffset - b.endOffset || a.blockIndex - b.blockIndex);
+      for (let k = 1; k < sortedAsc.length; k++) {
+        const prev = sortedAsc[k - 1];
+        const cur = sortedAsc[k];
+        if (cur.startOffset < prev.endOffset || (cur.startOffset === prev.startOffset && cur.endOffset === prev.endOffset)) {
+          const msg = `Overlapping SEARCH blocks #${prev.blockIndex} (lines ${prev.startLine}-${prev.endLine}) and #${cur.blockIndex} (lines ${cur.startLine}-${cur.endLine}) in "${relPath}". Merge overlapping edits into a single SEARCH block.`;
+          return {
+            ok: false,
+            error_hash: computeApplierErrorHash({ errorCode: 'overlapping_blocks', file: relPath, search: cur.normSearch, fallbackMessage: msg }),
+            failed_block: {
+              index: cur.blockIndex,
+              overlaps_with: prev.blockIndex,
+              file: relPath,
+              error_code: 'overlapping_blocks'
+            },
+            error: msg
+          };
+        }
+      }
+    }
+
+    // Atomic bottom-up splice against original coordinates (invariant to deletions/insertions in earlier blocks)
+    let currentContent = origNormContent;
+    const sortedDesc = [...plannedEdits].sort((a, b) => b.startOffset - a.startOffset || b.endOffset - a.endOffset);
+    for (const edit of sortedDesc) {
+      currentContent = currentContent.slice(0, edit.startOffset) + edit.replaceText + currentContent.slice(edit.endOffset);
     }
 
     if (eol === '\r\n') {
@@ -495,7 +1090,10 @@ export function applyEdits(rawOutput, task = {}, options = {}) {
   return {
     ok: true,
     modified: appliedList,
-    scope_expansions: updatedExpansions
+    scope_expansions: updatedExpansions,
+    fuzzy_whitespace_matches: fuzzyWhitespaceMatches,
+    unseen_exact_match: unseenExactMatches.length > 0,
+    ...(unseenExactMatches.length > 0 ? { unseen_exact_matches: unseenExactMatches } : {})
   };
 }
 

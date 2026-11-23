@@ -3,7 +3,9 @@ import path from 'node:path';
 import { exec } from 'node:child_process';
 import YAML from 'yaml';
 import { verifyCsrfAndOrigin, parseJsonBody } from './security.mjs';
-import { loadYamlSafe } from './state-reader.mjs';
+import { loadMergedPolicy, loadMergedTeamConfig, loadYamlSafe, loadYamlStrict } from '../lib/policy-loader.mjs';
+import { collectActiveRosterModels } from '../lib/client-9router.mjs';
+import { callModelEndpoint } from '../../runtime/provider-gateway.mjs';
 
 export async function handleModelsRoutes(req, res, url, options = {}) {
   const teamConfigFile = options.TEAM_CONFIG_FILE
@@ -24,8 +26,8 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
       const start = Date.now();
       let models = [];
       let source = '9router';
-      const teamData = loadYamlSafe(teamConfigFile) || {};
-      const providerCfg = teamData.team?.providers?.local_9router || {};
+      const teamData = loadMergedTeamConfig({ teamFile: teamConfigFile });
+      const providerCfg = teamData.providers?.local_9router || teamData.team?.providers?.local_9router || {};
       const targetBaseUrl = url.searchParams.get('url') || providerCfg.base_url || 'http://127.0.0.1:20128/v1';
       const targetKey = url.searchParams.get('key') || providerCfg.default_key || 'sk-default';
       const modelsEndpoint = targetBaseUrl.endsWith('/') ? `${targetBaseUrl}models` : `${targetBaseUrl}/models`;
@@ -58,18 +60,11 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
         source = 'fallback_team_yaml';
       }
 
-      // Fallback if 9router is not reachable or returned 0 models
+      // Fallback if 9router is not reachable or returned 0 models: read strictly from team.yaml active roster
       if (models.length === 0) {
-        const teamData = loadYamlSafe(teamConfigFile);
-        const roles = teamData?.roles || {};
-        const fallbackSet = new Set();
-        for (const r of Object.values(roles)) {
-          if (r?.model) fallbackSet.add(r.model);
-        }
-        fallbackSet.add('kr/claude-sonnet-4.5-thinking');
-        fallbackSet.add('Deepseek V4.1 Flash/deepseek-ai/deepseek-v4.1-flash-1017');
-        fallbackSet.add('ag/claude-opus-5-5-high');
-        fallbackSet.add('ag/gemini-3.8-flash-medium');
+        const teamData = loadMergedTeamConfig({ teamFile: teamConfigFile });
+        const activeRoster = collectActiveRosterModels(teamData);
+        const fallbackSet = new Set(activeRoster.map(entry => entry.model));
 
         models = Array.from(fallbackSet).map(id => ({
           id,
@@ -122,50 +117,41 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
         return true;
       }
 
-      const teamData = loadYamlSafe(teamConfigFile) || {};
-      const providerCfg = teamData.team?.providers?.local_9router || {};
+      const teamData = loadMergedTeamConfig({ teamFile: teamConfigFile });
+      const providerCfg = teamData.providers?.local_9router || teamData.team?.providers?.local_9router || {};
       const targetBaseUrl = body.url || providerCfg.base_url || 'http://127.0.0.1:20128/v1';
       const targetKey = body.key || providerCfg.default_key || 'sk-default';
-      const chatEndpoint = targetBaseUrl.endsWith('/') ? `${targetBaseUrl}chat/completions` : `${targetBaseUrl}/chat/completions`;
 
       const start = Date.now();
       try {
-        const pingRes = await fetch(chatEndpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${targetKey}`
-          },
-          body: JSON.stringify({
-            model,
-            messages: [{ role: 'user', content: 'ping' }],
-            max_tokens: 1,
-            stream: false
-          }),
-          signal: AbortSignal.timeout(7000)
+        const pingRes = await callModelEndpoint({
+          baseUrl: targetBaseUrl,
+          apiKey: targetKey,
+          model,
+          messages: [{ role: 'user', content: 'ping' }],
+          maxTokens: 1,
+          timeoutMs: 7000
         });
 
         const latency = Date.now() - start;
-        const resJson = await pingRes.json().catch(() => null);
 
-        if (pingRes.ok && resJson && !resJson.error) {
+        if (pingRes.ok) {
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
           res.end(JSON.stringify({
             ok: true,
             latency_ms: latency,
             model,
             status: 'online',
-            reply_preview: resJson.choices?.[0]?.message?.content?.slice(0, 50) || 'OK'
+            reply_preview: (pingRes.content || '').slice(0, 50) || 'OK'
           }));
         } else {
-          const errMsg = resJson?.error?.message || `HTTP ${pingRes.status}`;
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
           res.end(JSON.stringify({
             ok: false,
             latency_ms: latency,
             model,
             status: 'error',
-            error: errMsg
+            error: pingRes.error || 'Model check failed'
           }));
         }
       } catch (pingErr) {
@@ -211,31 +197,89 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
         return true;
       }
 
-      const teamData = loadYamlSafe(teamConfigFile) || { team: { name: 'hybrid-agent-squad' }, roles: {} };
+      const teamData = loadYamlStrict(teamConfigFile, 'team.yaml');
       if (!teamData.roles) teamData.roles = {};
 
       let updatedCount = 0;
+      const warnings = [];
+
+      const normalizeDisabledList = (existingDisabled = []) => (
+        Array.isArray(existingDisabled) ? existingDisabled.map(d => (typeof d === 'object' ? { ...d } : d)) : []
+      );
+      const addDisabledEntry = (disabledList, id, reason = null) => {
+        if (!id) return;
+        const already = disabledList.some(d => (typeof d === 'string' ? d === id : (d?.id === id || d?.model === id)));
+        if (!already) {
+          disabledList.push({ id, disabled: true, ...(reason ? { reason } : {}) });
+        }
+      };
 
       // 1. Đồng bộ và cập nhật các vai trò có trong danh sách gửi lên
       for (const [roleKey, roleSpec] of Object.entries(rolesInput)) {
         if (!roleSpec || typeof roleSpec !== 'object') continue;
-        const newModel = String(roleSpec.model || '').trim();
-        const modelsArray = Array.isArray(roleSpec.models)
-          ? roleSpec.models.filter(Boolean)
-          : (newModel ? [newModel] : []);
+        const existingRole = teamData.roles[roleKey];
+        const disabledToMerge = normalizeDisabledList(existingRole?.disabled_models);
 
+        if (Array.isArray(existingRole?.models)) {
+          for (const prevEntry of existingRole.models) {
+            if (prevEntry && typeof prevEntry === 'object') {
+              const prevId = String(prevEntry.id || prevEntry.model || '').trim();
+              if (prevEntry.disabled === true && prevId) {
+                addDisabledEntry(disabledToMerge, prevId, prevEntry.reason || null);
+              }
+              warnings.push(`Role "${roleKey}": normalized pre-existing object entry "${prevId || '<unknown>'}" in models[] to string array`);
+            }
+          }
+        }
+
+        const newModel = typeof roleSpec.model === 'string'
+          ? roleSpec.model.trim()
+          : String(roleSpec.model?.id || roleSpec.model?.model || '').trim();
+        const modelsArray = [];
+        const pushUniqueModel = (id) => {
+          if (id && !modelsArray.includes(id)) modelsArray.push(id);
+        };
+
+        if (Array.isArray(roleSpec.models)) {
+          for (const entry of roleSpec.models) {
+            if (typeof entry === 'string') {
+              pushUniqueModel(entry.trim());
+            } else if (entry && typeof entry === 'object') {
+              const id = String(entry.id || entry.model || '').trim();
+              if (entry.disabled === true) {
+                if (id) addDisabledEntry(disabledToMerge, id, entry.reason || null);
+                warnings.push(`Role "${roleKey}": normalized disabled object entry "${id || '<empty>'}" out of models[] into disabled_models`);
+              } else if (id) {
+                pushUniqueModel(id);
+                warnings.push(`Role "${roleKey}": normalized object entry "${id}" in models[] to string`);
+              } else {
+                warnings.push(`Role "${roleKey}": ignored empty object entry in models[]`);
+              }
+            }
+          }
+        } else if (newModel) {
+          pushUniqueModel(newModel);
+        }
+
+        if (modelsArray.length === 0 && newModel) {
+          pushUniqueModel(newModel);
+        }
         if (modelsArray.length === 0 && !newModel) continue;
+
         const primaryModel = modelsArray[0] || newModel;
         const fallbackModel = modelsArray.length > 1 ? modelsArray[1] : null;
 
-        if (teamData.roles[roleKey]) {
-          teamData.roles[roleKey].enabled = true;
-          teamData.roles[roleKey].model = primaryModel;
-          teamData.roles[roleKey].default_model = primaryModel;
-          teamData.roles[roleKey].models = modelsArray;
-          teamData.roles[roleKey].fallback_model = fallbackModel;
+        if (existingRole) {
+          existingRole.enabled = true;
+          existingRole.model = primaryModel;
+          existingRole.default_model = primaryModel;
+          existingRole.models = modelsArray;
+          existingRole.fallback_model = fallbackModel;
+          if (disabledToMerge.length > 0) {
+            existingRole.disabled_models = disabledToMerge;
+          }
           if (roleSpec.display_name) {
-            teamData.roles[roleKey].display_name = roleSpec.display_name;
+            existingRole.display_name = roleSpec.display_name;
           }
         } else {
           teamData.roles[roleKey] = {
@@ -246,6 +290,7 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
             default_model: primaryModel,
             models: modelsArray,
             fallback_model: fallbackModel,
+            ...(disabledToMerge.length > 0 ? { disabled_models: disabledToMerge } : {}),
             temperature: 0.1
           };
         }
@@ -278,10 +323,12 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
 
       fs.writeFileSync(teamConfigFile, YAML.stringify(teamData), 'utf8');
 
+      const uniqueWarnings = Array.from(new Set(warnings));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({
         ok: true,
         updated_count: updatedCount,
+        ...(uniqueWarnings.length > 0 ? { warnings: uniqueWarnings } : {}),
         message: `Đã cập nhật ${updatedCount} vai trò vào config/team.yaml thành công!`
       }));
     } catch (err) {
@@ -353,6 +400,15 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
         if (typeof eg.enforce_command_timeouts === 'boolean') policyNode.setIn(['execution_guardrails', 'enforce_command_timeouts'], eg.enforce_command_timeouts);
         if (typeof eg.default_cli_timeout_sec === 'number') policyNode.setIn(['execution_guardrails', 'default_cli_timeout_sec'], eg.default_cli_timeout_sec);
         if (typeof eg.block_powershell_curl_alias === 'boolean') policyNode.setIn(['execution_guardrails', 'block_powershell_curl_alias'], eg.block_powershell_curl_alias);
+        if (typeof eg.circuit_breaker_ttl_ms === 'number' && eg.circuit_breaker_ttl_ms > 0) {
+          policyNode.setIn(['execution_guardrails', 'circuit_breaker_ttl_ms'], eg.circuit_breaker_ttl_ms);
+        }
+        if (typeof eg.circuit_breaker_ttl_sec === 'number' && eg.circuit_breaker_ttl_sec > 0) {
+          policyNode.setIn(['execution_guardrails', 'circuit_breaker_ttl_sec'], eg.circuit_breaker_ttl_sec);
+        }
+        if (eg.model_aliases && typeof eg.model_aliases === 'object' && !Array.isArray(eg.model_aliases)) {
+          policyNode.setIn(['execution_guardrails', 'model_aliases'], eg.model_aliases);
+        }
       }
 
       // 5. Retry and escalation
@@ -387,8 +443,8 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
     try {
       const body = await parseJsonBody(req);
       const checkType = body.check_type || 'fast';
-      const policyData = loadYamlSafe(policyConfigFile) || {};
-      const validation = policyData.policy?.validation || {};
+      const policyData = loadMergedPolicy({ policyFile: policyConfigFile });
+      const validation = policyData.policy.validation || {};
       const checks = checkType === 'suite' ? validation.suite_checks : validation.fast_checks;
 
       // Allow command override from request body if user changed it in textbox

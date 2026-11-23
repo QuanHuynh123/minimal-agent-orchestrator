@@ -29,16 +29,24 @@ import {
   sliceContentByKeywords,
   validateConfig,
   verifyResponseModel,
-  resolveWriterHubWorkflow
+  resolveWriterHubWorkflow,
+  computeDynamicTaskTokenBudget,
+  transitionTaskState,
+  recordTaskStep,
+  reconcileTaskTokens,
+  estimateStepCostUsd,
+  redactSecretsFromText
 } from './orchestrator.mjs';
+import { computeMedianAndRange } from './benchmark-replay.mjs';
 import {
   auditGitScope,
   checkCommandGuardrails,
   hashString,
   normalizeErrorForHash,
-  validateFast
+  validateFast,
+  verifyTestDiffIntegrity
 } from './validator.mjs';
-import { slugify, extractJsonPayload } from './goal-planner.mjs';
+import { buildTaskId, slugify, extractJsonPayload } from './goal-planner.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -189,7 +197,23 @@ bigLines[350] = 'def start_video_analysis(self, payload): return True';
 const slicedText = sliceContentByKeywords(bigLines.join('\n'), ['start_video_analysis'], 50000, 20);
 assert.match(slicedText, /def start_video_analysis/);
 assert.match(slicedText, /OMITTED LINES/);
-console.log('✓ Context-aware keyword extraction & smart window slicing passed');
+
+// Test 9b: Anti-Domino Merge + idx===0 Byte Cap + Header Anchor + Weighted Knapsack
+const dominoLines = Array.from({ length: 5000 }, (_, idx) => {
+  if (idx === 10) return 'from dataclasses import dataclass\n@dataclass\nclass BannerBoxResult: pass';
+  if (idx === 2850) return 'def export_clean_video(video_path, regions, mode="delogo"): return True';
+  // Noise keyword "mode" and "video" every 30 lines that previously Domino-merged all 5000 lines into merged[0]
+  return idx % 30 === 0
+    ? `line_${idx + 1}: const mode = "video"; // generic noise hit`
+    : `line_${idx + 1}: const padding_${idx} = "x".repeat(45);`;
+});
+const dominoRaw = dominoLines.join('\n');
+const dominoSliced = sliceContentByKeywords(dominoRaw, ['mode', 'video', 'export_clean_video'], 14000, 35);
+const dominoSlicedBytes = Buffer.byteLength(dominoSliced, 'utf8');
+assert.ok(dominoSlicedBytes <= 15000, `Expected strict byte cap <= 15000, got ${dominoSlicedBytes} bytes`);
+assert.match(dominoSliced, /class BannerBoxResult/, 'Header Anchor (lines 1..30) must be preserved');
+assert.match(dominoSliced, /def export_clean_video/, 'Specific snake_case symbol must win Knapsack selection over generic noise words');
+console.log('✓ Context-aware keyword extraction & Weighted Knapsack window slicing passed');
 
 // Test 10: Command Guardrails (HR-1 Unbounded & HR-2 Bare curl alias) & IDE Scope Audit Gate
 const unboundedCheck = checkCommandGuardrails('python test.py', 0, { ban_unbounded_commands: true });
@@ -316,6 +340,19 @@ assert.ok(customRepoRoot.replace(/\\/g, '/').endsWith('/core'));
 
 // Test Goal Planner helpers
 assert.strictEqual(slugify('Tích Hợp PDF Export'), 'tich-hop-pdf-export');
+assert.strictEqual(
+  slugify('sua loi treo ung dung khi xoa muc lich su', 30).endsWith('-'),
+  false,
+  'slugify must never end with a trailing hyphen after maxLen slicing'
+);
+const longTaskId = buildTaskId(
+  '2026-11-22',
+  '1916',
+  0,
+  'Sửa lỗi treo ứng dụng khi xóa mục lịch sử mà file tải về không còn tồn tại'
+);
+assert.strictEqual(longTaskId.endsWith('-'), false, `task_id must never end with "-", got: ${longTaskId}`);
+assert.ok(longTaskId.length <= 50, `task_id must respect 50-char cap, got len=${longTaskId.length}`);
 const jsonExtracted = extractJsonPayload('Here is the plan:\n```json\n{"tasks": [{"title": "Demo", "model": "kr/claude-sonnet-4.5-thinking"}]}\n```');
 assert.strictEqual(jsonExtracted.tasks[0].title, 'Demo');
 assert.strictEqual(jsonExtracted.tasks[0].model, 'kr/claude-sonnet-4.5-thinking');
@@ -400,8 +437,15 @@ assert.strictEqual(standardWf[0].allow_skip_spec, true);
 assert.strictEqual(standardWf[1].role, 'writer');
 assert.strictEqual(standardWf[1].action, 'apply_patch');
 
-// Standard frontend task binds designer to spec slot
-const uiWf = resolveWriterHubWorkflow({ task_id: 'T-UI-1', mode: 'standard', scope: ['ui_web/index.html'] }, mockMultiModelTeam);
+// Standard frontend task binds designer ONLY when image attached OR (standard + new UI)
+const uiMaintWf = resolveWriterHubWorkflow({ task_id: 'T-UI-MAINT', mode: 'standard', scope: ['ui_web/index.html'] }, mockMultiModelTeam);
+assert.strictEqual(uiMaintWf.length, 0, 'Standard UI task without new UI or image must skip Designer');
+const uiWf = resolveWriterHubWorkflow({
+  task_id: 'T-UI-1',
+  mode: 'standard',
+  goal: 'Design new responsive panel UI layout in ui_web/index.html',
+  scope: ['ui_web/index.html']
+}, mockMultiModelTeam);
 assert.strictEqual(uiWf.length, 2);
 assert.strictEqual(uiWf[0].role, 'designer');
 
@@ -429,6 +473,187 @@ assert.strictEqual(computeDeterministicRisk(['Cargo.toml']), 'high', 'Cargo.toml
 assert.strictEqual(computeDeterministicRisk(['src/utils.js']), 'low', 'Normal source file remains low risk');
 
 console.log('✓ Slot-Binding, Auto-Collapse & Dangling Block / Supply-Chain Risk Guard passed');
+
+// 16. Test Normalized Error Hash Across Files, Single Canonical State Transition, Steps Telemetry & Test Integrity Guard
+const truncErrFileA = 'Truncated/dangling SEARCH-REPLACE block detected in "ui_bridge/js_api.py" (unclosed SEARCH block without >>>>>>> REPLACE). Refusing to apply partial output. (raw output saved: agent-team\\state\\runs\\T-1\\attempt-1.txt)';
+const truncErrFileB = 'Truncated/dangling SEARCH-REPLACE block detected in "tests/test_eraser.py" (unclosed SEARCH block without >>>>>>> REPLACE). Refusing to apply partial output. (raw output saved: agent-team\\state\\runs\\T-1\\attempt-2.txt)';
+assert.strictEqual(
+  hashString(truncErrFileA),
+  hashString(truncErrFileB),
+  'Identical error classes across different files and attempts must produce the exact same error_hash'
+);
+
+const searchBlockErrA = 'SEARCH block 1 not found in "ui_bridge/js_api.py". Check exact indentation and whitespace.';
+const searchBlockErrB = 'SEARCH block 5 not found in "core/eraser.py". Check exact indentation and whitespace.';
+assert.strictEqual(
+  hashString(searchBlockErrA),
+  hashString(searchBlockErrB),
+  'SEARCH block N not found across different files must normalize to the same hash'
+);
+
+// Canonical State Transition Invariants:
+// 1. Task ID exists in at most ONE list (removed from active_tasks and blocked_tasks when done)
+// 2. Stale last_error and block_reason are stripped on done, while error_history is preserved
+const mockState = {
+  version: '2.1',
+  active_tasks: [{ task_id: 'T-CLEAN-1', status: 'ready' }],
+  completed_tasks: [],
+  blocked_tasks: [{ task_id: 'T-CLEAN-1', status: 'blocked', block_reason: 'Old block' }],
+  metrics: { total_input_tokens: 100, total_output_tokens: 20, total_cost_est_usd: 0 }
+};
+const mockTask = {
+  task_id: 'T-CLEAN-1',
+  mode: 'standard',
+  status: 'writing',
+  retries: 1,
+  last_error: 'Truncated block on attempt 1',
+  block_reason: 'Infinite fix loop detected in apply',
+  error_history: [{ attempt: 1, stage: 'apply', error_hash: 'abc', summary: 'Truncated block' }]
+};
+recordTaskStep(mockTask, {
+  step: '1.1',
+  attempt: 1,
+  role: 'reviewer',
+  action: 'draft_spec',
+  requested_model: 'ag/claude-opus-5-5-medium',
+  actual_model: 'ag/claude-opus-5-5-medium',
+  model: 'ag/claude-opus-5-5-medium',
+  finish_reason: 'stop',
+  max_tokens_sent: 8192,
+  scope: ['core/eraser.py'],
+  prompt_tokens: 12000,
+  cached_tokens: 4000,
+  completion_tokens: 500,
+  reasoning_tokens: 200,
+  duration_ms: 5200,
+  status: 'ok'
+}, { skipJsonl: true });
+transitionTaskState(mockTask, mockState, 'done', {
+  actualModifiedFiles: ['core/eraser.py'],
+  validationPassed: true,
+  retries: 1
+});
+assert.strictEqual(mockTask.status, 'done');
+assert.strictEqual('last_error' in mockTask, false, 'last_error must be deleted when task is done');
+assert.strictEqual('block_reason' in mockTask, false, 'block_reason must be deleted when task is done');
+assert.strictEqual(mockTask.error_history.length, 1, 'error_history must be preserved when task is done');
+assert.strictEqual(mockTask.steps.length, 1, 'steps[] telemetry array must be preserved on task');
+assert.strictEqual(mockTask.steps[0].total_tokens, 12500);
+assert.strictEqual(mockState.active_tasks.length, 0, 'Done task must be removed from active_tasks');
+assert.strictEqual(mockState.blocked_tasks.length, 0, 'Done task must be removed from blocked_tasks');
+assert.strictEqual(mockState.completed_tasks.length, 1, 'Done task must exist in completed_tasks');
+
+// Calibrated Dynamic Task Budget (~360k-450k for 4-file standard task, NOT 1,125,000)
+const calibratedBudget = computeDynamicTaskTokenBudget(
+  { task_id: 'T-BUDGET', mode: 'standard', risk_level: 'medium', scope: ['core/a.py', 'ui_bridge/b.py', 'tests/c.py', 'ui_web/d.html'] },
+  [{ action: 'draft_spec' }, { action: 'draft_spec' }, { action: 'apply_patch' }, { action: 'apply_patch' }]
+);
+assert.ok(calibratedBudget >= 250000 && calibratedBudget <= 480000, `Expected calibrated budget in 250k..480k range, got ${calibratedBudget}`);
+
+// Deterministic 0-Token Test-Suite Preservation Guard
+const skipDiff = [
+  'diff --git a/tests/test_eraser.py b/tests/test_eraser.py',
+  '--- a/tests/test_eraser.py',
+  '+++ b/tests/test_eraser.py',
+  '@@ -10,3 +10,4 @@',
+  '+    @unittest.skip("skip broken test")',
+  '     def test_blur_mode(self):'
+].join('\n');
+const skipIntegrity = verifyTestDiffIntegrity(skipDiff, { title: 'Update blur filter' });
+assert.strictEqual(skipIntegrity.ok, false, 'Unconditional @unittest.skip in test diff must be rejected');
+
+const tautologyDiff = [
+  'diff --git a/tests/test_eraser.py b/tests/test_eraser.py',
+  '--- a/tests/test_eraser.py',
+  '+++ b/tests/test_eraser.py',
+  '@@ -10,3 +10,3 @@',
+  '-        self.assertEqual(res.suggested_mode, "blur")',
+  '+        self.assertTrue(True)'
+].join('\n');
+const tautologyIntegrity = verifyTestDiffIntegrity(tautologyDiff, { title: 'Update blur filter' });
+assert.strictEqual(tautologyIntegrity.ok, false, 'Tautological assertTrue(True) must be rejected');
+
+// Feature-Flagged Solo-First: disabled by default, enabled only when flag is true + remove/refactor/bugfix
+const defaultRemoveWf = resolveWriterHubWorkflow(
+  { task_id: 'T-REM', mode: 'standard', kind: 'remove', scope: ['core/a.py'], acceptance_criteria: ['AC1', 'AC2'] },
+  mockMultiModelTeam
+);
+assert.strictEqual(defaultRemoveWf.some(s => s.action === 'draft_spec'), true, 'Default policy keeps draft_spec enabled until A/B measured');
+
+const soloFirstRemoveWf = resolveWriterHubWorkflow(
+  { task_id: 'T-REM-SOLO', mode: 'standard', kind: 'remove', scope: ['core/a.py'], acceptance_criteria: ['AC1', 'AC2'] },
+  mockMultiModelTeam,
+  { policy: { workflow_optimization: { solo_first_for_clear_tasks: true } } }
+);
+assert.strictEqual(soloFirstRemoveWf.some(s => s.action === 'draft_spec'), false, 'With solo_first_for_clear_tasks=true, clear remove task skips draft_spec');
+
+console.log('✓ Normalized Error Hash, Canonical State Transition, Steps Telemetry & Test Integrity Guard passed');
+
+// ============================================================================
+// 20. Enriched Step Telemetry Schema, Token Reconciliation, Secret Redaction & Median/IQR
+// ============================================================================
+console.log('\n--- Test 20: Enriched Telemetry Schema, Token Reconciliation, Secret Redaction & Median/IQR ---');
+
+const stepEntry = mockTask.steps[0];
+assert.ok(stepEntry.orchestrator_git_sha && stepEntry.orchestrator_git_sha.length >= 4, 'Must record orchestrator_git_sha');
+assert.ok(stepEntry.policy_version && stepEntry.policy_version.startsWith('3.1.0'), `Expected policy_version 3.1.0+, got ${stepEntry.policy_version}`);
+assert.strictEqual(stepEntry.requested_model, 'ag/claude-opus-5-5-medium');
+assert.strictEqual(stepEntry.actual_model, 'ag/claude-opus-5-5-medium');
+assert.strictEqual(stepEntry.fallback_activated, false);
+assert.strictEqual(stepEntry.finish_reason, 'stop');
+assert.strictEqual(stepEntry.max_tokens_sent, 8192);
+assert.ok(stepEntry.cost_est_usd > 0, 'Must compute positive USD cost estimate');
+
+// Fallback tracking & reconciliation check
+recordTaskStep(mockTask, {
+  step: '2.1',
+  attempt: 1,
+  role: 'writer',
+  action: 'apply_patch',
+  requested_model: 'deepseek-ai/deepseek-v4.1-flash-1017',
+  actual_model: 'ag/gemini-3.8-flash-medium',
+  fallback_activated: true,
+  fallback_reason: 'HTTP 404: No active credentials for provider: deepseek-ai',
+  finish_reason: 'stop',
+  max_tokens_sent: 16384,
+  scope: ['core/eraser.py'],
+  prompt_tokens: 20000,
+  cached_tokens: 15000,
+  completion_tokens: 1500,
+  reasoning_tokens: 0,
+  duration_ms: 8400,
+  status: 'ok',
+  applier_status: 'accepted'
+}, { skipJsonl: true });
+
+assert.strictEqual(mockTask.steps[1].fallback_activated, true);
+assert.ok(mockTask.steps[1].fallback_reason.includes('No active credentials'));
+
+const reconExact = reconcileTaskTokens(mockTask, 12500 + 21500);
+assert.strictEqual(reconExact.ok, true, 'Exact token sum must pass reconciliation with drift=0');
+assert.strictEqual(reconExact.drift, 0);
+assert.strictEqual(reconExact.steps_total, 34000);
+
+const reconDrifted = reconcileTaskTokens(mockTask, 30000);
+assert.strictEqual(reconDrifted.ok, false, 'Mismatched state delta must fail reconciliation and report drift');
+assert.strictEqual(reconDrifted.drift, 4000);
+assert.ok(reconDrifted.warning && reconDrifted.warning.includes('[Telemetry Drift Warning]'));
+
+// Secret redaction in raw logs
+const rawWithSecrets = 'Authorization: Bearer sk-live-9876543210abcdef12345 and api_key="AIzaSyD-1234567890abcdefghijklmnop"';
+const redacted = redactSecretsFromText(rawWithSecrets);
+assert.strictEqual(redacted.includes('sk-live-9876543210abcdef12345'), false, 'Bearer sk- token must be redacted');
+assert.strictEqual(redacted.includes('AIzaSyD-1234567890abcdefghijklmnop'), false, 'Google API key must be redacted');
+assert.ok(redacted.includes('[REDACTED_SECRET]'));
+
+// Median & IQR calculation
+const stats = computeMedianAndRange([603, 1693, 6630, 14200, 52400]);
+assert.strictEqual(stats.median, 6630);
+assert.strictEqual(stats.min, 603);
+assert.strictEqual(stats.max, 52400);
+assert.strictEqual(stats.iqr, 14200 - 1693);
+
+console.log('✓ Enriched Telemetry Schema, Token Reconciliation, Secret Redaction & Median/IQR passed');
 
 console.log('\n=============================================');
 console.log('ALL V2.1 APPLIER & ORCHESTRATOR TESTS PASSED! 🎯');

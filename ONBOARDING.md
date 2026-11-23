@@ -78,7 +78,7 @@ Hệ thống cung cấp **2 Lối Vào Kiến Trúc** dùng chung 100% cấu hì
 | :--- | :--- | :--- |
 | **Bản chất** | **Agent đơn lẻ tương tác (Interactive Single Agent)** | **Quy trình thác nước tự động theo lô (Batch Workflow)** |
 | **Lệnh chạy** | `npm run agent -- --role writer --prompt "..."` | `npm run dashboard` (Web) hoặc `npm start` (CLI) |
-| **Giao diện** | CLI Terminal | Bàn điều khiển Web Cockpit (`http://127.0.0.1:4310`) |
+| **Giao diện** | CLI Terminal | Bàn điều khiển Web Cockpit (cổng đọc từ `policy.cockpit.port`, mặc định `4310`) |
 | **Quyền ghi mã nguồn** | Ghi file qua `applier` **chỉ trong `scope` được bạn cấp**. | Ghi file qua `applier` kèm **tự động kiểm thử, sửa lỗi retry và commit Git**. |
 | **Phù hợp nhất khi** | Cần hỏi đáp về repo, chẩn đoán bug, hoặc sửa 1 file cục bộ. | Cần giao một tính năng hoàn chỉnh từ ý tưởng đến kiểm thử tự động. |
 
@@ -97,7 +97,7 @@ npm run agent -- --role writer --scope "src/auth.py" --prompt "Bổ sung kiểm 
 ```bash
 npm run dashboard
 ```
-1. Mở trình duyệt tại `http://127.0.0.1:4310` (Phòng Điều Khiển Hình Sao - Star Topology Control Room).
+1. Mở trình duyệt tại `http://127.0.0.1:<port>` theo cổng cấu hình trong `config/policy.yaml` -> `policy.cockpit.port` (mặc định `4310`, Phòng Điều Khiển Hình Sao - Star Topology Control Room).
 2. Nhập mục tiêu tính năng hoặc câu hỏi tư vấn bằng ngôn ngữ tự nhiên, chọn chế độ định tuyến (`Auto: Task-Demand × Squad`, `Fast 1-Step`, `Spec + Coder`, hoặc `Consult Only`) $\rightarrow$ Bấm **`[Lập Kế Hoạch]`**.
 3. AI Planner sẽ đọc codebase và tạo các task nháp ở trạng thái `draft_review`.
 4. Bạn kiểm tra lại các file trong `scope` $\rightarrow$ Bấm **`[Duyệt & Chạy Ngay]`**. Hệ thống sẽ tự động đổi `draft_review` sang `ready`, điều phối các chuyên gia theo mô hình Hình Sao, chạy kiểm thử và báo cáo kết quả.
@@ -125,7 +125,7 @@ npm start
 *(Dành riêng cho các trợ lý AI Chat trong IDE như Antigravity, Cursor, Cline, Claude Desktop... khi tham gia hỗ trợ lập kế hoạch).*
 
 > **CHỈ THỊ HỆ THỐNG:**  
-> Bạn đang đóng vai trò **Planner & Task Drafter** trong môi trường Chat. Khi người dùng yêu cầu bạn phân tích dự án hoặc soạn task, bạn phải tuân thủ nghiêm ngặt 3 quy tắc sau:
+> Bạn đang đóng vai trò **Planner & Task Drafter** trong môi trường Chat. Khi người dùng yêu cầu bạn phân tích dự án hoặc soạn task, bạn phải tuân thủ nghiêm ngặt 4 quy tắc sau:
 
 ### Quy tắc 1: Cổng Thu Thập Thông Tin Bắt Buộc (Intake Gate)
 Khi người dùng giao một bài toán lớn hoặc khởi tạo dự án mới, nếu thiếu bất kỳ thông tin cốt lõi nào dưới đây, bạn **BẮT BUỘC phải dừng lại hỏi người dùng** — **TUYỆT ĐỐI KHÔNG tự bịa tên model hay đoán bừa**:
@@ -160,3 +160,9 @@ constraints:
 - **Quy tắc < 150 dòng:** Dù một task chỉ chạm 1–2 file, nếu tổng lượng code sinh mới hoặc sửa đổi vượt quá ~150 dòng, hãy chia thành chuỗi task tuần tự (`T-...-001A`, `T-...-001B`) để tránh bị cắt cụt token (`finish_reason: length`).
 - **Tránh Cross-file Rename:** Hạn chế đổi tên hàm/biến xuất hiện ở nhiều file ngoài `scope`. Chỉ refactor trong phạm vi các file đã được khai báo tường minh trong `scope`.
 - **Cơ chế Block & Retry:** Nếu một task thất bại quá số lần quy định, Orchestrator sẽ đổi sang `status: "blocked"`. Hãy đọc file `state/runs/<TASK-ID>/attempt-<N>.txt` để chẩn đoán nguyên nhân, tinh chỉnh lại `goal`/`scope` rồi chuyển lại `status: "ready"`.
+
+### Quy tắc 4: Cấm Tự Ý Mở Orchestrator / Cockpit & Bắt Buộc Kiểm Tra Khóa/Cổng Trước
+- **Tuyệt đối không tự mở `orchestrator.mjs` hay `dashboard.mjs` (Cockpit):** IDE Agent chỉ soạn/cập nhật task YAML; không tự ý chạy `npm start` hoặc `npm run dashboard` khi chưa có yêu cầu hoặc phê duyệt rõ ràng từ người dùng.
+- **Kiểm tra khóa (Lock) & cổng (Port) trước khi thao tác:** Trước khi khởi chạy hoặc gọi API Cockpit/Orchestrator, **bắt buộc kiểm tra**:
+  1. File khóa `agent-team/.orchestrator.lock` và `agent-team/.cockpit.lock` (xem `pid` còn sống không, `port`, `started_at`; không mở thêm tiến trình thứ hai nếu lock đang thuộc PID sống).
+  2. Cổng Cockpit cấu hình trong `agent-team/config/policy.yaml` / `policy.local.yaml` (`policy.cockpit.port`, mặc định `4310`, hoặc biến môi trường `DASHBOARD_PORT`) và kiểm tra cổng đó có tiến trình nào đang lắng nghe chưa.

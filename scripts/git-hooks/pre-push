@@ -1,0 +1,4 @@
+#!/bin/sh
+set -e
+REPO_ROOT=$(git rev-parse --show-toplevel)
+exec node "$REPO_ROOT/agent-team/scripts/git-hooks/pre-push.mjs" "$@"

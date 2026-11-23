@@ -2,18 +2,36 @@
 import assert from 'node:assert';
 import http from 'node:http';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-import { startServer, server, DASHBOARD_CSRF_TOKEN } from './dashboard.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEAM_DIR = path.resolve(__dirname, '..');
-const ACTIVE_DIR = path.resolve(TEAM_DIR, 'tasks', 'active');
 
 async function runCockpitTests() {
   console.log('Testing Interactive Goal Cockpit & CSRF Security...\n');
+
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'td-cockpit-hermetic-'));
+  const tmpConfigDir = path.join(tmpRoot, 'config');
+  const tmpStateDir = path.join(tmpRoot, 'state');
+  const tmpTasksDir = path.join(tmpRoot, 'tasks');
+  const ACTIVE_DIR = path.join(tmpTasksDir, 'active');
+  fs.mkdirSync(tmpConfigDir, { recursive: true });
+  fs.mkdirSync(tmpStateDir, { recursive: true });
+  fs.mkdirSync(ACTIVE_DIR, { recursive: true });
+  fs.mkdirSync(path.join(tmpTasksDir, 'archive'), { recursive: true });
+  fs.copyFileSync(path.resolve(TEAM_DIR, 'config', 'team.yaml'), path.join(tmpConfigDir, 'team.yaml'));
+  fs.copyFileSync(path.resolve(TEAM_DIR, 'config', 'policy.yaml'), path.join(tmpConfigDir, 'policy.yaml'));
+
+  process.env.AGENT_TEAM_CONFIG_DIR = tmpConfigDir;
+  process.env.AGENT_TEAM_STATE_DIR = tmpStateDir;
+  process.env.AGENT_TEAM_TASKS_DIR = tmpTasksDir;
+  process.env.ORCHESTRATOR_LOCK_FILE = path.join(tmpRoot, '.orchestrator.lock');
+  process.env.COCKPIT_LOCK_FILE = path.join(tmpRoot, '.cockpit.lock');
+
+  const { startServer, server, DASHBOARD_CSRF_TOKEN } = await import('./dashboard.mjs');
 
   // Start test server on dynamic free port
   const srv = await startServer(0, '127.0.0.1');
@@ -53,7 +71,7 @@ async function runCockpitTests() {
           'Content-Type': 'application/json',
           'X-Dashboard-Token': DASHBOARD_CSRF_TOKEN
         },
-        body: JSON.stringify({ task_ids: [dummyTaskId] })
+        body: JSON.stringify({ task_ids: [dummyTaskId], start_orchestrator: false })
       });
       assert.strictEqual(approveRes.status, 200, 'Approve run must return 200');
       const approveData = await approveRes.json();
@@ -100,7 +118,7 @@ async function runCockpitTests() {
 
     // Test 6: POST /api/save-team-config updates team.yaml and rolls back
     console.log('6. Testing POST /api/save-team-config with CSRF and rollback...');
-    const TEAM_CONFIG_FILE = path.resolve(TEAM_DIR, 'config', 'team.yaml');
+    const TEAM_CONFIG_FILE = path.join(tmpConfigDir, 'team.yaml');
     const originalYaml = fs.readFileSync(TEAM_CONFIG_FILE, 'utf8');
 
     try {
@@ -199,11 +217,13 @@ async function runCockpitTests() {
     const htmlText = await htmlRes.text();
     assert.ok(htmlText.includes('id="sel-workflow-preset"'), 'Index HTML must include #sel-workflow-preset selector');
     assert.ok(htmlText.includes('id="tok-cache"'), 'Index HTML must include #tok-cache telemetry badge');
-    console.log('✓ Cockpit v3.1 Preset Selector & Cache Telemetry verified.');
+    assert.ok(htmlText.includes('id="cfg-panel-roles"'), 'Index HTML must include #cfg-panel-roles Role Dossier panel');
+    assert.ok(htmlText.includes('id="dossier-stage-grid"'), 'Index HTML must include #dossier-stage-grid 3-column character sheet');
+    console.log('✓ Cockpit v3.1 Preset Selector, Cache Telemetry & Role Dossier verified.');
 
     // Test 9: Policy Hub (/api/save-policy-config & /api/run-validation-check)
     console.log('9. Testing Policy Hub (/api/save-policy-config & /api/run-validation-check)...');
-    const POLICY_CONFIG_FILE = path.resolve(TEAM_DIR, 'config', 'policy.yaml');
+    const POLICY_CONFIG_FILE = path.join(tmpConfigDir, 'policy.yaml');
     const originalPolicyYaml = fs.readFileSync(POLICY_CONFIG_FILE, 'utf8');
 
     try {
@@ -246,11 +266,77 @@ async function runCockpitTests() {
       console.log('✓ Restored original policy.yaml.');
     }
 
+    // Test 10: POST /api/task/retry (CSRF guard + blocked reset + UI Retry contract)
+    console.log('10. Testing POST /api/task/retry endpoint & Cockpit Retry button...');
+    const STATE_DIR = tmpStateDir;
+    const backupFiles = ['task-state.json', 'live-status.json', 'morning-report.md'].map(name => {
+      const fp = path.resolve(STATE_DIR, name);
+      return {
+        fp,
+        existed: fs.existsSync(fp),
+        content: fs.existsSync(fp) ? fs.readFileSync(fp, 'utf8') : null
+      };
+    });
+    const retryTaskId = `T-test-retry-${Date.now()}`;
+    const retryTaskFile = path.resolve(ACTIVE_DIR, `${retryTaskId}.yaml`);
+    fs.mkdirSync(ACTIVE_DIR, { recursive: true });
+    fs.writeFileSync(
+      retryTaskFile,
+      `task:\n  task_id: "${retryTaskId}"\n  title: "Blocked retry test"\n  status: "blocked"\n  failure_class: "review_unavailable"\n  pending_review_patch: "patches/${retryTaskId}/pending-review-attempt-1.patch"\n  block_reason: "dirty ui_web/index.html"\n  scope: ["ui_web/index.html"]\n`,
+      'utf8'
+    );
+
+    try {
+      const manualSnapRes = await fetch(`http://127.0.0.1:${testPort}/api/snapshot`);
+      assert.strictEqual(manualSnapRes.status, 200);
+      const manualSnapData = await manualSnapRes.json();
+      assert.strictEqual(manualSnapData.queue?.manual_review_count, 1, 'HTTP /api/snapshot must include manual_review_count');
+      assert.strictEqual(manualSnapData.queue?.manual_review?.[0]?.apply_command, `git apply patches/${retryTaskId}/pending-review-attempt-1.patch`);
+
+      const retryUnauth = await fetch(`http://127.0.0.1:${testPort}/api/task/retry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: retryTaskId, start_orchestrator: false })
+      });
+      assert.strictEqual(retryUnauth.status, 403, 'Unauthenticated /api/task/retry must return 403');
+
+      const retryAuth = await fetch(`http://127.0.0.1:${testPort}/api/task/retry`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Dashboard-Token': DASHBOARD_CSRF_TOKEN
+        },
+        body: JSON.stringify({ task_id: retryTaskId, start_orchestrator: false })
+      });
+      assert.strictEqual(retryAuth.status, 200, 'Authenticated /api/task/retry must return 200');
+      const retryData = await retryAuth.json();
+      assert.strictEqual(retryData.ok, true);
+      assert.strictEqual(retryData.status, 'ready');
+      assert.strictEqual(typeof retryData.queue_stats?.active, 'number');
+
+      const updatedRetryYaml = fs.readFileSync(retryTaskFile, 'utf8');
+      assert.ok(updatedRetryYaml.includes('status: ready'), 'Retried task YAML must flip status to ready');
+      assert.ok(!updatedRetryYaml.includes('block_reason'), 'Retried task YAML must remove stale block_reason');
+      assert.ok(!updatedRetryYaml.includes('failure_class'), 'Retried task YAML must remove stale failure_class');
+      assert.ok(!updatedRetryYaml.includes('pending_review_patch'), 'Retried task YAML must remove stale pending_review_patch');
+      console.log('✓ /api/task/retry HTTP + CSRF verified.');
+    } finally {
+      if (fs.existsSync(retryTaskFile)) fs.unlinkSync(retryTaskFile);
+      for (const b of backupFiles) {
+        if (b.existed) {
+          fs.writeFileSync(b.fp, b.content, 'utf8');
+        } else if (fs.existsSync(b.fp)) {
+          fs.unlinkSync(b.fp);
+        }
+      }
+    }
+
     console.log('\n=============================================');
     console.log('ALL COCKPIT & CSRF SECURITY TESTS PASSED! 🎯');
     console.log('=============================================');
   } finally {
     server.close();
+    try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
   }
 }
 

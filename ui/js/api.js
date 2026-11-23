@@ -195,6 +195,19 @@
         throw new Error(errData?.error || `HTTP ${res.status}: Failed to save task`);
       }
       return res.json();
+    },
+
+    async retryTask(taskId, options = {}) {
+      const res = await request('/api/task/retry', {
+        method: 'POST',
+        body: JSON.stringify({ task_id: taskId, ...options })
+      });
+      if (!res.ok) {
+        let errData;
+        try { errData = await res.json(); } catch {}
+        throw new Error(errData?.error || `HTTP ${res.status}: Failed to retry task`);
+      }
+      return res.json();
     }
   };
 
