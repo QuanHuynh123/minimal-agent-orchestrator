@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  computeDynamicTaskTokenBudget,
   partitionScopeByDomain,
   splitPatchStepsByOutputBudget
 } from './lib/risk-policy.mjs';
@@ -171,14 +172,72 @@ try {
   );
   assert.deepEqual(split51k[0].sub_scope, ['core/key_cards.py', 'core/analysis.py']);
   assert.deepEqual(split51k[1].sub_scope, ['tests/test_competitor_analysis.py']);
+
+  // 4b. Cross-module check: splitPatchStepsByOutputBudget -> computeDynamicTaskTokenBudget raises 480k -> 640k
+  const baseProdPolicy = {
+    policy: {
+      approval_gates: { require_code_review: true },
+      retry_and_escalation: {
+        base_token_budget_per_agent: 150000,
+        token_budget_per_task: 300000
+      }
+    }
+  };
+  const mediumTask = {
+    task_id: 'T-BUDGET-SPLIT',
+    mode: 'standard',
+    risk_level: 'medium',
+    scope: ['core/key_cards.py', 'core/analysis.py', 'tests/test_competitor_analysis.py']
+  };
+  const preSplitWorkflow = [
+    { step: 1, action: 'draft_spec' },
+    { step: 2, action: 'apply_patch', sub_scope: mediumTask.scope }
+  ];
+  const postSplitWorkflow = [
+    ...preSplitWorkflow.filter(s => s.action !== 'apply_patch'),
+    ...split51k
+  ];
+  const preSplitBudget = computeDynamicTaskTokenBudget(mediumTask, preSplitWorkflow, baseProdPolicy);
+  const postSplitBudget = computeDynamicTaskTokenBudget(mediumTask, postSplitWorkflow, baseProdPolicy);
+  assert.equal(preSplitBudget, 480000, `1 bucket (medium) must have ceiling 480,000, got ${preSplitBudget}`);
+  assert.equal(postSplitBudget, 640000, `2 buckets (medium) after split must raise ceiling to 640,000, got ${postSplitBudget}`);
+
+  // Many buckets must be hard-capped at 1,200,000 safety ceiling
+  const manyBucketsWorkflow = [
+    { step: 1, action: 'draft_spec' },
+    ...Array.from({ length: 10 }, (_, idx) => ({ step: idx + 2, action: 'apply_patch' }))
+  ];
+  const cappedMedium = computeDynamicTaskTokenBudget(mediumTask, manyBucketsWorkflow, baseProdPolicy);
+  const cappedHigh = computeDynamicTaskTokenBudget({ ...mediumTask, risk_level: 'high' }, manyBucketsWorkflow, baseProdPolicy);
+  assert.equal(cappedMedium, 1200000, `Many buckets (medium) must cap at 1,200,000, got ${cappedMedium}`);
+  assert.equal(cappedHigh, 1200000, `Many buckets (high) must cap at 1,200,000, got ${cappedHigh}`);
+
+  // Explicit policy.retry_and_escalation.max_token_budget_per_task must override defaultMaxCeiling
+  const overridePolicy = {
+    policy: {
+      approval_gates: { require_code_review: true },
+      retry_and_escalation: {
+        base_token_budget_per_agent: 150000,
+        token_budget_per_task: 300000,
+        max_token_budget_per_task: 520000
+      }
+    }
+  };
+  assert.equal(
+    computeDynamicTaskTokenBudget(mediumTask, postSplitWorkflow, overridePolicy),
+    520000,
+    'Explicit max_token_budget_per_task in policy must override defaultMaxCeiling'
+  );
 } finally {
   fs.rmSync(repoThreeFiles51k, { recursive: true, force: true });
 }
 
-// 5. Orchestrator records bucket_grouping_reason, failed_truncated & failed_provider into steps[]
+// 5. Orchestrator records bucket_grouping_reason, failed_truncated, failed_provider & recomputes dynamicTaskBudget after split
 const orchSrc = fs.readFileSync(path.join(__dirname, 'orchestrator.mjs'), 'utf8');
 assert.match(orchSrc, /bucket_grouping_reason/, 'orchestrator.mjs must record bucket_grouping_reason telemetry in steps[]');
 assert.match(orchSrc, /status:\s*'failed_truncated'/, 'orchestrator.mjs must record failed_truncated step telemetry before breaking on finish_reason=length');
 assert.match(orchSrc, /status:\s*'failed_provider'/, 'orchestrator.mjs must record failed_provider step telemetry before breaking on !writerRes.ok');
+assert.match(orchSrc, /let dynamicTaskBudget\s*=/, 'orchestrator.mjs must declare dynamicTaskBudget as let for post-split recomputation');
+assert.match(orchSrc, /Dynamic token budget raised after bucket split/, 'orchestrator.mjs must recompute and log dynamicTaskBudget after splitPatchStepsByOutputBudget');
 
 console.log('test-bucket-merge-by-output-budget.mjs: ALL PASSED');

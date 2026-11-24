@@ -1278,7 +1278,7 @@ async function runOrchestrator() {
       const rawWorkflow = (Array.isArray(task.writer_hub_workflow) && task.writer_hub_workflow.length > 0 && task.manual_workflow_override)
         ? task.writer_hub_workflow
         : resolveWriterHubWorkflow(task, teamConfig, policyConfig);
-      const dynamicTaskBudget = computeDynamicTaskTokenBudget(task, rawWorkflow, policyConfig);
+      let dynamicTaskBudget = computeDynamicTaskTokenBudget(task, rawWorkflow, policyConfig);
       console.log(`[Orchestrator] Dynamic token budget for task "${task.task_id}": ${dynamicTaskBudget.toLocaleString()} tokens (mode: ${task.mode || 'standard'}, risk: ${task.risk_level || 'low'}, scope: ${(task.scope || []).length} files)`);
 
       // Track read_file ranges across attempts per patch bucket so retries inherit Files Already Read
@@ -1659,6 +1659,15 @@ async function runOrchestrator() {
         patchSteps = splitPatchStepsByOutputBudget(patchSteps, REPO_ROOT, {
           maxOutputTokens: writerRole?.max_tokens || 16384
         });
+        const splitWorkflowForBudget = [
+          ...workflowSteps.filter(s => s.action !== 'apply_patch'),
+          ...patchSteps
+        ];
+        const recomputedBudget = computeDynamicTaskTokenBudget(task, splitWorkflowForBudget, policyConfig);
+        if (recomputedBudget > dynamicTaskBudget) {
+          console.log(`[Orchestrator] Dynamic token budget raised after bucket split (${patchSteps.length} buckets): ${dynamicTaskBudget.toLocaleString()} -> ${recomputedBudget.toLocaleString()} tokens`);
+          dynamicTaskBudget = recomputedBudget;
+        }
         for (let bIdx = 0; bIdx < patchSteps.length; bIdx++) {
           const b = patchSteps[bIdx];
           if (b?.bucket_grouping_reason) {

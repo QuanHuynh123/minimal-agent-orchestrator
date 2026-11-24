@@ -1852,7 +1852,10 @@ export function computeDynamicTaskTokenBudget(task = {}, workflowSteps = [], pol
 
   const rawDynamicBudget = Math.round(agentCount * baseBudgetPerAgent * difficultyMultiplier);
   const minFloor = escalation.token_budget_per_task || 150000;
-  const maxCeiling = escalation.max_token_budget_per_task || (risk === 'critical' || risk === 'high' ? 600000 : 480000);
+  const baseCeiling = (risk === 'critical' || risk === 'high') ? 600000 : 480000;
+  const bucketBonus = Math.max(0, patchCount - 1) * 160000;
+  const defaultMaxCeiling = Math.min(1200000, baseCeiling + bucketBonus);
+  const maxCeiling = escalation.max_token_budget_per_task || defaultMaxCeiling;
 
   return Math.min(maxCeiling, Math.max(rawDynamicBudget, minFloor));
 }
