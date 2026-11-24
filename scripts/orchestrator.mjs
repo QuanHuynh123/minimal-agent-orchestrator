@@ -1954,6 +1954,47 @@ async function runOrchestrator() {
           }
 
           if (!writerRes.ok) {
+            const writerFailElapsedMs = Math.max(1, Date.now() - writerStepStartMs);
+            phaseTracker.addWriterBucketMs({
+              bucket: pIdx + 1,
+              attempt: retries + 1,
+              role: stepRole,
+              duration_ms: writerFailElapsedMs
+            });
+            recordTaskStep(task, {
+              step: `2.${pIdx + 1}`,
+              attempt: retries + 1,
+              role: stepRole,
+              action: `apply_patch (bucket ${pIdx + 1}/${patchSteps.length})`,
+              selected_by: writerRes.selectedBy || (writerRes.fallbackActivated ? 'fallback' : bucketSelection.selected_by),
+              reason: writerRes.selectionReason || writerRes.fallbackReason || bucketSelection.reason,
+              requested_model: writerRes.requestedModel || writerRes.requested_model || bucketSelection.requested_model || activeWriterModel,
+              actual_model: writerRes.actualModel || writerRes.actual_model || writerRes.modelUsed || activeWriterModel,
+              model: writerRes.actualModel || writerRes.actual_model || writerRes.modelUsed || activeWriterModel,
+              fallback_activated: Boolean(writerRes.fallbackActivated ?? writerRes.fallback_activated),
+              fallback_reason: writerRes.fallbackReason || writerRes.fallback_reason || null,
+              endpoint: writerRes.endpoint || 'http://127.0.0.1:20128/v1',
+              prompt_version: writerRes.promptVersion || 'default',
+              max_tokens_sent: writerRes.maxTokensSent || 16384,
+              finish_reason: writerRes.finishReason || 'error',
+              tool_turns: writerRes.toolTurns ?? 1,
+              scope: stepScope,
+              estimated_output_tokens: coderStep.estimated_output_tokens ?? null,
+              output_token_limit: coderStep.output_token_limit ?? null,
+              bucket_grouping_reason: coderStep.bucket_grouping_reason || null,
+              context_lines_sent: stepScopedMeta.contextLinesSent || 0,
+              window_mode: stepScopedMeta.windowMode || 'full',
+              turns_used: Number(writerRes.turnsUsed ?? writerRes.toolTurns ?? 1),
+              ...(Array.isArray(writerRes.turn_usages) && writerRes.turn_usages.length > 0 ? { turn_tokens: writerRes.turn_usages } : {}),
+              ...extractUsageTelemetryFields(writerRes),
+              duration_ms: writerFailElapsedMs,
+              status: 'failed_provider',
+              applier_status: 'skipped',
+              applier_reason: String(writerRes.error || 'Provider error').slice(0, 600),
+              error_hash: hashString(String(writerRes.error || 'failed_provider')),
+              retry_reason: retries > 0 ? String(task.last_error || '').slice(0, 120) : null,
+              note: String(writerRes.error || '').slice(0, 120)
+            });
             console.error(`[Writer] API error: ${writerRes.error}`);
             task.last_error = writerRes.error;
             updateLiveStatus({
@@ -2021,6 +2062,47 @@ async function runOrchestrator() {
             const searchCount = (writerRes.content.match(/<<<<<<< SEARCH/g) || []).length;
             const replaceCount = (writerRes.content.match(/>>>>>>> REPLACE/g) || []).length;
             const truncErr = `Writer output truncated at max_tokens=16384 (finish_reason="length", ${searchCount} SEARCH / ${replaceCount} REPLACE blocks). Refusing to apply partial output; emit smaller/more concise blocks or split task.${rawLogPath ? ` (raw output: ${path.relative(REPO_ROOT, rawLogPath)})` : ''}`;
+            const truncElapsedMs = Math.max(1, Date.now() - writerStepStartMs);
+            phaseTracker.addWriterBucketMs({
+              bucket: pIdx + 1,
+              attempt: retries + 1,
+              role: stepRole,
+              duration_ms: truncElapsedMs
+            });
+            recordTaskStep(task, {
+              step: `2.${pIdx + 1}`,
+              attempt: retries + 1,
+              role: stepRole,
+              action: `apply_patch (bucket ${pIdx + 1}/${patchSteps.length})`,
+              selected_by: writerRes.selectedBy || (writerRes.fallbackActivated ? 'fallback' : bucketSelection.selected_by),
+              reason: writerRes.selectionReason || writerRes.fallbackReason || bucketSelection.reason,
+              requested_model: writerRes.requestedModel || writerRes.requested_model || bucketSelection.requested_model || activeWriterModel,
+              actual_model: writerRes.actualModel || writerRes.actual_model || lastActiveWriterModel,
+              model: writerRes.actualModel || writerRes.actual_model || lastActiveWriterModel,
+              fallback_activated: Boolean(writerRes.fallbackActivated ?? writerRes.fallback_activated),
+              fallback_reason: writerRes.fallbackReason || writerRes.fallback_reason || null,
+              endpoint: writerRes.endpoint || 'http://127.0.0.1:20128/v1',
+              prompt_version: writerRes.promptVersion || 'default',
+              max_tokens_sent: writerRes.maxTokensSent || 16384,
+              finish_reason: 'length',
+              tool_turns: writerRes.toolTurns ?? 1,
+              scope: stepScope,
+              estimated_output_tokens: coderStep.estimated_output_tokens ?? null,
+              output_token_limit: coderStep.output_token_limit ?? null,
+              bucket_grouping_reason: coderStep.bucket_grouping_reason || null,
+              context_lines_sent: stepScopedMeta.contextLinesSent || 0,
+              window_mode: stepScopedMeta.windowMode || 'full',
+              turns_used: Number(writerRes.turnsUsed ?? writerRes.toolTurns ?? 1),
+              ...(Array.isArray(writerRes.turn_usages) && writerRes.turn_usages.length > 0 ? { turn_tokens: writerRes.turn_usages } : {}),
+              ...extractUsageTelemetryFields(writerRes),
+              duration_ms: truncElapsedMs,
+              status: 'failed_truncated',
+              applier_status: 'rejected',
+              applier_reason: truncErr.slice(0, 600),
+              error_hash: hashString('truncated_output_length'),
+              retry_reason: retries > 0 ? String(task.last_error || '').slice(0, 120) : null,
+              note: truncErr.slice(0, 120)
+            });
             console.warn(`[Writer] ${truncErr}`);
             const failAction = handleStageFailure('apply', truncErr, hashString('truncated_output_length'));
             patchPipelineFailed = true;

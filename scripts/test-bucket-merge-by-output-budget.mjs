@@ -73,8 +73,8 @@ try {
     assert.equal(b.output_token_limit, 16384);
   }
   assert.ok(
-    buckets[0].estimated_output_tokens < 16384 * 0.6,
-    `Merged backend bucket output (${buckets[0].estimated_output_tokens}) must stay < 60% of 16384`
+    buckets[0].estimated_output_tokens < 16384 * 0.45,
+    `Merged backend bucket output (${buckets[0].estimated_output_tokens}) must stay < 45% of 16384`
   );
   assert.deepEqual(part.backendScope, ['core/history.py', 'ui_bridge/js_api.py']);
 } finally {
@@ -115,7 +115,7 @@ try {
   });
   assert.equal(buckets.length, 2, `Tiny companion (1.6KB) + js_api.py (72KB) must merge into 1 backend bucket + 1 test bucket, got ${buckets.length}: ${JSON.stringify(buckets.map(b => b.sub_scope))}`);
   assert.deepEqual(buckets[0].sub_scope, ['core/history.py', 'ui_bridge/js_api.py']);
-  assert.match(buckets[0].bucket_grouping_reason, /< ?60%|merged|companion/i);
+  assert.match(buckets[0].bucket_grouping_reason, /< ?45%|merged|companion/i);
   assert.deepEqual(buckets[1].sub_scope, ['tests/test_ui_bridge.py']);
 } finally {
   fs.rmSync(repoRealProportions, { recursive: true, force: true });
@@ -147,8 +147,38 @@ try {
   fs.rmSync(repoHeavy, { recursive: true, force: true });
 }
 
-// 4. Orchestrator records bucket_grouping_reason into steps[]
+// 4. 3-file ~51KB task (8105-A2b proportions: 15KB + 21KB + 15KB) must split into 2 buckets under 0.45 threshold
+const repoThreeFiles51k = writeSyntheticRepo({
+  'core/key_cards.py': 15 * 1024,
+  'core/analysis.py': 21 * 1024,
+  'tests/test_competitor_analysis.py': 15 * 1024
+});
+try {
+  const split51k = splitPatchStepsByOutputBudget([
+    {
+      step: 2,
+      role: 'writer',
+      model: 'deepseek-v4.1-flash',
+      domain: 'backend',
+      action: 'apply_patch',
+      sub_scope: ['core/key_cards.py', 'core/analysis.py', 'tests/test_competitor_analysis.py']
+    }
+  ], repoThreeFiles51k, { maxBucketBytes: 55 * 1024, maxOutputTokens: 16384 });
+  assert.equal(
+    split51k.length,
+    2,
+    `3-file 51KB task must split into 2 buckets under 0.45 ceiling, got ${split51k.length}: ${JSON.stringify(split51k.map(b => b.sub_scope))}`
+  );
+  assert.deepEqual(split51k[0].sub_scope, ['core/key_cards.py', 'core/analysis.py']);
+  assert.deepEqual(split51k[1].sub_scope, ['tests/test_competitor_analysis.py']);
+} finally {
+  fs.rmSync(repoThreeFiles51k, { recursive: true, force: true });
+}
+
+// 5. Orchestrator records bucket_grouping_reason, failed_truncated & failed_provider into steps[]
 const orchSrc = fs.readFileSync(path.join(__dirname, 'orchestrator.mjs'), 'utf8');
 assert.match(orchSrc, /bucket_grouping_reason/, 'orchestrator.mjs must record bucket_grouping_reason telemetry in steps[]');
+assert.match(orchSrc, /status:\s*'failed_truncated'/, 'orchestrator.mjs must record failed_truncated step telemetry before breaking on finish_reason=length');
+assert.match(orchSrc, /status:\s*'failed_provider'/, 'orchestrator.mjs must record failed_provider step telemetry before breaking on !writerRes.ok');
 
 console.log('test-bucket-merge-by-output-budget.mjs: ALL PASSED');

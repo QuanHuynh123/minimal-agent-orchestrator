@@ -94,7 +94,8 @@ try {
   assert.match(orchSrc, /finalizePhaseTimings/);
 
   const mergedPolicy = loadMergedPolicy({ configDir: path.resolve(scriptsDir, '..', 'config') });
-  assert.equal(mergedPolicy.policy?.task_modes?.quick?.max_runtime_sec, 600, 'policy.yaml quick.max_runtime_sec must be 600 (D-020)');
+  assert.equal(mergedPolicy.policy?.task_modes?.quick?.max_runtime_sec, 900, 'policy.yaml quick.max_runtime_sec must be 900');
+  assert.equal(mergedPolicy.policy?.task_modes?.standard?.max_runtime_sec, 1800, 'policy.yaml standard.max_runtime_sec must be 1800');
 
   console.log('test-phase-timings-yaml.mjs: ALL PASSED');
 } finally {

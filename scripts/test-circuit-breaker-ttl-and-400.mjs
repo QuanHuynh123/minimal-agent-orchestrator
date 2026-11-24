@@ -237,6 +237,72 @@ async function main() {
   assert.ok(sidebarHtml.includes('id="squad-circuit-breaker-status"'), 'layout-sidebar.html must render circuit breaker status element');
   assert.ok(appJs.includes('squad-circuit-breaker-status') && appJs.includes('circuit_breakers'), 'app.js must display data.circuit_breakers safely');
 
+  // 6. AbortError timeout returns timed_out=true + duration_ms, trips session circuit-breaker after fallback succeeds,
+  //    so Attempt 2 routes directly to fallback with 0 calls to the timed-out primary model
+  resetCircuitBreaker();
+  const abortWithoutFallback = await callModelEndpoint({
+    baseUrl: 'http://127.0.0.1:20128/v1',
+    apiKey: 'sk-test',
+    model: 'slow-primary-no-fb',
+    fallbackModel: null,
+    timeoutMs: 25,
+    messages: [{ role: 'user', content: 'ping' }],
+    fetchFn: async () => {
+      const err = new Error('The operation was aborted');
+      err.name = 'AbortError';
+      throw err;
+    }
+  });
+  assert.equal(abortWithoutFallback.ok, false);
+  assert.equal(abortWithoutFallback.timed_out, true, 'AbortError must set timed_out: true');
+  assert.ok(Number.isFinite(abortWithoutFallback.duration_ms) && abortWithoutFallback.duration_ms >= 1, 'AbortError must record positive duration_ms');
+
+  let slowPrimaryCalls = 0;
+  let fastFallbackCalls = 0;
+  const stickyFetch = async (_url, init) => {
+    const req = JSON.parse(String(init.body));
+    if (req.model === 'slow-primary-sticky') {
+      slowPrimaryCalls += 1;
+      const err = new Error('The operation was aborted');
+      err.name = 'AbortError';
+      throw err;
+    }
+    fastFallbackCalls += 1;
+    return okJson(req.model, 'FAST_OK');
+  };
+
+  const att1 = await callModelEndpoint({
+    baseUrl: 'http://127.0.0.1:20128/v1',
+    apiKey: 'sk-test',
+    model: 'slow-primary-sticky',
+    fallbackModel: 'fast-fallback-sticky',
+    timeoutMs: 240000,
+    messages: [{ role: 'user', content: 'attempt 1' }],
+    fetchFn: stickyFetch
+  });
+  assert.equal(att1.ok, true);
+  assert.equal(att1.fallback_activated, true);
+  assert.equal(att1.actual_model, 'fast-fallback-sticky');
+  assert.equal(slowPrimaryCalls, 1);
+  assert.equal(fastFallbackCalls, 1);
+  assert.equal(isModelCircuitBroken('slow-primary-sticky'), true, 'Primary timeout + fallback success must trip session circuit breaker');
+
+  const att2 = await callModelEndpoint({
+    baseUrl: 'http://127.0.0.1:20128/v1',
+    apiKey: 'sk-test',
+    model: 'slow-primary-sticky',
+    fallbackModel: 'fast-fallback-sticky',
+    timeoutMs: 240000,
+    messages: [{ role: 'user', content: 'attempt 2' }],
+    fetchFn: stickyFetch
+  });
+  assert.equal(att2.ok, true);
+  assert.equal(att2.fallback_activated, true);
+  assert.equal(att2.actual_model, 'fast-fallback-sticky');
+  assert.equal(slowPrimaryCalls, 1, 'Attempt 2 must skip timed-out primary completely (0 extra calls)');
+  assert.equal(fastFallbackCalls, 2);
+  resetCircuitBreaker();
+
   console.log('[PASS] test-circuit-breaker-ttl-and-400');
 }
 

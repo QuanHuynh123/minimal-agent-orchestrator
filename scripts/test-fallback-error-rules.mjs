@@ -261,7 +261,7 @@ async function runTests() {
       assert.equal(isModelCircuitBroken(primary), expectedCB, `Circuit breaker expectation mismatch for HTTP ${statusCode}`);
     }
 
-    // Timeout (AbortError) and Network error trigger fallback without tripping circuit breaker
+    // Timeout (AbortError) triggers fallback AND trips session circuit breaker so Attempt >= 2 skips straight to fallback
     resetCircuitBreaker();
     const timeoutRes = await callModelEndpoint({
       baseUrl: 'http://127.0.0.1:20128/v1',
@@ -281,7 +281,7 @@ async function runTests() {
     });
     assert.equal(timeoutRes.ok, true);
     assert.equal(timeoutRes.fallback_activated, true);
-    assert.equal(isModelCircuitBroken('primary-timeout'), false);
+    assert.equal(isModelCircuitBroken('primary-timeout'), true);
 
     // call9Router strictModelMatch mismatch also falls back
     const c9Mismatch = await call9Router('primary-req', 'sys', 'usr', 128, 'fallback-healthy', 0, {

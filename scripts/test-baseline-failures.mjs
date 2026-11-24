@@ -922,9 +922,10 @@ async function runTests() {
     assert.strictEqual(baselineTimeoutRes.blocked, true, 'runBaselinePreflight exceeding its own max_baseline_runtime_sec must fail with baseline_timeout');
     assert.strictEqual(baselineTimeoutRes.reason, 'baseline_timeout');
 
-    // Confirm policy.yaml sets task_modes.quick.max_runtime_sec to 600 (D-020) and orchestrator wires evaluateTaskExecutionRuntime
+    // Confirm policy.yaml sets task_modes.quick.max_runtime_sec=900 & standard.max_runtime_sec=1800 and orchestrator wires evaluateTaskExecutionRuntime
     const policyYamlText = fs.readFileSync(path.resolve(TEAM_DIR, 'config', 'policy.yaml'), 'utf8');
-    assert.match(policyYamlText, /quick:\s*\r?\n(?:[ \t]+[^\r\n]*\r?\n)*?[ \t]+max_runtime_sec:\s*600\b/, 'policy.yaml quick.max_runtime_sec must be 600 (D-020)');
+    assert.match(policyYamlText, /quick:\s*\r?\n(?:[ \t]+[^\r\n]*\r?\n)*?[ \t]+max_runtime_sec:\s*900\b/, 'policy.yaml quick.max_runtime_sec must be 900');
+    assert.match(policyYamlText, /standard:\s*\r?\n(?:[ \t]+[^\r\n]*\r?\n)*?[ \t]+max_runtime_sec:\s*1800\b/, 'policy.yaml standard.max_runtime_sec must be 1800');
     assert.ok(orchSrc.includes('evaluateTaskExecutionRuntime'), 'orchestrator.mjs must use evaluateTaskExecutionRuntime excluding baseline');
     assert.ok(orchSrc.includes('baseline_timeout'), 'orchestrator.mjs must handle separate baseline_timeout');
 

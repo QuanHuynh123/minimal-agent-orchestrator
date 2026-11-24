@@ -72,11 +72,11 @@ policy:
   task_modes:
     quick:
       max_files: 3
-      max_runtime_sec: 600
+      max_runtime_sec: 900
       skip_router_and_reviewer: true
 
     standard:
-      max_runtime_sec: 600
+      max_runtime_sec: 1800
       skip_router_and_reviewer: false
 
     consult:

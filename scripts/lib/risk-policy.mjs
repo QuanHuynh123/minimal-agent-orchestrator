@@ -1651,7 +1651,8 @@ export function splitPatchStepsByOutputBudget(patchSteps = [], repoRoot = proces
     : { maxBucketBytes: maxBucketBytesOrOptions };
   const maxBucketBytes = Number(opts.maxBucketBytes) > 0 ? Number(opts.maxBucketBytes) : 55 * 1024;
   const maxOutputTokens = Number(opts.maxOutputTokens) > 0 ? Number(opts.maxOutputTokens) : 16384;
-  const mergeOutputThresholdRatio = Number(opts.mergeOutputThresholdRatio) > 0 ? Number(opts.mergeOutputThresholdRatio) : 0.60;
+  const mergeOutputThresholdRatio = Number(opts.mergeOutputThresholdRatio) > 0 ? Number(opts.mergeOutputThresholdRatio) : 0.45;
+  const thresholdPctLabel = Math.round(mergeOutputThresholdRatio * 100);
 
   const outputMergeCeiling = Math.floor(maxOutputTokens * mergeOutputThresholdRatio);
   const largeFileBytesThreshold = Math.min(35 * 1024, Math.floor(maxBucketBytes * 0.65));
@@ -1700,7 +1701,7 @@ export function splitPatchStepsByOutputBudget(patchSteps = [], repoRoot = proces
         estimated_output_tokens: singleEst,
         output_token_limit: maxOutputTokens,
         step_total_estimated_output_tokens: singleEst,
-        bucket_grouping_reason: `single_file_bucket (est ${singleEst}/${maxOutputTokens} tok = ${pct}% < 60% ceiling)`
+        bucket_grouping_reason: `single_file_bucket (est ${singleEst}/${maxOutputTokens} tok = ${pct}% < ${thresholdPctLabel}% ceiling)`
       });
       continue;
     }
@@ -1718,7 +1719,7 @@ export function splitPatchStepsByOutputBudget(patchSteps = [], repoRoot = proces
         estimated_output_tokens: totalEstTokens,
         output_token_limit: maxOutputTokens,
         step_total_estimated_output_tokens: totalEstTokens,
-        bucket_grouping_reason: `merged_all_under_budget (est ${totalEstTokens}/${maxOutputTokens} tok = ${pct}% < 60% threshold; ${totalBytes}B <= ${maxBucketBytes}B)`
+        bucket_grouping_reason: `merged_all_under_budget (est ${totalEstTokens}/${maxOutputTokens} tok = ${pct}% < ${thresholdPctLabel}% threshold; ${totalBytes}B <= ${maxBucketBytes}B)`
       });
       continue;
     }
@@ -1778,7 +1779,7 @@ export function splitPatchStepsByOutputBudget(patchSteps = [], repoRoot = proces
       const totalPct = ((totalEstTokens / maxOutputTokens) * 100).toFixed(1);
       const bucketDomain = items[0]?.domainGroup || step.domain || 'fullstack';
       const reasonDetail = items.length > 1
-        ? `merged ${items.length} ${bucketDomain} files (est ${bucketEst}/${maxOutputTokens} tok = ${bucketPct}% < 60%; step total ${totalEstTokens} tok = ${totalPct}%)`
+        ? `merged ${items.length} ${bucketDomain} files (est ${bucketEst}/${maxOutputTokens} tok = ${bucketPct}% < ${thresholdPctLabel}%; step total ${totalEstTokens} tok = ${totalPct}%)`
         : `split_${bucketDomain}_bucket (est ${bucketEst}/${maxOutputTokens} tok = ${bucketPct}%; step total ${totalEstTokens}/${maxOutputTokens} tok = ${totalPct}%)`;
 
       expanded.push({

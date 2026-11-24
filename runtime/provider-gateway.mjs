@@ -699,6 +699,7 @@ export async function callModelEndpoint(options = {}) {
   }
 
   async function executeSingleCall(targetModel) {
+    const callStartMs = Date.now();
     // Multi-Breakpoint Prompt Caching (SPEC Section 3.4) & Outbound Message Sanitization:
     // Strip raw reasoning_content from outbound request messages to prevent HTTP 400 on strict providers
     // while preserving thought_signature and thinking_blocks.
@@ -922,7 +923,14 @@ export async function callModelEndpoint(options = {}) {
         throw err;
       }
       if (err.name === 'AbortError') {
-        return { ok: false, requested_model: model, endpoint, error: `Request timed out after ${timeoutMs}ms (HR-1 Bounded Execution)` };
+        return {
+          ok: false,
+          timed_out: true,
+          duration_ms: Math.max(1, Date.now() - callStartMs),
+          requested_model: model,
+          endpoint,
+          error: `Request timed out after ${timeoutMs}ms (HR-1 Bounded Execution)`
+        };
       }
       return { ok: false, requested_model: model, endpoint, error: `Network connection failed: ${err.message}` };
     } finally {
@@ -993,6 +1001,13 @@ export async function callModelEndpoint(options = {}) {
     }
     const fallbackResult = await executeSingleCall(fallbackModel);
     if (fallbackResult.ok) {
+      if (primaryResult.timed_out === true) {
+        tripModelCircuitBreaker(model, `timeout_${timeoutMs}ms: ${String(primaryResult.error || '').slice(0, 140)}`, {
+          now: getNowMs(),
+          ttlMs: circuitBreakerTtlMs,
+          status: null
+        });
+      }
       fallbackResult.requested_model = model;
       fallbackResult.fallback_activated = true;
       fallbackResult.fallback_reason = fallbackReasonStr;
