@@ -481,7 +481,14 @@ export function mergeTaskStateOnConflict(diskState = {}, incomingState = {}) {
   }
 
   const mergedMetrics = { ...(diskState.metrics || {}), ...(incomingState.metrics || {}) };
-  for (const metricKey of ['total_input_tokens', 'total_output_tokens', 'total_cached_tokens', 'total_cost_est_usd']) {
+  for (const metricKey of [
+    'total_input_tokens',
+    'total_output_tokens',
+    'total_cached_tokens',
+    'total_cost_est_usd',
+    'total_runs',
+    'total_retries'
+  ]) {
     const dVal = Number(diskState.metrics?.[metricKey]);
     const lVal = Number(incomingState.metrics?.[metricKey]);
     if (diskState.metrics?.[metricKey] !== undefined || incomingState.metrics?.[metricKey] !== undefined) {
@@ -2118,7 +2125,8 @@ async function runOrchestrator() {
               duration_ms: Math.max(1, Date.now() - writerStepStartMs),
               status: 'failed_apply',
               applier_status: 'rejected',
-              applier_reason: applyRes.error.slice(0, 160),
+              applier_reason: applyRes.error.slice(0, 600),
+              ...(applyRes.failed_block ? { failed_block: applyRes.failed_block } : {}),
               scope_miss: /outside.*scope|not in.*scope/i.test(applyRes.error),
               error_hash: applyHash,
               retry_reason: retries > 0 ? String(task.last_error || '').slice(0, 120) : null,

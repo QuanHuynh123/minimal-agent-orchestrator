@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -531,6 +532,287 @@ async function runTests() {
     assert.strictEqual(finalDisk.metrics.total_output_tokens, 2200);
     assert.strictEqual(finalDisk.metrics.total_cost_est_usd, 0.42);
     console.log('✓ persistTaskStateWithConflictRecovery per-field merge rules verified.');
+
+    // =========================================================================
+    // Spec v4.1 (§5.1 - §5.5): Idempotent run metrics, PA A2, Round-Trip & Read-Only Archive
+    // =========================================================================
+    console.log('\n8. Testing Spec v4.1 idempotent run metrics, PA A2 & read-only archive invariants...');
+    const { transitionTaskState } = await import('./lib/task-persistence.mjs');
+    const {
+      computeCanonicalQueueState,
+      syncCanonicalTaskState,
+      writeMorningReportFile
+    } = await import('./lib/queue-state.mjs');
+
+    function hashDirectoryTree(dirPath) {
+      const hash = crypto.createHash('sha256');
+      const walk = (curDir, relPrefix = '') => {
+        const entries = fs.readdirSync(curDir, { withFileTypes: true })
+          .sort((a, b) => a.name.localeCompare(b.name));
+        for (const ent of entries) {
+          const rel = relPrefix ? `${relPrefix}/${ent.name}` : ent.name;
+          const abs = path.join(curDir, ent.name);
+          if (ent.isDirectory()) {
+            hash.update(`D:${rel}\n`);
+            walk(abs, rel);
+          } else {
+            hash.update(`F:${rel}\n`);
+            hash.update(fs.readFileSync(abs));
+            hash.update('\n');
+          }
+        }
+      };
+      walk(dirPath);
+      return hash.digest('hex');
+    }
+
+    function extractTopLevelFunctionBody(src, fnName) {
+      const sigRe = new RegExp(`(?:^|\\n)\\s*(?:export\\s+)?(?:async\\s+)?function\\s+${fnName}\\s*\\(`);
+      const match = sigRe.exec(src);
+      if (!match) return null;
+      const parenStart = match.index + match[0].length - 1;
+      let pDepth = 0;
+      let parenEnd = -1;
+      let pStr = null;
+      for (let i = parenStart; i < src.length; i++) {
+        const ch = src[i];
+        if (pStr) {
+          if (ch === '\\') { i++; continue; }
+          if (ch === pStr) pStr = null;
+          continue;
+        }
+        if (ch === '\'' || ch === '"' || ch === '`') { pStr = ch; continue; }
+        if (ch === '(') pDepth++;
+        else if (ch === ')') {
+          pDepth--;
+          if (pDepth === 0) { parenEnd = i; break; }
+        }
+      }
+      if (parenEnd === -1) return null;
+      const braceStart = src.indexOf('{', parenEnd + 1);
+      if (braceStart === -1) return null;
+      let depth = 0;
+      let inStr = null;
+      let inLineComment = false;
+      let inBlockComment = false;
+      for (let i = braceStart; i < src.length; i++) {
+        const ch = src[i];
+        const next = src[i + 1];
+        if (inLineComment) {
+          if (ch === '\n') inLineComment = false;
+          continue;
+        }
+        if (inBlockComment) {
+          if (ch === '*' && next === '/') {
+            inBlockComment = false;
+            i++;
+          }
+          continue;
+        }
+        if (inStr) {
+          if (ch === '\\') {
+            i++;
+            continue;
+          }
+          if (ch === inStr) inStr = null;
+          continue;
+        }
+        if (ch === '/' && next === '/') {
+          inLineComment = true;
+          i++;
+          continue;
+        }
+        if (ch === '/' && next === '*') {
+          inBlockComment = true;
+          i++;
+          continue;
+        }
+        if (ch === '\'' || ch === '"' || ch === '`') {
+          inStr = ch;
+          continue;
+        }
+        if (ch === '{') depth++;
+        else if (ch === '}') {
+          depth--;
+          if (depth === 0) {
+            return src.slice(braceStart, i + 1);
+          }
+        }
+      }
+      return null;
+    }
+
+    const specTmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'td-spec-v41-'));
+    const tmpTasksRoot = path.join(specTmpRoot, 'tasks');
+    const tmpActiveDir = path.join(tmpTasksRoot, 'active');
+    const tmpArchiveDir = path.join(tmpTasksRoot, 'archive');
+    fs.mkdirSync(tmpActiveDir, { recursive: true });
+    fs.mkdirSync(tmpArchiveDir, { recursive: true });
+
+    try {
+      // §5.1 Ca 1 — Idempotent cùng run_id
+      const taskA = {
+        task_id: 'T-METRIC-A',
+        title: 'Metric idempotency test',
+        mode: 'quick',
+        status: 'ready',
+        run_id: 'run-1',
+        steps: [{ step: '2.1', role: 'writer', cost_est_usd: 0.25, run_id: 'run-1' }]
+      };
+      const state = { active_tasks: [], completed_tasks: [], blocked_tasks: [], metrics: {} };
+
+      transitionTaskState(taskA, state, 'done', {
+        retries: 2,
+        activeTaskPath: path.join(tmpActiveDir, 'T-METRIC-A.yaml'),
+        archiveTaskPath: path.join(tmpArchiveDir, 'T-METRIC-A.yaml')
+      });
+      const costAfterFirst = state.metrics.total_cost_est_usd;
+
+      const canonical1 = computeCanonicalQueueState({
+        tasksActiveDir: tmpActiveDir,
+        tasksArchiveDir: tmpArchiveDir,
+        taskState: state
+      });
+      syncCanonicalTaskState(state, canonical1);
+
+      // Gọi lại lần 2 với cùng run_id = 'run-1'
+      transitionTaskState(taskA, state, 'done', {
+        retries: 2,
+        activeTaskPath: path.join(tmpActiveDir, 'T-METRIC-A.yaml'),
+        archiveTaskPath: path.join(tmpArchiveDir, 'T-METRIC-A.yaml')
+      });
+
+      assert.strictEqual(state.metrics.total_runs, 1, 'Ca 1: cùng run_id chỉ được đếm 1 run');
+      assert.strictEqual(state.metrics.total_retries, 2, 'Ca 1: retries phải bằng 2, không nhân đôi');
+      assert.strictEqual(state.metrics.total_cost_est_usd, 0.25, 'Ca 1: cost phải bằng 0.25');
+      assert.strictEqual(state.metrics.total_cost_est_usd, costAfterFirst, 'Ca 1: cost không tăng ở lần gọi trùng');
+      assert.strictEqual(taskA.last_counted_run_id, 'run-1');
+
+      // §5.2 Ca 2 — Rerun task với run_id mới (Đúng chuẩn đường sản xuất orchestrator.mjs#L1002-L1020, kèm kiểm chứng PA A2)
+      taskA.status = 'ready';
+      taskA.steps_history = [...(taskA.steps_history || []), ...(taskA.steps || [])];
+      taskA.steps = [
+        { step: '2.1', role: 'writer', cost_est_usd: 0.25, run_id: 'run-1' },
+        { step: '2.1', role: 'writer', cost_est_usd: 0.30, run_id: 'run-2' }
+      ];
+      taskA.run_id = 'run-2';
+
+      transitionTaskState(taskA, state, 'done', {
+        retries: 1,
+        activeTaskPath: path.join(tmpActiveDir, 'T-METRIC-A.yaml'),
+        archiveTaskPath: path.join(tmpArchiveDir, 'T-METRIC-A.yaml')
+      });
+
+      assert.strictEqual(state.metrics.total_runs, 2, 'Ca 2: run_id mới phải tăng total_runs lên 2');
+      assert.strictEqual(state.metrics.total_retries, 3, 'Ca 2: 2 (Ca 1) + 1 (Ca 2) = 3');
+      assert.strictEqual(state.metrics.total_cost_est_usd, 0.55, 'Ca 2: 0.25 (run-1) + 0.30 (run-2) = 0.55 (PA A2 không cộng trùng step run-1)');
+
+      // §5.3 Ca 3 — Round-trip qua syncCanonicalTaskState & Không ghi đè chéo khi thêm Task B
+      state.metrics.total_input_tokens = 1000;
+      state.metrics.total_output_tokens = 500;
+
+      const canonical2 = computeCanonicalQueueState({
+        tasksActiveDir: tmpActiveDir,
+        tasksArchiveDir: tmpArchiveDir,
+        taskState: state
+      });
+      syncCanonicalTaskState(state, canonical2);
+
+      assert.strictEqual(state.metrics.total_runs, 2);
+      assert.strictEqual(state.metrics.tasks_completed, 1, 'Ca 3: phải bằng 1 tuyệt đối');
+      assert.strictEqual(canonical2.counts.completed, 1);
+      assert.ok(Number.isFinite(state.metrics.cost_per_completed_task), 'Ca 3: cost_per_completed_task phải là số hữu hạn');
+      assert.strictEqual(state.metrics.cost_per_completed_task, 0.55, 'Ca 3: 0.55 / 1 task = 0.55');
+      assert.strictEqual(state.metrics.tokens_per_completed_task, 1500, 'Ca 3: (1000 + 500) / 1 = 1500');
+
+      const taskAfterSync = state.completed_tasks.find(t => t.task_id === 'T-METRIC-A');
+      assert.ok(taskAfterSync, 'Ca 3: taskA phải tồn tại trong state.completed_tasks sau sync');
+      assert.strictEqual(taskAfterSync.last_counted_run_id, 'run-2', 'Ca 3: last_counted_run_id phải sống sót qua syncCanonicalTaskState');
+
+      transitionTaskState(taskAfterSync, state, 'done', {
+        retries: 1,
+        archiveTaskPath: path.join(tmpArchiveDir, 'T-METRIC-A.yaml')
+      });
+      assert.strictEqual(state.metrics.total_runs, 2, 'Ca 3: idempotent sau round-trip');
+
+      const taskB = {
+        task_id: 'T-METRIC-B',
+        title: 'Second task',
+        mode: 'quick',
+        status: 'ready',
+        run_id: 'run-B',
+        steps: [{ step: '2.1', role: 'writer', cost_est_usd: 0.45, run_id: 'run-B' }]
+      };
+      transitionTaskState(taskB, state, 'done', {
+        retries: 0,
+        archiveTaskPath: path.join(tmpArchiveDir, 'T-METRIC-B.yaml')
+      });
+      const canonical3 = computeCanonicalQueueState({
+        tasksActiveDir: tmpActiveDir,
+        tasksArchiveDir: tmpArchiveDir,
+        taskState: state
+      });
+      syncCanonicalTaskState(state, canonical3);
+
+      const taskAAfterB = state.completed_tasks.find(t => t.task_id === 'T-METRIC-A');
+      const taskBAfterB = state.completed_tasks.find(t => t.task_id === 'T-METRIC-B');
+      assert.strictEqual(taskAAfterB?.last_counted_run_id, 'run-2', 'Ca 3: task A không bị task B ghi đè');
+      assert.strictEqual(taskBAfterB?.last_counted_run_id, 'run-B', 'Ca 3: task B giữ đúng run-B');
+      assert.strictEqual(state.metrics.total_runs, 3);
+      assert.strictEqual(state.metrics.tasks_completed, 2);
+      assert.strictEqual(state.metrics.total_cost_est_usd, 1.0, 'Ca 3: 0.55 + 0.45 = 1.0');
+      assert.strictEqual(state.metrics.cost_per_completed_task, 0.5, 'Ca 3: 1.0 / 2 tasks = 0.5');
+
+      // §5.4 & §5.5 Ca 4 — computeCanonicalQueueState 100% Read-Only (Động + Tĩnh)
+      const blockedArchivePath = path.join(tmpArchiveDir, 'T-ARCHIVED-BLOCKED.yaml');
+      fs.writeFileSync(blockedArchivePath, [
+        'task_id: T-ARCHIVED-BLOCKED',
+        'title: Manually archived blocked task',
+        'mode: standard',
+        'status: blocked',
+        'block_reason: Manual move to archive',
+        'retries: 2'
+      ].join('\n') + '\n', 'utf8');
+
+      const hashBefore = hashDirectoryTree(tmpTasksRoot);
+      const canonicalRO = computeCanonicalQueueState({
+        tasksActiveDir: tmpActiveDir,
+        tasksArchiveDir: tmpArchiveDir,
+        taskState: state
+      });
+      const tmpReportPath = path.join(specTmpRoot, 'morning-report.md');
+      writeMorningReportFile(state, {
+        tasksActiveDir: tmpActiveDir,
+        tasksArchiveDir: tmpArchiveDir,
+        reportFile: tmpReportPath
+      });
+      const hashAfter = hashDirectoryTree(tmpTasksRoot);
+
+      assert.strictEqual(hashAfter, hashBefore, 'Ca 4 động: toàn bộ cây tasks/ phải bất biến byte-for-byte');
+      const archivedEntry = canonicalRO.completed.find(t => t.task_id === 'T-ARCHIVED-BLOCKED');
+      assert.ok(archivedEntry, 'Ca 4 động: T-ARCHIVED-BLOCKED phải nằm trong canonical.completed');
+      assert.strictEqual(archivedEntry.status, 'done');
+      assert.strictEqual(archivedEntry.archived_from_status, 'blocked');
+      const reportContent = fs.readFileSync(tmpReportPath, 'utf8');
+      assert.match(reportContent, /archived_from: `blocked`/);
+
+      const writeTripwireRe = /\b(write|append|rename|unlink|copyFile|rm|rmdir|mkdir|truncate|symlink|open)\w*\s*\(/;
+      // Mutation self-check: confirm tripwire regex catches fs.writeFileSync(
+      assert.match('function fake() { fs.writeFileSync("x", "y"); }', writeTripwireRe, 'Ca 4 tĩnh (mutation check): tripwire regex must catch fs.writeFileSync(');
+      const queueStateSrc = fs.readFileSync(path.resolve(__dirname, 'lib/queue-state.mjs'), 'utf8');
+      for (const fnName of ['scanCanonicalTaskDir', 'computeCanonicalQueueState']) {
+        const fnBody = extractTopLevelFunctionBody(queueStateSrc, fnName);
+        assert.ok(fnBody && fnBody.length > 100, `Ca 4 tĩnh: phải trích được thân hàm ${fnName} (>100 chars)`);
+        assert.doesNotMatch(
+          fnBody,
+          writeTripwireRe,
+          `Ca 4 tĩnh (tripwire): ${fnName} must remain strictly read-only`
+        );
+      }
+      console.log('✓ Spec v4.1 Ca 1..4 (idempotent metrics, PA A2, round-trip, read-only archive) verified.');
+    } finally {
+      fs.rmSync(specTmpRoot, { recursive: true, force: true });
+    }
 
     console.log('\n=================================================');
     console.log('ALL STATE CONCURRENCY & REVISION TESTS PASSED!');

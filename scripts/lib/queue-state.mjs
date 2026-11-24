@@ -166,6 +166,9 @@ export function normalizeQueueTask(raw, defaultStatus = null) {
     ...(Array.isArray(src.preserved_files) && src.preserved_files.length > 0
       ? { preserved_files: Array.from(new Set(src.preserved_files.map(f => String(f || '').trim()).filter(Boolean))) }
       : {}),
+    ...(src.run_id ? { run_id: String(src.run_id) } : {}),
+    ...(src.last_counted_run_id ? { last_counted_run_id: String(src.last_counted_run_id) } : {}),
+    ...(src.archived_from_status ? { archived_from_status: String(src.archived_from_status) } : {}),
     created_at: src.created_at || null,
     updated_at: src.updated_at || null,
     completed_at: src.completed_at || null
@@ -290,10 +293,16 @@ export function computeCanonicalQueueState({
   const activeMap = new Map();
 
   for (const [tid, item] of archiveMap.entries()) {
-    const archiveStatus = String(item?.status || '').toLowerCase() === 'done_with_known_failures'
+    const rawStatus = String(item?.status || 'done').toLowerCase();
+    const archiveStatus = rawStatus === 'done_with_known_failures'
       ? 'done_with_known_failures'
       : 'done';
-    completedMap.set(tid, { ...item, status: archiveStatus });
+    const wasNonDone = rawStatus !== 'done' && rawStatus !== 'done_with_known_failures';
+    completedMap.set(tid, {
+      ...item,
+      status: archiveStatus,
+      ...(wasNonDone ? { archived_from_status: rawStatus } : {})
+    });
   }
 
   for (const [tid, item] of activeDiskMap.entries()) {
@@ -360,11 +369,18 @@ export function computeCanonicalQueueState({
       if (!diskEntry.contract_conflict_report && srcObj?.contract_conflict_report && typeof srcObj.contract_conflict_report === 'object') {
         diskEntry.contract_conflict_report = srcObj.contract_conflict_report;
       }
+      if (!diskEntry.run_id && srcObj?.run_id) {
+        diskEntry.run_id = String(srcObj.run_id);
+      }
+      if (!diskEntry.last_counted_run_id && srcObj?.last_counted_run_id) {
+        diskEntry.last_counted_run_id = String(srcObj.last_counted_run_id);
+      }
     }
   };
 
   mergeTaskStateTelemetryIntoMap(blockedMap, taskState?.blocked_tasks);
   mergeTaskStateTelemetryIntoMap(activeMap, taskState?.active_tasks);
+  mergeTaskStateTelemetryIntoMap(completedMap, taskState?.completed_tasks);
 
   for (const raw of (taskState?.completed_tasks || [])) {
     const tid = getTaskId(raw);
@@ -413,6 +429,18 @@ export function syncCanonicalTaskState(state = {}, canonical) {
   if (!state.metrics || typeof state.metrics !== 'object') {
     state.metrics = { total_input_tokens: 0, total_output_tokens: 0, total_cost_est_usd: 0 };
   }
+  const doneCount = Number(canonical?.counts?.completed || 0);
+  const blockedCount = Number(canonical?.counts?.blocked || 0);
+  const totalTok = Number(state.metrics.total_input_tokens || 0) + Number(state.metrics.total_output_tokens || 0);
+  const totalCost = Number(state.metrics.total_cost_est_usd || 0);
+
+  state.metrics.tasks_completed = doneCount;
+  state.metrics.tasks_blocked = blockedCount;
+  // Cumulative average tokens & USD cost per currently completed task across session history
+  state.metrics.tokens_per_completed_task = doneCount > 0 ? Math.round(totalTok / doneCount) : null;
+  state.metrics.cost_per_completed_task = doneCount > 0
+    ? Math.round((totalCost / doneCount) * 10000) / 10000
+    : null;
   return state;
 }
 
@@ -618,6 +646,9 @@ export function writeMorningReportFile(state = {}, options = {}) {
       .join('; ');
     return `, unseen_exact_match: ${blocks.length} block(s) [${detail}]`;
   };
+  const formatArchivedSuffix = (t) => t?.archived_from_status
+    ? `, archived_from: \`${t.archived_from_status}\``
+    : '';
 
   const lines = [
     '# Minimal Agent Orchestration — Execution Report (v2.1 Standard)',
@@ -643,7 +674,7 @@ export function writeMorningReportFile(state = {}, options = {}) {
       const tid = t.task_id || t.id;
       const displayTitle = t.title || sanitizeSummaryText(t.goal || '') || 'Untitled';
       const outsideLines = resolveTaskOutsideWindowLines(t);
-      lines.push(`- **${tid}** [${t.mode || 'quick'}]: ${displayTitle} (Commit: \`${t.commit_hash || 'none'}\`, Retries: ${t.retries || 0}, edit_lines_outside_window: ${outsideLines}${formatUnseenSuffix(t)})`);
+      lines.push(`- **${tid}** [${t.mode || 'quick'}]: ${displayTitle} (Commit: \`${t.commit_hash || 'none'}\`, Retries: ${t.retries || 0}, edit_lines_outside_window: ${outsideLines}${formatUnseenSuffix(t)}${formatArchivedSuffix(t)})`);
     }
   }
 

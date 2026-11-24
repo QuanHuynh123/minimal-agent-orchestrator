@@ -219,6 +219,7 @@ export function transitionTaskState(task, state, finalStatus, options = {}) {
     archiveTaskPath = null
   } = options;
 
+  const prevStatus = task.status;
   const isDone = finalStatus === 'done' || finalStatus === 'done_with_known_failures';
   const isAwaitingConfirmation = finalStatus === 'awaiting_confirmation';
   const isCommittedSuccess = isDone || isAwaitingConfirmation;
@@ -262,6 +263,32 @@ export function transitionTaskState(task, state, finalStatus, options = {}) {
                 : (blockReason?.includes('approval') ? 'Need human approval' : 'Review task scope and constraints')))));
 
   const stepsArr = Array.isArray(task.steps) ? task.steps : [];
+
+  if (!state.metrics || typeof state.metrics !== 'object') {
+    state.metrics = { total_input_tokens: 0, total_output_tokens: 0, total_cost_est_usd: 0 };
+  }
+
+  const hasExplicitRunId = Boolean(task.run_id && String(task.run_id).trim());
+  const runKey = hasExplicitRunId
+    ? String(task.run_id).trim()
+    : `${finalStatus}:${Number(retries || 0)}`;
+  const shouldCountRun = task.last_counted_run_id !== runKey
+    && (hasExplicitRunId || prevStatus !== finalStatus);
+
+  if (shouldCountRun) {
+    task.last_counted_run_id = runKey;
+    state.metrics.total_runs = Number(state.metrics.total_runs || 0) + 1;
+    state.metrics.total_retries = Number(state.metrics.total_retries || 0) + Number(retries || 0);
+    // PA A2 defense-in-depth: only sum steps belonging to the current run_id (or untagged steps)
+    const activeRunSteps = hasExplicitRunId
+      ? stepsArr.filter(st => !st?.run_id || String(st.run_id).trim() === runKey)
+      : stepsArr;
+    const runCost = activeRunSteps.reduce((acc, st) => acc + (Number(st?.cost_est_usd) || 0), 0);
+    state.metrics.total_cost_est_usd = Math.round(
+      ((Number(state.metrics.total_cost_est_usd || 0) + runCost) * 1e6)
+    ) / 1e6;
+  }
+
   const hasOutsideTelemetry = stepsArr.some(
     s => s && s.edit_lines_outside_window !== undefined && s.edit_lines_outside_window !== null
   );
@@ -518,6 +545,7 @@ export function recordTaskStep(task, stepTelemetry = {}, options = {}) {
       });
 
   const entry = {
+    ...(stepTelemetry.run_id || task.run_id ? { run_id: String(stepTelemetry.run_id || task.run_id).trim() } : {}),
     step: stepTelemetry.step ?? (task.steps.length + 1),
     attempt: Number(stepTelemetry.attempt || 1),
     role: String(stepTelemetry.role || 'writer'),
@@ -554,6 +582,13 @@ export function recordTaskStep(task, stepTelemetry = {}, options = {}) {
     status: String(stepTelemetry.status || 'ok'),
     applier_status: String(stepTelemetry.applier_status || (String(stepTelemetry.status || 'ok').startsWith('failed') ? 'rejected' : 'accepted')),
     applier_reason: stepTelemetry.applier_reason ? String(stepTelemetry.applier_reason) : null,
+    ...(stepTelemetry.failed_block !== undefined && stepTelemetry.failed_block !== null
+      ? {
+          failed_block: typeof stepTelemetry.failed_block === 'object'
+            ? JSON.parse(JSON.stringify(stepTelemetry.failed_block))
+            : stepTelemetry.failed_block
+        }
+      : {}),
     validation_status: String(stepTelemetry.validation_status || 'pending'),
     scope_miss: Boolean(stepTelemetry.scope_miss || false),
     error_hash: stepTelemetry.error_hash ? String(stepTelemetry.error_hash) : null,
