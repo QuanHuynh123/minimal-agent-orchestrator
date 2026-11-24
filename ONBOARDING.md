@@ -1,7 +1,7 @@
 # 🧭 Sổ Tay Khởi Tạo & Vận Hành Chuẩn (Onboarding Standard v3.1)
 
-> **Câu chốt Kiến trúc Cốt lõi (Golden Rule):**  
-> *"Agent Runtime có thể sửa file qua Applier trong scope được cấp; Orchestrator là Trung Tâm Điều Phối Hình Sao (`Writer Hub`) tự động khớp nối Nhu cầu Task với Đội hình Model để chạy task theo quy trình."*
+> **Câu chốt Triết lý & Kiến trúc Cốt lõi (Golden Rule):**  
+> *"Mini-Orchestrator là chiếc Khuôn Gá (Jig / Lồng 0-Token) giúp tận dụng các model giá rẻ/free qua `9router` chạy tự động nhiều task (kể cả qua đêm) mà không làm nát dự án: `Router` cắt việc thật nhỏ (`<= 2–3 file`) ➔ ghép `1 Model Giỏi` (ra bản vẽ/hợp đồng) kèm `1 Model Thợ` (chỉ làm đúng 1 việc sửa code trong `scope` hẹp) ➔ khóa ngoài bằng `Applier + Validator + Git Guard`. Tối ưu `Task Success / Token`, cấm Over-Engineering kiểu Enterprise."*
 
 Tài liệu này được tách bạch thành **2 Phần độc lập**:
 - **[Phần 1: Hướng Dẫn Nhanh Dành Cho Kỹ Sư / Con Người (Human Quickstart)](#phần-1-hướng-dẫn-nhanh-dành-cho-kỹ-sư--con-người)**
@@ -42,9 +42,9 @@ roles:
   writer:
     model: "deepseek-ai/deepseek-v4.1-flash-1017" # Model chính của bạn
 ```
-> **💡 Cơ chế Tự Thích Nghi Đội Hình (`Task-Demand × Squad-Roster`):**
-> - **Khi chỉ cấu hình 1 Model:** Các role khác (`router`, `reviewer`) sẽ tự động kế thừa model của `writer`. Hệ thống tự động gom bước (*Anti-Self-Play* & *Anti-Self-Review*) để không tốn token gọi cùng 1 model tự nói chuyện với chính nó.
-> - **Khi cấu hình Đa Chuyên Gia (2 $\rightarrow$ 6+ Models):** Bạn có thể gán model chuyên biệt cho `techlead`, `designer`, `reviewer` và mảng `models: [backend_coder, frontend_coder]` cho `writer`. `Writer Hub` sẽ tự động tách giỏ file Backend (`Step 2A`) $\rightarrow$ quét `Live AST Bridge` $\rightarrow$ giao file UI cho Frontend (`Step 2B`).
+> **💡 Mô hình Phối hợp Thực Chiến (`1 Model Giỏi + 1 Model Thợ`):**
+> - **Khi chỉ cấu hình 1 Model:** Các role khác (`router`, `architect`, `reviewer`) tự động kế thừa model của `writer` và tự thu gọn bước phụ (*Anti-Self-Play* & *Anti-Self-Review*) để không bắt 1 model tự viết spec cho chính nó đọc.
+> - **Khi cấu hình chuẩn Khuyến nghị (`1 Giỏi + 1 Thợ`):** Bạn gán model mạnh (`Gemini` / `Claude Sonnet`) cho `router` / `architect` / `designer` để cắt việc nhỏ và viết đặc tả thật nét ở lượt đầu, còn `writer` dùng model giá rẻ/free có KV-cache tốt (`DeepSeek` / `Gemini Flash`) kèm `fallback_model` để gõ bản vá trong `scope` hẹp.
 
 ### B. Ranh giới, Quy Ước Dự Án & Bộ Kiểm Thử (`config/policy.yaml`)
 Hệ thống chuẩn hóa **chỉ có đúng 2 file cấu hình** trong `config/` (`team.yaml` và `policy.yaml`). Toàn bộ ranh giới thư mục, file được bảo vệ, domain patterns và lệnh kiểm thử tự động được quản lý tập trung trong `config/policy.yaml`:
@@ -125,7 +125,12 @@ npm start
 *(Dành riêng cho các trợ lý AI Chat trong IDE như Antigravity, Cursor, Cline, Claude Desktop... khi tham gia hỗ trợ lập kế hoạch).*
 
 > **CHỈ THỊ HỆ THỐNG:**  
-> Bạn đang đóng vai trò **Planner & Task Drafter** trong môi trường Chat. Khi người dùng yêu cầu bạn phân tích dự án hoặc soạn task, bạn phải tuân thủ nghiêm ngặt 4 quy tắc sau:
+> Bạn đang đóng vai trò **Planner & Task Drafter** trong môi trường Chat. Khi người dùng yêu cầu bạn phân tích dự án, cải tiến bộ điều phối hoặc soạn task, bạn phải tuân thủ nghiêm ngặt **5 quy tắc** sau:
+
+### Quy tắc 0: Hiểu Đúng Triết Lý Mini-Orchestrator (Cấm Over-Engineering)
+- Hệ thống này sinh ra để **kẹp các AI model giá rẻ/free dễ trượt ngữ cảnh vào khuôn kỷ luật (`1 Model Giỏi chỉ đường + 1 Model Thợ gõ code + Lồng kiểm tra 0-Token`)**, không phải hệ thống SaaS/Production quy mô tập đoàn và cũng không giả lập công ty IT nhiều ban bệ (`BA ➔ DA ➔ BE ➔ FE`).
+- Thước đo duy nhất đáng giá là **`Task Success / Token`** (chạy tự động qua đêm sáng dậy task hoàn thành thật, test xanh thật, không phá hỏng tính năng bên cạnh).
+- **KHÔNG** đề xuất kiến trúc cồng kềnh, không bóp nghẹt độ dài bản vẽ của Model Giỏi chỉ để tiết kiệm vài xu quy đổi ảo, và luôn đối chiếu [`README.md`](README.md) cùng [`RUNTIME_PAYLOAD_SPEC.md`](RUNTIME_PAYLOAD_SPEC.md) trước khi đề xuất sửa đổi pipeline.
 
 ### Quy tắc 1: Cổng Thu Thập Thông Tin Bắt Buộc (Intake Gate)
 Khi người dùng giao một bài toán lớn hoặc khởi tạo dự án mới, nếu thiếu bất kỳ thông tin cốt lõi nào dưới đây, bạn **BẮT BUỘC phải dừng lại hỏi người dùng** — **TUYỆT ĐỐI KHÔNG tự bịa tên model hay đoán bừa**:
