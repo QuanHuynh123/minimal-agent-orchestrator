@@ -48,31 +48,36 @@ function stableJsonStringify(val) {
  */
 export function canonicalizeFingerprintKey(envFp = null) {
   if (!envFp || typeof envFp !== 'object') return 'no-fp';
-  const ort = envFp.onnxruntime || {};
-  const normalizedModels = [...(envFp.onnx_models || [])]
-    .map(m => ({
-      name: m.name || '',
-      exists: Boolean(m.exists),
-      size_bytes: m.size_bytes ?? null,
-      sha256: m.sha256 || null
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
   const canonical = {
     python_path: envFp.python_path || null,
     is_admin: Boolean(envFp.is_admin),
     loopback_bindable: Boolean(envFp.loopback_bindable),
     pip_freeze_hash: envFp.pip_freeze_hash || null,
     platform: envFp.platform || null,
-    node_version: envFp.node_version || null,
-    onnxruntime: {
+    node_version: envFp.node_version || null
+  };
+
+  if (envFp.onnxruntime) {
+    const ort = envFp.onnxruntime;
+    canonical.onnxruntime = {
       installed: Boolean(ort.installed),
       import_ok: Boolean(ort.import_ok),
       version: ort.version || null,
       providers: Array.isArray(ort.providers) ? [...ort.providers].sort() : []
-    },
-    onnx_models: normalizedModels
-  };
+    };
+  }
+
+  if (Array.isArray(envFp.onnx_models) && envFp.onnx_models.length > 0) {
+    canonical.onnx_models = [...envFp.onnx_models]
+      .map(m => ({
+        name: m.name || '',
+        exists: Boolean(m.exists),
+        size_bytes: m.size_bytes ?? null,
+        sha256: m.sha256 || null
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   return crypto.createHash('sha256').update(stableJsonStringify(canonical)).digest('hex');
 }
 
@@ -168,7 +173,7 @@ function buildPythonDottedBaseId(methodName = '', rawContext = '') {
 }
 
 function isRepoWideScannerTest(dottedBaseId = '', command = '', checkName = '') {
-  return /test_indentation|tab_indentation/i.test(`${dottedBaseId} ${command} ${checkName}`);
+  return /\b(?:lint|format|style)\b|indent/i.test(`${dottedBaseId} ${command} ${checkName}`);
 }
 
 /**
@@ -204,8 +209,8 @@ export function extractCheckFailureIdentities(checkRes = {}) {
   };
 
   // Split Python unittest detailed failure/error sections:
-  // `FAIL: test_method (tests.mod.Class.test_method) (file='core/foo.py')`
-  // or `FAIL: test_method (tests.mod.Class) [file=core/foo.py]`
+  // `FAIL: test_method (tests.mod.Class.test_method) (file='src/foo.py')`
+  // or `FAIL: test_method (tests.mod.Class) [file=src/foo.py]`
   const headerRegex = /^(FAIL|ERROR):\s+([^\s(]+)\s+\(([^)]+)\)(?:\s+\(([^)]+)\)|\s+\[([^\]]+)\])?\s*$/gm;
   const matches = [...combined.matchAll(headerRegex)];
 
@@ -391,7 +396,7 @@ function findNamingConventionTargets(testFileRel, repoRoot) {
   const pyMatch = normTest.match(/(?:^|\/)test_([\w]+)\.py$/);
   if (pyMatch) {
     const stem = pyMatch[1];
-    for (const dir of ['src', 'app', 'lib', 'core', 'api', '']) {
+    for (const dir of ['src', 'app', 'core', 'api', 'web', 'ui', '']) {
       const rel = dir ? `${dir}/${stem}.py` : `${stem}.py`;
       if (fs.existsSync(path.join(repoRoot, rel))) {
         targets.add(rel);
@@ -430,9 +435,9 @@ function pathMatchesScope(relPath, scopeList = []) {
 
 /**
  * Maps a failing check/test `(check_name, test_id)` to `task.scope` via:
- *  1) Granular subTest / violation `target_file` (for repo-wide checks like test_indentation)
- *  2) Naming convention (`tests/test_x.py` <-> `core/x.py`, `ui/x.py`, ...)
- *  3) Transitive static import graph (`test_x.py` -> `core/pipeline.py` -> `core/shared_helper.py`)
+ *  1) Granular subTest / violation `target_file` (for repo-wide checks like style_lint_check)
+ *  2) Naming convention (`tests/test_x.py` <-> `src/x.py`, `web/x.py`, ...)
+ *  3) Transitive static import graph (`test_x.py` -> `src/pipeline.py` -> `src/shared_helper.py`)
  * Missing/unresolvable mapping ALWAYS defaults to `in_scope: true` (fail-safe: NEVER preexisting).
  */
 export function mapFailureToScope(failureItem = {}, taskScope = [], repoRoot = resolveRepoRoot()) {
@@ -1393,7 +1398,7 @@ export function evaluateTaskOutcomeWithBaseline({
 }
 
 /**
- * Extracts clean dotted unittest targets (e.g. `tests.test_api.PathResolutionTests.test_x`)
+ * Extracts clean dotted unittest targets (e.g. `tests.test_bridge.PathResolutionTests.test_x`)
  * from check results and raw validator failure output so retries can validate failing tests first.
  */
 export function extractFailingTestTargetsForRetry(errSummary = '', checkResults = []) {

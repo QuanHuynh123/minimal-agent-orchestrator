@@ -1303,6 +1303,10 @@ function extractPythonCandidates(checks = [], repoRoot = REPO_ROOT) {
   );
 }
 
+export function isWindowsStorePythonStub(p) {
+  return /[\\/]Microsoft[\\/]WindowsApps[\\/]/i.test(String(p || ''));
+}
+
 function defaultDetectPythonPath(checks = [], repoRoot = REPO_ROOT) {
   const candidates = extractPythonCandidates(checks, repoRoot);
   for (const cand of candidates) {
@@ -1317,17 +1321,32 @@ function defaultDetectPythonPath(checks = [], repoRoot = REPO_ROOT) {
         timeout: 1500,
         stdio: ['ignore', 'pipe', 'ignore']
       }).trim();
-      if (exe) return exe;
+      if (exe && !isWindowsStorePythonStub(exe) && isRunnablePythonBinary(exe)) {
+        return exe;
+      }
     } catch {}
     try {
       const locator = process.platform === 'win32' ? 'where.exe' : 'which';
-      const firstLine = execFileSync(locator, [cand], {
+      const lines = execFileSync(locator, [cand], {
         cwd: repoRoot,
         encoding: 'utf8',
         timeout: 1200,
         stdio: ['ignore', 'pipe', 'ignore']
-      }).split(/\r?\n/).map(s => s.trim()).find(Boolean);
-      if (firstLine) return firstLine;
+      }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      for (const line of lines) {
+        if (isWindowsStorePythonStub(line) || !isRunnablePythonBinary(line)) continue;
+        try {
+          const verifiedExe = execFileSync(line, ['-c', 'import sys; print(sys.executable)'], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            timeout: 1500,
+            stdio: ['ignore', 'pipe', 'ignore']
+          }).trim();
+          if (verifiedExe && !isWindowsStorePythonStub(verifiedExe) && isRunnablePythonBinary(verifiedExe)) {
+            return verifiedExe;
+          }
+        } catch {}
+      }
     } catch {}
   }
   return null;
@@ -1392,7 +1411,7 @@ function resolveValidationConfigAndChecks(projectConfig, stageName) {
     || policyCfg?.validation?.suite_checks
     || [];
   const checks = stageName === 'suite_checks' ? suiteChecks : fastChecks;
-  return { repoRoot, checks, allChecks: [...fastChecks, ...suiteChecks] };
+  return { repoRoot, checks, allChecks: [...fastChecks, ...suiteChecks], cfg, policyCfg };
 }
 
 const DEFAULT_ONNX_MODEL_NAMES = [];
@@ -1467,7 +1486,7 @@ function defaultCollectOnnxModels(options = {}) {
   });
 }
 
-function isRunnablePythonBinary(pythonPath) {
+export function isRunnablePythonBinary(pythonPath) {
   if (!pythonPath) return false;
   if (path.isAbsolute(pythonPath)) {
     try {
@@ -1487,7 +1506,7 @@ function defaultDetectOnnxRuntime(pythonPath, repoRoot) {
   const pyProbe = [
     'import importlib.metadata, json',
     'res = {"installed": False, "import_ok": False, "version": None, "providers": [], "error": None}',
-    'for pkg in ("onnxruntime-directml", "onnxruntime"):',
+    'for pkg in ("onnxruntime", "onnxruntime-gpu", "onnxruntime-directml"):',
     '  try:',
     '    res["version"] = importlib.metadata.version(pkg)',
     '    res["installed"] = True',
@@ -1555,42 +1574,95 @@ function defaultDetectPipFreeze(pythonPath, repoRoot) {
   }
 }
 
+function shouldProbeOnnx(projectConfig = null, policyCfg = null, options = {}) {
+  if (options.enableOnnxProbe === false) return false;
+  if (options.enableOnnxProbe === true) return true;
+  if (typeof options.detectOnnxModels === 'function' || typeof options.detectOnnxRuntime === 'function') {
+    return true;
+  }
+  if (Boolean(options.modelsDir) || (Array.isArray(options.onnxModelNames) && options.onnxModelNames.length > 0)) {
+    return true;
+  }
+  if (Boolean(process.env.AGENT_TEAM_MODELS_DIR)) {
+    return true;
+  }
+  const cfgVal = projectConfig?.policy?.validation || projectConfig?.validation || {};
+  const polVal = policyCfg?.policy?.validation || policyCfg?.validation || {};
+  return Boolean(cfgVal.onnx_probe || polVal.onnx_probe);
+}
+
+function shouldProbePython(projectConfig = null, policyCfg = null, allChecks = [], options = {}, onnxEnabled = false) {
+  if (options.probePython === false) return false;
+  if (options.probePython === true) return true;
+  if (onnxEnabled || typeof options.detectPythonPath === 'function' || typeof options.detectPipFreeze === 'function') {
+    return true;
+  }
+  const lang = String(
+    projectConfig?.policy?.language
+    || projectConfig?.project?.language
+    || policyCfg?.policy?.language
+    || policyCfg?.project?.language
+    || ''
+  ).trim();
+  if (/^python\b/i.test(lang)) {
+    return true;
+  }
+  for (const check of (Array.isArray(allChecks) ? allChecks : [])) {
+    const cmd = typeof check === 'string' ? check : String(check?.run || '');
+    if (/\b(?:python(?:\d+(?:\.\d+)*)?(?:\.exe)?|pytest|pip3?|poetry|uv|ruff|mypy|flake8)\b|\.py\b/i.test(cmd)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
- * Captures runtime environment fingerprint (python, admin, loopback, ONNX models/runtime, pip freeze hash).
+ * Captures runtime environment fingerprint (admin, loopback, platform/node; plus Python & opt-in ONNX probes when applicable).
  */
 export async function collectEnvironmentFingerprint(projectConfig = null, options = {}) {
-  const { repoRoot, allChecks } = resolveValidationConfigAndChecks(projectConfig, 'fast_checks');
-  const pythonPath = typeof options.detectPythonPath === 'function'
-    ? options.detectPythonPath(allChecks, repoRoot)
-    : defaultDetectPythonPath(allChecks, repoRoot);
+  const { repoRoot, allChecks, cfg, policyCfg } = resolveValidationConfigAndChecks(projectConfig, 'fast_checks');
+  const activeCfg = projectConfig || cfg;
+  const onnxEnabled = shouldProbeOnnx(activeCfg, policyCfg, options);
+  const pythonEnabled = shouldProbePython(activeCfg, policyCfg, allChecks, options, onnxEnabled);
+
+  const pythonPath = pythonEnabled
+    ? (typeof options.detectPythonPath === 'function'
+        ? options.detectPythonPath(allChecks, repoRoot)
+        : defaultDetectPythonPath(allChecks, repoRoot))
+    : null;
   const isAdmin = typeof options.detectAdmin === 'function'
     ? Boolean(options.detectAdmin())
     : defaultDetectAdmin();
   const loopbackBindable = typeof options.checkLoopback === 'function'
     ? Boolean(await options.checkLoopback())
     : await checkLoopbackBindable();
-  const onnxModels = typeof options.detectOnnxModels === 'function'
-    ? options.detectOnnxModels(options)
-    : defaultCollectOnnxModels(options);
-  const onnxruntime = typeof options.detectOnnxRuntime === 'function'
-    ? options.detectOnnxRuntime(pythonPath, repoRoot)
-    : defaultDetectOnnxRuntime(pythonPath, repoRoot);
-  const pipFreeze = typeof options.detectPipFreeze === 'function'
-    ? options.detectPipFreeze(pythonPath, repoRoot)
-    : defaultDetectPipFreeze(pythonPath, repoRoot);
+  const pipFreeze = pythonEnabled
+    ? (typeof options.detectPipFreeze === 'function'
+        ? options.detectPipFreeze(pythonPath, repoRoot)
+        : defaultDetectPipFreeze(pythonPath, repoRoot))
+    : { sha256: null, package_count: 0 };
 
-  return {
+  const result = {
     python_path: pythonPath || null,
     is_admin: isAdmin,
     loopback_bindable: loopbackBindable,
-    onnx_models: onnxModels,
-    onnxruntime,
     pip_freeze_hash: pipFreeze?.sha256 || null,
     pip_package_count: Number.isInteger(pipFreeze?.package_count) ? pipFreeze.package_count : 0,
     platform: process.platform,
     node_version: process.version,
     checked_at: new Date().toISOString()
   };
+
+  if (onnxEnabled) {
+    result.onnx_models = typeof options.detectOnnxModels === 'function'
+      ? options.detectOnnxModels(options)
+      : defaultCollectOnnxModels(options);
+    result.onnxruntime = typeof options.detectOnnxRuntime === 'function'
+      ? options.detectOnnxRuntime(pythonPath, repoRoot)
+      : defaultDetectOnnxRuntime(pythonPath, repoRoot);
+  }
+
+  return result;
 }
 
 export function compareEnvironmentFingerprints(baselineFp, currentFp) {
@@ -1609,24 +1681,30 @@ export function compareEnvironmentFingerprints(baselineFp, currentFp) {
     pushDiff(key, baselineFp[key], currentFp[key]);
   }
 
-  const baseOrt = baselineFp.onnxruntime || {};
-  const currOrt = currentFp.onnxruntime || {};
-  pushDiff('onnxruntime.installed', Boolean(baseOrt.installed), Boolean(currOrt.installed));
-  pushDiff('onnxruntime.import_ok', Boolean(baseOrt.import_ok), Boolean(currOrt.import_ok));
-  pushDiff('onnxruntime.version', baseOrt.version || null, currOrt.version || null);
-  const baseProviders = Array.isArray(baseOrt.providers) ? [...baseOrt.providers].sort() : [];
-  const currProviders = Array.isArray(currOrt.providers) ? [...currOrt.providers].sort() : [];
-  pushDiff('onnxruntime.providers', baseProviders, currProviders);
+  if (baselineFp.onnxruntime || currentFp.onnxruntime) {
+    const baseOrt = baselineFp.onnxruntime || {};
+    const currOrt = currentFp.onnxruntime || {};
+    pushDiff('onnxruntime.installed', Boolean(baseOrt.installed), Boolean(currOrt.installed));
+    pushDiff('onnxruntime.import_ok', Boolean(baseOrt.import_ok), Boolean(currOrt.import_ok));
+    pushDiff('onnxruntime.version', baseOrt.version || null, currOrt.version || null);
+    const baseProviders = Array.isArray(baseOrt.providers) ? [...baseOrt.providers].sort() : [];
+    const currProviders = Array.isArray(currOrt.providers) ? [...currOrt.providers].sort() : [];
+    pushDiff('onnxruntime.providers', baseProviders, currProviders);
+  }
 
-  const baseModelsMap = new Map((baselineFp.onnx_models || []).map(m => [m.name, m]));
-  const currModelsMap = new Map((currentFp.onnx_models || []).map(m => [m.name, m]));
-  const allModelNames = [...new Set([...baseModelsMap.keys(), ...currModelsMap.keys()])].sort();
-  for (const name of allModelNames) {
-    const bm = baseModelsMap.get(name) || { exists: false, size_bytes: null, sha256: null };
-    const cm = currModelsMap.get(name) || { exists: false, size_bytes: null, sha256: null };
-    pushDiff(`onnx_models[${name}].exists`, Boolean(bm.exists), Boolean(cm.exists));
-    pushDiff(`onnx_models[${name}].sha256`, bm.sha256 || null, cm.sha256 || null);
-    pushDiff(`onnx_models[${name}].size_bytes`, bm.size_bytes ?? null, cm.size_bytes ?? null);
+  const baseModelsList = Array.isArray(baselineFp.onnx_models) ? baselineFp.onnx_models : [];
+  const currModelsList = Array.isArray(currentFp.onnx_models) ? currentFp.onnx_models : [];
+  if (baseModelsList.length > 0 || currModelsList.length > 0) {
+    const baseModelsMap = new Map(baseModelsList.map(m => [m.name, m]));
+    const currModelsMap = new Map(currModelsList.map(m => [m.name, m]));
+    const allModelNames = [...new Set([...baseModelsMap.keys(), ...currModelsMap.keys()])].sort();
+    for (const name of allModelNames) {
+      const bm = baseModelsMap.get(name) || { exists: false, size_bytes: null, sha256: null };
+      const cm = currModelsMap.get(name) || { exists: false, size_bytes: null, sha256: null };
+      pushDiff(`onnx_models[${name}].exists`, Boolean(bm.exists), Boolean(cm.exists));
+      pushDiff(`onnx_models[${name}].sha256`, bm.sha256 || null, cm.sha256 || null);
+      pushDiff(`onnx_models[${name}].size_bytes`, bm.size_bytes ?? null, cm.size_bytes ?? null);
+    }
   }
 
   return {

@@ -1,6 +1,6 @@
 {
   "name": "minimal-agent-orchestrator",
-  "version": "3.2.1",
+  "version": "3.2.2",
   "description": "Minimal Agent Orchestration & Standalone Agent Runtime Standard (v3.2)",
   "license": "MIT",
   "engines": {

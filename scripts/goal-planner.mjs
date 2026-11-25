@@ -717,7 +717,7 @@ export function userGoalMentionsModel(cleanGoal = '', candidateModel = '') {
 
   if (goalRaw.includes(modelRaw)) return true;
 
-  // Strip file path / extension tokens so filenames like core/gemini_helper.py do not look like model requests
+  // Strip file path / extension tokens so filenames like src/gemini_helper.js do not look like model requests
   const goalWithoutPaths = goalRaw
     .replace(/\b[a-z0-9_.-]+(?:\/[a-z0-9_.-]+)+\b/g, ' ')
     .replace(/\b[a-z0-9_-]+\.(?:py|js|mjs|ts|tsx|jsx|html|css|json|yaml|yml|md)\b/g, ' ');

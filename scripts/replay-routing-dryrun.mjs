@@ -135,7 +135,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
     else if (args[i] === '--json') { jsonOut = true; }
   }
   if (!taskFile && !goal) {
-    taskFile = path.resolve(TEAM_DIR, 'benchmarks', 'fixtures', 'preset-pills-task.yaml');
+    taskFile = path.resolve(TEAM_DIR, 'tasks', 'task-template.yaml');
   }
 
   runDryRunRoutingReplay({ taskFile, goal }).then(res => {

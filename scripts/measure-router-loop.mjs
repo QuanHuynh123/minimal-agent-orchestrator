@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
 
 import { decomposeGoal, resolveGoalPlannerConfig } from './goal-planner.mjs';
+import { resolveRepoRoot } from './applier.mjs';
 import { parseRawCompletionResponse } from './lib/cache-benchmark.mjs';
 import { check9RouterHealth, readInstalled9RouterVersion } from './lib/client-9router.mjs';
 import { analyzeTurn1PayloadHashes } from './lib/prefix-invariant.mjs';
@@ -20,10 +21,10 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEAM_DIR = path.resolve(__dirname, '..');
-const REPO_ROOT = path.resolve(TEAM_DIR, '..');
+const REPO_ROOT = resolveRepoRoot();
 
 export const DEFAULT_PRESET_PILLS_GOAL =
-  'Dọn dẹp hoàn toàn cụm #eraser-presets (Preset Pills) cùng JS listener tương ứng và sửa overflow/grid #eraser-mode-pills (gồm applyEraserMode) trong ui_web/index.html, đồng thời cập nhật kiểm tra tests/test_dom_contract.py.';
+  'Remove deprecated #filter-presets toolbar pills and legacy event listeners, fix grid overflow on #filter-mode-pills in web/index.html, and update tests/test_dom_contract.js.';
 
 export async function runRouterDryRunLoopBenchmark(options = {}) {
   const repetitions = Number(options.repetitions || 3);
@@ -86,7 +87,7 @@ export async function runRouterDryRunLoopBenchmark(options = {}) {
   }
 
   return {
-    experiment: 'router_dry_run_preset_pills_stream',
+    experiment: 'router_dry_run_stream',
     checked_at: new Date().toISOString(),
     nine_router_version: options.nineRouterVersion ?? readInstalled9RouterVersion().version,
     goal,
@@ -144,7 +145,7 @@ export async function runTurn1OfflineDiagnosis(options = {}) {
               goal: goalText,
               mode: 'quick',
               risk_level: 'low',
-              scope: ['ui_web/index.html'],
+              scope: ['web/index.html'],
               acceptance_criteria: ['OK 1', 'OK 2']
             }]
           });
@@ -174,7 +175,7 @@ export async function runTurn1OfflineDiagnosis(options = {}) {
     }
 
     const goalA = DEFAULT_PRESET_PILLS_GOAL;
-    const goalB = 'Sửa lõi Video Studio trong core/video_studio.py và cập nhật tests/test_video_studio.py';
+    const goalB = 'Refactor job queue retry backoff in src/worker.js and update tests/test_worker.js';
     const pSame1 = await captureTurn1Offline(goalA, 'same-1');
     const pSame2 = await captureTurn1Offline(goalA, 'same-2');
     const pOtherB = await captureTurn1Offline(goalB, 'other-b');
@@ -194,19 +195,19 @@ export async function runTurn1OfflineDiagnosis(options = {}) {
 
 export const DEFAULT_THREE_COMPARISON_GOALS = [
   {
-    id: 'goal-1-preset-pills',
-    label: 'Preset Pills UI + DOM Contract',
+    id: 'goal-1-filter-pills',
+    label: 'Filter Pills UI + DOM Contract',
     goal: DEFAULT_PRESET_PILLS_GOAL
   },
   {
-    id: 'goal-2-eraser-roi',
-    label: 'Eraser ROI Box + Bridge + Test',
-    goal: 'Sửa hàm probe_roi_banner_box và detect_banner_box trong core/eraser.py để xử lý vùng ROI rỗng an toàn, kiểm tra kết nối qua eraser_probe trong ui_bridge/js_api.py và bổ sung unit test trong tests/test_eraser.py.'
+    id: 'goal-2-worker-bounds',
+    label: 'Worker Bounds + Bridge + Test',
+    goal: 'Fix empty input bounds handling in src/worker.js, wire health check in api/bridge.js, and add unit tests in tests/test_worker.js.'
   },
   {
     id: 'goal-3-provider-presets',
     label: 'ProviderService + Bridge Presets + Test',
-    goal: 'Kiểm tra và sửa lỗi xử lý danh sách model mặc định trong ProviderService (core/providers/service.py) và hàm provider_list_presets trong ui_bridge/js_api.py kèm test trong tests/test_providers.py.'
+    goal: 'Fix default model list handling in ProviderService (src/providers/service.js) and list_presets in api/bridge.js with unit tests in tests/test_providers.js.'
   }
 ];
 

@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
 
 import { runAgent } from '../runtime/index.mjs';
+import { resolveRepoRoot } from './applier.mjs';
 import { readInstalled9RouterVersion } from './lib/client-9router.mjs';
 import { buildScopedFilesContext } from './lib/context-builders.mjs';
 import { inspectPayloadPrefixInvariance } from './lib/prefix-invariant.mjs';
@@ -21,7 +22,7 @@ import { inspectPayloadPrefixInvariance } from './lib/prefix-invariant.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEAM_DIR = path.resolve(__dirname, '..');
-const REPO_ROOT = path.resolve(TEAM_DIR, '..');
+const REPO_ROOT = resolveRepoRoot();
 
 function jsonBytes(val) {
   return Buffer.byteLength(JSON.stringify(val ?? null), 'utf8');
@@ -164,7 +165,7 @@ export async function measureWriterBucketReplayCache(options = {}) {
   const modelOverride = options.modelOverride || 'ag/gemini-3.8-flash-medium';
   const scope = Array.isArray(options.scope) && options.scope.length > 0
     ? options.scope
-    : ['core/inpaint_models.py'];
+    : ['src/cache_store.py'];
   const maxTurns = Number(options.maxTurns ?? 3);
   const resolved9RouterVersion = options.nineRouterVersion !== undefined
     ? options.nineRouterVersion
@@ -175,15 +176,15 @@ export async function measureWriterBucketReplayCache(options = {}) {
 
   const taskSeed = {
     task_id: options.taskId || 'T-2026-11-01-010-cache-replay',
-    title: 'Inspect LamaInpainter callers and verify SHA-256 metadata in core/inpaint_models.py',
+    title: 'Inspect CacheStore callers and verify SHA-256 metadata in src/cache_store.py',
     goal:
-      'Execute 3 sequential read-only verification steps across separate turns (Turn 1: read_file on tests/test_inpaint_models.py lines 1-45; Turn 2: search_code for "LamaInpainter" in core/; Turn 3: read_file on core/eraser.py lines 1-40) before outputting a brief SEARCH/REPLACE block for core/inpaint_models.py.',
+      'Execute 3 sequential read-only verification steps across separate turns (Turn 1: read_file on tests/test_cache_store.py lines 1-45; Turn 2: search_code for "CacheStore" in src/; Turn 3: read_file on src/worker.py lines 1-40) before outputting a brief SEARCH/REPLACE block for src/cache_store.py.',
     constraints: [
       'Run only ONE tool call per turn so Turns 1, 2, and 3 each verify one target sequentially before final output',
       'Keep thinking brief (<50 words) and do NOT modify workspace files'
     ],
     acceptance_criteria: [
-      'Verified tests/test_inpaint_models.py, search_code core/, and core/eraser.py imports',
+      'Verified tests/test_cache_store.py, search_code src/, and src/worker.py imports',
       'Output concise SEARCH/REPLACE proposal'
     ],
     scope
@@ -198,7 +199,7 @@ export async function measureWriterBucketReplayCache(options = {}) {
     `GOAL: ${taskSeed.goal}`,
     `CONSTRAINTS: ${taskSeed.constraints.join('; ')}`,
     `ACCEPTANCE CRITERIA: ${taskSeed.acceptance_criteria.join('; ')}`,
-    `Please verify step-by-step (ONE tool call per turn: first read_file on tests/test_inpaint_models.py lines 1-45, next search_code for LamaInpainter in core/, then read_file on core/eraser.py lines 1-40) before outputting a minimal SEARCH/REPLACE block for [${scope.join(', ')}].`
+    `Please verify step-by-step (ONE tool call per turn: first read_file on tests/test_cache_store.py lines 1-45, next search_code for CacheStore in src/, then read_file on src/worker.py lines 1-40) before outputting a minimal SEARCH/REPLACE block for [${scope.join(', ')}].`
   ].join('\n\n');
 
   const capturedPayloads = [];

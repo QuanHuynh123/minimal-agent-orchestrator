@@ -17,11 +17,11 @@ export const DEFAULT_CACHE_BENCHMARK_MODELS = [
 ];
 
 const STATIC_REFERENCE_BLOCK = [
-  'SampleApp Architecture & Invariant Reference Manual:',
-  '1. Execution Layer Boundary: web/index.html delegates backend commands over an RPC API layer into api/bridge.py, which schedules background worker threads inside src/* and returns asynchronous updates exclusively through api/event_bus.py.',
-  '2. Indentation Standard: Every source module MUST follow the project formatter/indentation rules verified via validator.mjs fast mode.',
-  '3. Security & Secret Hygiene: Credentials and webhook secrets are stored strictly in the OS credential vault, never written to plaintext JSON configs and never exposed to the browser view.',
-  '4. Bounded Network & Process Execution: All subprocess invocations and HTTP requests specify explicit timeouts, and PowerShell scripts invoke curl.exe --max-time rather than bare curl.',
+  'Minimal Agent Orchestrator Architecture & Invariant Reference Manual:',
+  '1. Execution Layer Boundary: Frontend view components delegate backend commands over structured RPC/API bridges into backend services, which schedule background worker threads and return asynchronous updates via an event bus.',
+  '2. Project Formatting Standard: Every modified module MUST preserve the repository indentation convention (tabs or spaces) and pass configured fast validation checks.',
+  '3. Security & Secret Hygiene: Credentials and webhook secrets are stored strictly in OS keyring/vault storage, never written to plaintext JSON configs and never exposed to client views.',
+  '4. Bounded Network & Process Execution: All subprocess invocations and HTTP requests specify explicit timeouts, and shell diagnostics use bounded non-interactive flags.',
   '5. Prompt Prefix Invariance Protocol: Prefix tokens [0..N] sent on Turn N MUST remain byte-for-byte immutable on Turn N+1 across messages and tool declarations so upstream provider KV caches stay warm across multi-turn reasoning loops.',
   '6. Telemetry Integrity Rules: Provider usage objects are preserved verbatim as raw_usage alongside requested_model and actual_model; cached_tokens remains null whenever the upstream provider omits cache telemetry fields.'
 ].join('\n');
@@ -77,11 +77,11 @@ export function buildControlledCachePrompts(nonce = '') {
 
 const ROUTER_CONTEXT_MODULE_BLOCK = [
   STATIC_REFERENCE_BLOCK,
-  'Module Inventory Slice: src/fetcher.py | src/worker.py | src/parser.py | src/ai_providers.py | src/providers/presets.py | src/providers/store.py | api/bridge.py | api/event_bus.py | web/index.html.',
+  'Module Inventory Slice: src/downloader.py | src/worker.py | src/transcriber.py | src/ai_providers.py | src/providers/presets.py | src/providers/store.py | api/bridge.py | api/event_bus.py | web/index.html.',
   'Routing Constraints & Verification Checklist:',
   '- Scope must stay atomic (< 150 lines changed per task YAML) with explicit acceptance_criteria and mode (quick | standard | consult).',
-  '- UI changes require verifying API bridge contracts, DOM safe rendering (.textContent), and custom event listeners without innerHTML.',
-  '- Automated test verification runs the configured project test suite before marking a task complete.'
+  '- UI preset changes require verifying frontend/backend API bridges, DOM safe rendering (.textContent), and custom event listeners without innerHTML.',
+  '- Verification runs the configured fast_checks and suite_checks with indentation and regression tests before marking task complete.'
 ].join('\n');
 
 function cloneRouterToolsWithPrefixTag(baseTools, tag) {
@@ -128,9 +128,9 @@ export function buildRouterSizedCachePrompts(nonce = '', options = {}) {
   }
 
   const userTail = [
-    'ALLOWED DIRECTORIES: [src/, api/, web/, tests/]',
+    'ALLOWED DIRECTORIES: [src/, api/, web/, tests/, agent-team/]',
     'AVAILABLE SQUAD MODELS: [kr/claude-sonnet-4.5-thinking, ag/claude-sonnet-5-5, ag/gemini-3.8-flash-medium, ag/claude-opus-5-5-medium]',
-    'USER GOAL: Clean up preset pills overflow and wire dry-run telemetry diagnostics safely.',
+    'USER GOAL: Clean up filter pills overflow and wire dry-run telemetry diagnostics safely.',
     'INSTRUCTION: Benchmark probe only. Ignore task planning output schema above and reply strictly with one word: OK.'
   ].join('\n\n');
 

@@ -449,11 +449,11 @@ async function runTurn1DiagnosisTests() {
 async function runWriterBucketCacheReplayTests() {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'writer-cache-replay-'));
   const tmpRepoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'writer-cache-repo-'));
-  fs.mkdirSync(path.join(tmpRepoRoot, 'core'), { recursive: true });
+  fs.mkdirSync(path.join(tmpRepoRoot, 'src'), { recursive: true });
   fs.mkdirSync(path.join(tmpRepoRoot, 'tests'), { recursive: true });
-  fs.writeFileSync(path.join(tmpRepoRoot, 'core', 'inpaint_models.py'), 'class LamaInpainter:\n\tpass\n', 'utf8');
-  fs.writeFileSync(path.join(tmpRepoRoot, 'core', 'eraser.py'), 'from core.inpaint_models import LamaInpainter\n', 'utf8');
-  fs.writeFileSync(path.join(tmpRepoRoot, 'tests', 'test_inpaint_models.py'), Array.from({ length: 50 }, (_, i) => `def test_inpaint_${i}():\n\tassert True`).join('\n') + '\n', 'utf8');
+  fs.writeFileSync(path.join(tmpRepoRoot, 'src', 'cache_store.py'), 'class CacheStore:\n\tpass\n', 'utf8');
+  fs.writeFileSync(path.join(tmpRepoRoot, 'src', 'worker.py'), 'from src.cache_store import CacheStore\n', 'utf8');
+  fs.writeFileSync(path.join(tmpRepoRoot, 'tests', 'test_cache_store.py'), Array.from({ length: 50 }, (_, i) => `def test_cache_${i}():\n\tassert True`).join('\n') + '\n', 'utf8');
   try {
     let callIdx = 0;
     const mockGeminiFetch = async (_url, init = {}) => {
@@ -463,26 +463,26 @@ async function runWriterBucketCacheReplayTests() {
 
       if (callIdx === 1) {
         return buildCompletionResponse(payload, {
-          content: '<think>Check test_inpaint_models.py first.</think>\nCalling read_file.',
+          content: '<think>Check test_cache_store.py first.</think>\nCalling read_file.',
           toolCalls: [{
             id: 'call_w_1',
             type: 'function',
             function: {
               name: 'read_file',
-              arguments: JSON.stringify({ path: 'tests/test_inpaint_models.py', start_line: 1, end_line: 40 })
+              arguments: JSON.stringify({ path: 'tests/test_cache_store.py', start_line: 1, end_line: 40 })
             }
           }]
         });
       }
       if (callIdx === 2) {
         return buildCompletionResponse(payload, {
-          content: '<think>Now check LamaInpainter callers in core/eraser.py.</think>\nCalling search_code.',
+          content: '<think>Now check CacheStore callers in src/worker.py.</think>\nCalling search_code.',
           toolCalls: [{
             id: 'call_w_2',
             type: 'function',
             function: {
               name: 'search_code',
-              arguments: JSON.stringify({ pattern: 'LamaInpainter', dir: 'core' })
+              arguments: JSON.stringify({ pattern: 'CacheStore', dir: 'src' })
             }
           }]
         });
@@ -490,13 +490,13 @@ async function runWriterBucketCacheReplayTests() {
 
       if (callIdx === 3) {
         return buildCompletionResponse(payload, {
-          content: '<think>Verify core/inpaint_models.py symbol references.</think>\nCalling get_repo_map.',
+          content: '<think>Verify src/cache_store.py symbol references.</think>\nCalling get_repo_map.',
           toolCalls: [{
             id: 'call_w_3',
             type: 'function',
             function: {
               name: 'get_repo_map',
-              arguments: JSON.stringify({ scope: ['core/inpaint_models.py'] })
+              arguments: JSON.stringify({ scope: ['src/cache_store.py'] })
             }
           }]
         });
@@ -504,7 +504,7 @@ async function runWriterBucketCacheReplayTests() {
 
       return makeSseFetchResponse({
         role: 'assistant',
-        content: 'FILE: core/inpaint_models.py\n<<<<<<< SEARCH\npass\n=======\npass\n>>>>>>> REPLACE'
+        content: 'FILE: src/cache_store.py\n<<<<<<< SEARCH\npass\n=======\npass\n>>>>>>> REPLACE'
       });
     };
 

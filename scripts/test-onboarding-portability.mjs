@@ -4,30 +4,38 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import YAML from 'yaml';
 
 import { resolveRepoRoot } from './applier.mjs';
 import { buildVerificationCommandsForTests, checkScopeWithDependents } from './goal-planner.mjs';
 import { parseDiagnosticCommand } from '../runtime/tool-runtime.mjs';
+import {
+  collectEnvironmentFingerprint,
+  compareEnvironmentFingerprints,
+  isRunnablePythonBinary,
+  isWindowsStorePythonStub
+} from './validator.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEAM_DIR = path.resolve(__dirname, '..');
 
-function walkFiles(dir, out = []) {
+function walkFiles(dir, out = [], extRe = /\.(?:mjs|js)$/i) {
+  if (!fs.existsSync(dir)) return out;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === 'node_modules' || entry.name === '.git') continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      walkFiles(full, out);
-    } else if (/\.(?:mjs|js)$/i.test(entry.name)) {
+      walkFiles(full, out, extRe);
+    } else if (extRe.test(entry.name)) {
       out.push(full);
     }
   }
   return out;
 }
 
-function runTests() {
-  console.log('Testing Onboarding & Cross-Platform Portability (v3.2.1)...\n');
+async function runTests() {
+  console.log('Testing Onboarding & Cross-Platform Portability (v3.2.2)...\n');
 
   const tmpSpaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'td space test '));
   try {
@@ -155,11 +163,71 @@ function runTests() {
     assert.equal(parseDiagnosticCommand('node --test ../escape.js').ok, false);
     assert.equal(parseDiagnosticCommand('node --test --eval 1').ok, false);
     assert.equal(parseDiagnosticCommand('node -e "1"').ok, false);
+
+    // 5. Non-Python JS/TS project skips Python, pip freeze, and ONNX probes by default
+    const jsFp = await collectEnvironmentFingerprint({
+      policy: {
+        repo_root: jsApp,
+        language: 'javascript',
+        validation: { fast_checks: [{ name: 'unit', run: 'node --test' }], suite_checks: [] }
+      }
+    });
+    assert.equal(jsFp.python_path, null, 'Non-Python JS project must not probe python_path');
+    assert.equal(jsFp.pip_freeze_hash, null, 'Non-Python JS project must not run pip freeze');
+    assert.equal('onnxruntime' in jsFp, false, 'Non-Python JS project must not include onnxruntime unless opted in');
+    assert.equal('onnx_models' in jsFp, false, 'Non-Python JS project must not include onnx_models unless opted in');
+    assert.equal(
+      compareEnvironmentFingerprints(jsFp, { ...jsFp, checked_at: '2099-01-01T00:00:00.000Z' }).matched,
+      true,
+      'JS environment fingerprint comparison must match when ignoring checked_at'
+    );
+
+    // 6. WindowsApps 0-byte stub rejection helpers
+    const zeroByteStub = path.join(tmpSpaceRoot, 'python3.exe');
+    fs.writeFileSync(zeroByteStub, '', 'utf8');
+    assert.equal(isRunnablePythonBinary(zeroByteStub), false, '0-byte Python stub must not be runnable');
+    assert.equal(
+      isWindowsStorePythonStub('C:\\Users\\demo\\AppData\\Local\\Microsoft\\WindowsApps\\python3.exe'),
+      true,
+      'Must identify Microsoft WindowsApps Python stub'
+    );
+    assert.equal(isWindowsStorePythonStub('C:\\Python312\\python.exe'), false);
+
+    // 7. Static Neutrality Gate across non-test code, config, roles, runtime, and ui
+    const forbiddenLeakRe = /\b(?:tool-download|TOOLDOWNLOAD_MODELS_DIR|pywebview|ui_web|ui_bridge|js_api|lama_fp32|ch_PP-OCRv4|LamaInpainter|inpaint_models|hard-sub-eraser|Alex Rivera)\b/i;
+    const scanDirs = ['config', 'roles', 'runtime', 'scripts', 'ui'];
+    const textExtRe = /\.(?:mjs|js|md|yaml|yml|html|css|json)$/i;
+    for (const dirName of scanDirs) {
+      for (const filePath of walkFiles(path.join(TEAM_DIR, dirName), [], textExtRe)) {
+        const rel = path.relative(TEAM_DIR, filePath).replace(/\\/g, '/');
+        if (dirName === 'scripts' && path.basename(filePath).startsWith('test-')) continue;
+        if (/\.local\.ya?ml$/i.test(filePath)) continue;
+        const content = fs.readFileSync(filePath, 'utf8');
+        if (rel === 'config/policy.yaml') {
+          const parsedPolicy = YAML.parse(content);
+          if (parsedPolicy?.policy?.project_id !== 'my-project') continue;
+          assert.deepEqual(
+            parsedPolicy?.policy?.validation?.flaky_baseline_failures || [],
+            [],
+            'Neutral template config/policy.yaml must keep flaky_baseline_failures empty ([])'
+          );
+        }
+        const match = content.match(forbiddenLeakRe);
+        assert.equal(
+          Boolean(match),
+          false,
+          `Host-project remnant "${match?.[0]}" leaked into non-test file ${rel}`
+        );
+      }
+    }
   } finally {
     fs.rmSync(tmpSpaceRoot, { recursive: true, force: true });
   }
 
-  console.log('[PASS] test-onboarding-portability (resolveRepoRoot, URL spaces, cross-platform tests, diagnostic command guard)');
+  console.log('[PASS] test-onboarding-portability (resolveRepoRoot, URL spaces, cross-platform tests, JS/ONNX gate, neutrality gate)');
 }
 
-runTests();
+runTests().catch(err => {
+  console.error(err);
+  process.exit(1);
+});

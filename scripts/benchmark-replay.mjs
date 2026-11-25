@@ -33,12 +33,7 @@ const __dirname = path.dirname(__filename);
 const TEAM_DIR = path.resolve(__dirname, '..');
 const DEFAULT_REPO_ROOT = path.resolve(TEAM_DIR, '..');
 const SUITE_PATH = path.resolve(TEAM_DIR, 'benchmarks', 'suite-v1.json');
-const PRESET_PILLS_TASK_PATH = path.resolve(
-  TEAM_DIR,
-  'tasks',
-  'active',
-  'T-2026-11-13-0148-1-don-dep-preset-pills-va-fix-ov.yaml'
-);
+const PRESET_PILLS_TASK_PATH = path.resolve(TEAM_DIR, 'tasks', 'task-template.yaml');
 const ARCHIVE_DIR = path.resolve(TEAM_DIR, 'tasks', 'archive');
 const STATE_PATH = path.resolve(TEAM_DIR, 'state', 'task-state.json');
 const CALLS_JSONL_PATH = path.resolve(TEAM_DIR, 'state', 'telemetry', 'calls.jsonl');
@@ -84,7 +79,7 @@ function commitExists(sha, cwd = DEFAULT_REPO_ROOT) {
   }
 }
 
-export function runBenchmarkInspect({ backfillJsonl = false } = {}) {
+export function runBenchmarkInspect({ backfillJsonl = false, archiveFile = null } = {}) {
   if (!fs.existsSync(SUITE_PATH)) {
     throw new Error(`Benchmark suite not found at ${SUITE_PATH}`);
   }
@@ -102,8 +97,8 @@ export function runBenchmarkInspect({ backfillJsonl = false } = {}) {
   console.log(`\nVerified git commits: ${validCommits}/${suite.tasks.length} tasks ready for deterministic replay.`);
 
   // Reconcile archived task YAML & backfill enriched telemetry if requested
-  const targetArchive = path.resolve(ARCHIVE_DIR, 'T-2026-11-09-6459-1-on-gian-hoa-hard-sub-eraser-gi.yaml');
-  if (fs.existsSync(targetArchive)) {
+  const targetArchive = archiveFile ? path.resolve(archiveFile) : null;
+  if (targetArchive && fs.existsSync(targetArchive)) {
     const task = loadTaskYaml(targetArchive);
     if (backfillJsonl) {
       if (fs.existsSync(CALLS_JSONL_PATH)) {
@@ -208,7 +203,7 @@ export async function replayPresetPillsBenchmark(options = {}) {
     const writerFn = options.writerInvokerFn || (async ({ attempt }) => ({
       ok: true,
       attempt,
-      modifiedFiles: Array.isArray(task.scope) ? [...task.scope] : ['ui_web/index.html'],
+      modifiedFiles: Array.isArray(task.scope) ? [...task.scope] : ['web/index.html'],
       diffText: ''
     }));
 
@@ -281,6 +276,14 @@ export async function replayPresetPillsKnownFailuresVariant(options = {}) {
   const basePolicy = options.policyConfig || loadMergedPolicy();
   const baseValidation = basePolicy?.policy?.validation || basePolicy?.validation || {};
   const existingKnown = Array.isArray(baseValidation.known_failures) ? baseValidation.known_failures : [];
+  let inferredTestId = options.testIdContains || null;
+  if (!inferredTestId) {
+    try {
+      const sampleTask = loadTaskYaml(path.resolve(options.taskPath || PRESET_PILLS_TASK_PATH));
+      const m = String(sampleTask?.last_error || '').match(/\bFAIL:\s+([A-Za-z0-9_]+)/);
+      if (m) inferredTestId = m[1];
+    } catch {}
+  }
   const variantPolicy = {
     ...basePolicy,
     policy: {
@@ -291,9 +294,9 @@ export async function replayPresetPillsKnownFailuresVariant(options = {}) {
           ...existingKnown,
           {
             check_name: 'unit_test_suite',
-            test_id_contains: 'test_detect_faint_watermark_mask_on_busy_background',
-            owner: options.owner || 'Quan Huynh',
-            due_at: options.due_at || '2026-12-01'
+            test_id_contains: inferredTestId || 'test_flaky_background_worker',
+            owner: options.owner || 'Jane Doe',
+            due_at: options.due_at || '2099-12-31'
           }
         ]
       }
@@ -312,8 +315,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
     try {
       const task = loadTaskYaml(PRESET_PILLS_TASK_PATH);
       const historicalErrorSummary = task.last_error || task.error_history?.[0]?.summary || [
-        'FAIL: test_detect_faint_watermark_mask_on_busy_background (test_eraser.EraserTests.test_detect_faint_watermark_mask_on_busy_background)',
-        'AssertionError: 0.5253888888888889 not less than 0.45'
+        'FAIL: test_flaky_background_worker (tests.test_worker.WorkerTests.test_flaky_background_worker)',
+        'AssertionError: expected status 200'
       ].join('\n');
       const policyConfig = loadMergedPolicy();
       const liveBaseline = await runBaselinePreflight({ policyConfig, repoRoot: DEFAULT_REPO_ROOT, stateDir: tmpOut });

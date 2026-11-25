@@ -503,7 +503,6 @@ export const DEFAULT_FRONTEND_PATTERNS = [
   '**/*.vue',
   '**/*.svelte',
   '**/ui/**',
-  '**/web/**',
   '**/frontend/**',
   '**/client/**',
   '**/components/**',

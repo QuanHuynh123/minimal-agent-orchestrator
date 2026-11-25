@@ -142,13 +142,14 @@ policy:
     max_baseline_failures: 3
     max_baseline_runtime_sec: 300
     enobufs_external_socket_threshold: 50
-    flaky_baseline_failures:
-      - id: "win32_enobufs_socket_exhaustion"
-        check_name: "*"
-        error_pattern: "\\bENOBUFS\\b"
-        owner: "Alex Rivera"
-        due_at: "2026-12-15"
-        note: "Flaky only when isolated retry passes AND non-test process sockets exceed threshold; 3 consecutive hits block task"
+    # Optional flaky failure allowlist example (uncomment & customize if needed):
+    # flaky_baseline_failures:
+    #   - id: win32_enobufs_socket_exhaustion
+    #     check_name: *
+    #     error_pattern: \\bENOBUFS\\b
+    #     owner: Your Name
+    #     due_at: 2027-12-31
+    flaky_baseline_failures: []
     fast_checks: []
     suite_checks: []
 
