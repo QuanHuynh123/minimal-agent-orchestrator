@@ -221,240 +221,240 @@
     const btnSaveTeamConfigEl = document.getElementById('btn-save-team-config');
     let currentPolicyConfig = null;
 
-    // Role Reference Manual Data (Grounded in roles/*.md & Architecture v3.1)
+    // Role Reference Manual Data (Grounded in roles/*.md)
     const ROLE_DOSSIER_CATALOG = {
       router: {
         phase: 'PHA 01',
         specFile: 'roles/router.md',
         title: 'ROUTER',
-        subtitle: 'Phân tích yêu cầu & Phân rã tác vụ (Goal Decomposition)',
-        kpi1: { label: 'CƠ CHẾ VẬN HÀNH', val: '1 lượt mặc định', sub: 'Tự động mở tối đa 5 lượt nếu thiếu từ khóa' },
-        kpi2: { label: 'ĐỊNH MỨC TIÊU THỤ', val: '~5.7K tokens / yêu cầu', sub: 'Tiết kiệm ~80% nhờ trinh sát 0-token' },
+        subtitle: 'Phân tích yêu cầu & Khóa Scope',
+        kpi1: { label: 'VẬN HÀNH', val: '1 lượt mặc định', sub: 'Tối đa 5 lượt nếu thiếu từ khóa' },
+        kpi2: { label: 'ĐỊNH MỨC', val: '~5.7K tok / goal', sub: 'Trinh sát 0-token trước gọi AI' },
         rec: {
           tier: 'Fast Tier',
-          primary: 'Năng lực: Suy luận nhanh, độ trễ thấp, xuất JSON hợp lệ trong 1 lượt',
-          secondary: 'Năng lực dự phòng: Ngữ cảnh rộng hơn để leo thang khi JSON lỗi',
-          reason: 'Ngữ cảnh đầu vào đã được bộ trinh sát từ khóa 0-token và Repo Map chuẩn bị sẵn. Model suy luận nhanh giúp phân rã tác vụ trong 1 lượt và giữ model mạnh cho Reviewer/Designer.'
+          primary: 'Năng lực: Suy luận nhanh, xuất JSON hợp lệ trong 1 lượt',
+          secondary: 'Năng lực dự phòng: Leo thang khi JSON lỗi',
+          reason: 'Phân rã tác vụ 1 lượt dựa trên Repo Map, giữ quota model mạnh cho Spec & Review.'
         },
-        plainSummary: 'Tiếp nhận yêu cầu từ người dùng, đối chiếu với cấu trúc thư mục và Repo Map để tách thành 1–3 tác vụ độc lập (<150 dòng thay đổi), đồng thời khóa chặt danh sách file được phép chỉnh sửa (scope).',
+        plainSummary: 'Tách yêu cầu thành 1–3 task nguyên tử (<150 dòng) và khóa chặt danh sách file được phép sửa.',
         operations: [
           {
-            title: '01. NHIỆM VỤ CỐT LÕI',
+            title: '01. PHÂN RÃ TÁC VỤ',
             tag: 'JSON Plan',
-            desc: 'Phân tích mục tiêu → Chia thành 1–3 task nguyên tử, xác định danh sách file (scope), phân loại chế độ chạy (quick / standard / consult) và đặt tiêu chí nghiệm thu.'
+            desc: 'Chia mục tiêu thành 1–3 task kèm scope, chế độ (quick/standard/consult) và tiêu chí.'
           },
           {
-            title: '02. CƠ CHẾ THỰC THI',
+            title: '02. VÒNG LẶP LAI',
             tag: 'Hybrid Loop',
-            desc: 'Mặc định lập kế hoạch trong 1 lượt dựa trên đoạn code ứng viên 0-token. Chỉ mở rộng sang vòng lặp gọi tool (tối đa 5 lượt) khi yêu cầu trừu tượng chưa khớp từ khóa.'
+            desc: 'Mặc định 1 lượt từ ngữ cảnh 0-token; chỉ gọi tool (tối đa 5 lượt) khi thiếu khớp từ khóa.'
           },
           {
-            title: '03. DỮ LIỆU ĐẦU VÀO',
+            title: '03. NGỮ CẢNH ĐẦU VÀO',
             tag: 'Read-Only',
-            desc: 'Nhận cây thư mục, Repo Map, các cửa sổ code khớp từ khóa (~25 dòng) và tự động đính kèm các file kiểm thử liên quan vào verification_commands.'
+            desc: 'Nhận Repo Map, đồ thị phụ thuộc 1-hop và tự đính kèm tệp kiểm thử liên quan.'
           },
           {
-            title: '04. GIỚI HẠN AN TOÀN',
+            title: '04. AN TOÀN SCOPE',
             tag: 'Zero Write',
-            desc: 'Không trực tiếp chỉnh sửa mã nguồn; không suy đoán tên file ngoài thực tế dự án; không vượt quá số lượng file tối đa mỗi task (max_files_per_task).'
+            desc: 'Không sửa code; không bịa tên file ngoài Repo Map; giữ đúng trần max_files_per_task.'
           }
         ],
-        proTip: 'Nên gán model nhanh làm Router mặc định trong team.yaml và cấu hình escalation_model dự phòng khi JSON không hợp lệ, giúp bảo toàn quota cho Architect, Designer và Reviewer.',
+        proTip: 'Đặt model nhanh làm mặc định và escalation_model dự phòng khi JSON lỗi.',
         defaultImg: '/assets/roles/router.webp'
       },
       architect: {
         phase: 'PHA 02A',
         specFile: 'roles/architect.md',
         title: 'ARCHITECT',
-        subtitle: 'Đặc tả Kiến trúc & Hợp đồng Kỹ thuật (Tech Spec & Contract Table)',
-        kpi1: { label: 'CHỌN MODEL THEO RISK', val: 'spec_models', sub: 'Low/Medium dùng model gọn • High/Critical dùng model mạnh' },
-        kpi2: { label: 'TỐI ƯU RETRY', val: 'Tái dùng Spec 0-token', sub: 'Giữ nguyên Spec khi chỉ vướng lỗi Apply cơ khí' },
+        subtitle: 'Đặc tả Kiến trúc & Bảng hợp đồng',
+        kpi1: { label: 'CHỌN MODEL', val: 'Theo risk (spec_models)', sub: 'Low/Med gọn • High/Crit mạnh' },
+        kpi2: { label: 'TỐI ƯU RETRY', val: 'Tái dùng Spec 0-token', sub: 'Giữ nguyên khi chỉ lỗi Apply' },
         rec: {
           tier: 'Lead / Spec Tier',
-          primary: 'Năng lực: Phân tích hợp đồng API/Schema, khóa bảng hàm & luồng biên trước khi viết code',
-          secondary: 'Cấu hình trong team.yaml -> spec_models (low/medium/high/critical)',
-          reason: 'Architect đóng vai "1 Người Giỏi" lập Bảng hợp đồng để "1 Người Thợ" (Writer) thi công chính xác trong 1–2 lần thử, giảm retry lan man.'
+          primary: 'Năng lực: Khóa hợp đồng hàm/API và nhánh lỗi trước khi viết code',
+          secondary: 'Cấu hình trong team.yaml -> spec_models',
+          reason: 'Lập Bảng hợp đồng để Writer điền đúng ngay 1–2 lượt đầu, tránh lặp sửa mù.'
         },
-        plainSummary: 'Đọc file trong scope và láng giềng 1-hop để viết đặc tả kỹ thuật kèm Bảng hợp đồng (Function | Input -> Output | Error/Fallback) trước khi Writer viết code. Có thể trả SKIP_SPEC ngay nếu task đơn giản.',
+        plainSummary: 'Đọc scope và láng giềng 1-hop để viết Bảng hợp đồng (Input -> Output | Error) trước khi Writer vá mã.',
         operations: [
           {
-            title: '01. BẢNG HỢP ĐỒNG KỸ THUẬT',
+            title: '01. BẢNG HỢP ĐỒNG',
             tag: 'Contract Table',
-            desc: 'Chốt rõ tên hàm, kiểu dữ liệu vào/ra và nhánh lỗi trước khi sinh bản vá, ưu tiên acceptance_criteria của task.'
+            desc: 'Chốt chữ ký hàm, kiểu trả về và nhánh lỗi theo đúng acceptance_criteria của task.'
           },
           {
-            title: '02. PHÂN TẦNG THEO RỦI RO',
+            title: '02. PHÂN TẦNG RỦI RO',
             tag: 'spec_models',
-            desc: 'Hệ thống tự chọn model từ team.yaml -> spec_models tương ứng với risk_level (hoặc roles.architect nếu cấu hình riêng).'
+            desc: 'Tự chọn model từ spec_models theo risk_level (hoặc roles.architect nếu bật riêng).'
           },
           {
-            title: '03. BỎ QUA NHANH & TÁI SỬ DỤNG',
+            title: '03. BỎ QUA & TÁI DÙNG',
             tag: 'Smart Reuse',
-            desc: 'Trả SKIP_SPEC nếu tiêu chí đã đủ rõ; khi Writer chỉ lỗi ở bước Applier (chưa đụng test), giữ nguyên Spec 0-token.'
+            desc: 'Trả SKIP_SPEC nếu task rõ; giữ lại Spec 0-token khi chỉ vướng lỗi Applier cơ khí.'
           },
           {
-            title: '04. GIỚI HẠN AN TOÀN',
+            title: '04. CHỈ XUẤT TÀI LIỆU',
             tag: 'Read-Only Spec',
-            desc: 'Chỉ xuất tài liệu Markdown vào state/runs/, gắn nhãn [ASSUMPTION] cho phần chưa rõ, không trực tiếp sửa mã nguồn.'
+            desc: 'Ghi đặc tả vào state/runs/, gắn nhãn [ASSUMPTION] cho phần giả định, không sửa mã.'
           }
         ],
-        proTip: 'Không cần tạo role riêng bắt buộc nếu đã cấu hình bảng spec_models trong team.yaml; giữ writer model độc lập với spec_models để tránh tự phê duyệt.',
+        proTip: 'Không cần thêm role riêng nếu đã đặt spec_models; giữ Writer khác model để tránh tự duyệt.',
         defaultImg: '/assets/roles/router.webp'
       },
       designer: {
         phase: 'PHA 02',
         specFile: 'roles/designer.md',
         title: 'DESIGNER',
-        subtitle: 'Thẩm định giao diện & Đặc tả UI/UX (Visual & Frontend Specifier)',
-        kpi1: { label: 'ĐIỀU KIỆN KÍCH HOẠT', val: 'Tác vụ UI / Có ảnh', sub: 'Tự động SKIP_SPEC nếu chỉ sửa logic nhỏ' },
-        kpi2: { label: 'YÊU CẦU MODEL', val: 'Vision + CSS/DOM', sub: 'Đọc ảnh tham chiếu & bảo toàn cấu trúc DOM' },
+        subtitle: 'Thẩm định giao diện & Đặc tả UI/UX',
+        kpi1: { label: 'KÍCH HOẠT', val: 'Tác vụ UI / Có ảnh', sub: 'SKIP_SPEC nếu sửa logic nhỏ' },
+        kpi2: { label: 'YÊU CẦU', val: 'Vision + CSS/DOM', sub: 'Đọc ảnh mẫu & giữ nguyên ID' },
         rec: {
           tier: 'Vision Tier',
           primary: 'Năng lực: Hỗ trợ Vision (đọc ảnh chụp), phân tích bố cục DOM/CSS',
-          secondary: 'Năng lực dự phòng: Thẩm định giao diện khi model chính gián đoạn',
-          reason: 'Cần model hỗ trợ Vision để đọc ảnh chụp màn hình hoặc bản vẽ mẫu khi thiết kế lại bố cục phức tạp.'
+          secondary: 'Năng lực dự phòng: Thẩm định giao diện thay thế',
+          reason: 'Dùng model Vision khi cần đọc ảnh mẫu (--image) hoặc tái cấu trúc bố cục lớn.'
         },
-        plainSummary: 'Phân tích ảnh chụp giao diện hoặc yêu cầu UI/UX, kiểm tra bố cục, bảng màu và độ tương phản, sau đó xuất bản đặc tả kỹ thuật (CSS tokens, cấu trúc DOM) để Writer thi công.',
+        plainSummary: 'Kiểm tra ảnh mẫu, bố cục và tương phản màu rồi xuất đặc tả CSS/DOM cho Writer thi công.',
         operations: [
           {
-            title: '01. NHIỆM VỤ CỐT LÕI',
+            title: '01. ĐẶC TẢ UI/UX',
             tag: 'UI/UX Spec',
-            desc: 'Đánh giá bố cục, hệ thống biến màu, độ tương phản (WCAG >= 4.5:1) và lập bản đặc tả thiết kế chi tiết cho giai đoạn viết code.'
+            desc: 'Chốt lưới bố cục, token màu và độ tương phản đạt chuẩn trước bước viết code.'
           },
           {
-            title: '02. CƠ CHẾ BỎ QUA THÔNG MINH',
+            title: '02. BỎ QUA THÔNG MINH',
             tag: 'Smart Skip',
-            desc: 'Nếu tác vụ chỉ điều chỉnh sự kiện JS hoặc sửa nút đơn giản đã rõ trong tiêu chí nghiệm thu, hệ thống trả về SKIP_SPEC ngay ở lượt đầu để tiết kiệm token.'
+            desc: 'Trả SKIP_SPEC ngay ở lượt đầu nếu chỉ gắn sự kiện JS hoặc sửa nút đơn giản.'
           },
           {
-            title: '03. CÔNG CỤ SỬ DỤNG',
+            title: '03. ĐỌC ẢNH & TOKEN',
             tag: 'Vision + Read',
-            desc: 'Đọc hình ảnh đính kèm (--image), tra cứu các file HTML/CSS hiện hữu qua read_file và search_code để đồng bộ với hệ thống biến CSS của dự án.'
+            desc: 'Đọc ảnh --image và tra file giao diện qua read_file để khớp token CSS hiện hữu.'
           },
           {
-            title: '04. GIỚI HẠN AN TOÀN',
+            title: '04. KHÔNG PHÁ DOM',
             tag: 'No Patching',
-            desc: 'Chỉ xuất tài liệu đặc tả vào thư mục chạy tạm (state/runs/); không trực tiếp sửa file mã nguồn và không tự ý thay đổi các ID/class đang gắn với logic JavaScript.'
+            desc: 'Chỉ xuất spec vào state/runs/; không sửa file và không đổi ID đang gắn logic JS.'
           }
         ],
-        proTip: 'Sử dụng model Vision (cấu hình tại roles.designer trong team.yaml) khi tác vụ có kèm ảnh mẫu (--image) hoặc cần tái cấu trúc giao diện lớn.',
+        proTip: 'Chỉ định model có Vision tại roles.designer khi làm mới hoặc chỉnh bố cục trực quan.',
         defaultImg: '/assets/roles/designer.webp'
       },
       writer: {
         phase: 'PHA 03',
         specFile: 'roles/writer.md',
         title: 'WRITER',
-        subtitle: 'Thi công mã nguồn & Tạo bản vá (Code Implementation)',
-        kpi1: { label: 'PHẠM VI CÔNG CỤ', val: '2–5 lượt', sub: 'Spec: 2 lượt | Quick (đủ): 3 | Smart/Standard: 5 (trần chung 12)' },
-        kpi2: { label: 'ĐỊNH DẠNG ĐẦU RA', val: 'SEARCH / REPLACE', sub: 'Tuân thủ chuẩn định dạng & cú pháp của từng dự án' },
+        subtitle: 'Thi công mã nguồn & Sinh bản vá',
+        kpi1: { label: 'PHẠM VI LƯỢT', val: '2–5 lượt', sub: 'Spec: 2 | Quick: 3 | Standard: 5' },
+        kpi2: { label: 'ĐẦU RA', val: 'SEARCH / REPLACE', sub: 'Chuẩn khối tìm kiếm & thay thế' },
         rec: {
           tier: 'Coder Tier',
-          primary: 'Năng lực: Sinh mã & xuất khối SEARCH/REPLACE dài ổn định, đúng cú pháp',
-          secondary: 'Năng lực dự phòng: Viết mã thay thế khi provider/preflight gặp lỗi',
-          reason: 'Writer thực hiện nhiều lượt đọc file và tạo bản vá nhất. Model đầu tiên trong danh sách đảm nhiệm mọi miền; các model sau chỉ dự phòng khi lỗi preflight/provider.'
+          primary: 'Năng lực: Xuất khối SEARCH/REPLACE dài ổn định, đúng cú pháp',
+          secondary: 'Năng lực dự phòng: Thay thế khi model chính lỗi API',
+          reason: 'Đảm nhiệm đọc file và sinh mã nhiều nhất; models[0] chạy chính, models[1..] chỉ dự phòng.'
         },
-        plainSummary: 'Đọc các file trong phạm vi cho phép (scope), đối chiếu với đặc tả kỹ thuật và xuất ra các khối mã SEARCH / REPLACE hoàn chỉnh để bộ Applier áp dụng vào dự án.',
+        plainSummary: 'Đọc file trong scope, bám sát đặc tả và xuất các khối SEARCH / REPLACE để Applier ghi đĩa.',
         operations: [
           {
-            title: '01. NHIỆM VỤ CỐT LÕI',
+            title: '01. SINH BẢN VÁ',
             tag: 'Code Patch',
-            desc: 'Hiện thực hóa yêu cầu kỹ thuật và đặc tả UI/UX trên các file thuộc scope thông qua định dạng khối tìm kiếm và thay thế (SEARCH / REPLACE).'
+            desc: 'Hiện thực hóa yêu cầu và đặc tả qua khối tìm kiếm / thay thế (SEARCH / REPLACE).'
           },
           {
-            title: '02. TỐI ƯU NGÂN SÁCH ĐẦU RA',
+            title: '02. TIẾT KIỆM TOKEN',
             tag: 'Compact Output',
-            desc: 'Giữ phần suy luận ngắn gọn để dành tối đa dung lượng token đầu ra cho việc sinh mã nguồn đầy đủ, tránh hiện tượng cắt cụt khối code.'
+            desc: 'Giữ phần giải thích ngắn gọn để dồn dung lượng cho đoạn mã đầy đủ, tránh cụt khối.'
           },
           {
-            title: '03. PHÂN TÁCH MIỀN TỰ ĐỘNG',
+            title: '03. CHIA BUCKET',
             tag: 'Bucket Split',
-            desc: 'Khi tác vụ bao gồm cả Backend và Frontend hoặc file dung lượng lớn (>55KB), hệ thống tự động chia thành các bước tuần tự theo bucket.'
+            desc: 'Tự tách bước tuần tự khi task chạm cả Backend/Frontend hoặc file lớn >55KB.'
           },
           {
-            title: '04. GIỚI HẠN AN TOÀN',
+            title: '04. RÀNG BUỘC AN TOÀN',
             tag: 'Strict Scope',
-            desc: 'Cấm sửa file ngoài scope; cấm lược bỏ code bằng chú thích rút gọn; tuân thủ policy kiểm tra cú pháp dự án và render DOM an toàn (.textContent).'
+            desc: 'Không sửa ngoài scope; không rút gọn bằng comment; tuân thủ định dạng dự án và .textContent.'
           }
         ],
-        proTip: 'Mọi bản vá của Writer đều được kiểm tra tự động bởi Gatekeeper (Applier + Tree-sitter + Bộ Test), do đó nên đặt model viết code tối ưu chi phí ở models[0] và model dự phòng ở models[1..].',
+        proTip: 'Đặt model viết code tối ưu chi phí ở models[0]; Gatekeeper sẽ kiểm test tự động 0-token.',
         defaultImg: '/assets/roles/writer.webp'
       },
       reviewer: {
         phase: 'PHA 05',
         specFile: 'roles/reviewer.md',
         title: 'REVIEWER',
-        subtitle: 'Thẩm định chất lượng mã nguồn & Kiến trúc (Code Review)',
-        kpi1: { label: 'THỜI ĐIỂM CHẠY', val: 'Sau khi vượt qua Test', sub: 'Chỉ gọi 1 lượt ở chế độ Standard / High' },
-        kpi2: { label: 'DUNG LƯỢNG NGỮ CẢNH', val: '~1.1K – 3K tokens', sub: 'Chỉ đọc bản git diff đã lọc gọn (-U8)' },
+        subtitle: 'Thẩm định Diff & An toàn kiến trúc',
+        kpi1: { label: 'THỜI ĐIỂM', val: 'Sau khi Pass Test', sub: '1 lượt ở Standard / High' },
+        kpi2: { label: 'NGỮ CẢNH', val: '~1.1K – 3K tok', sub: 'Chỉ đọc git diff rút gọn (-U8)' },
         rec: {
           tier: 'Review Tier',
-          primary: 'Năng lực: Lập luận sâu, soát lỗi logic, bảo mật & sai khác hợp đồng',
-          secondary: 'Yêu cầu độc lập với Writer để bảo toàn chốt chặn Anti-Self-Review',
-          reason: 'Chỉ kích hoạt đúng 1 lượt ở cuối quy trình sau khi bản vá đã vượt qua toàn bộ kiểm thử tự động, tiêu tốn rất ít token (~0.1%–0.2% quota mỗi lần gọi).'
+          primary: 'Năng lực: Soát lỗi logic, bảo mật & sai lệch hợp đồng',
+          secondary: 'Độc lập với Writer (Anti-Self-Review)',
+          reason: 'Chỉ gọi 1 lượt cuối sau khi pass hết test nên tốn rất ít quota.'
         },
-        plainSummary: 'Đóng vai trò kiểm soát chất lượng cuối cùng trước khi tạo Git commit: đối chiếu bản thay đổi (git diff) với tiêu chí nghiệm thu để phát hiện lỗi logic, xung đột luồng hoặc rò rỉ tài nguyên.',
+        plainSummary: 'Đối chiếu git diff với acceptance_criteria để bắt lỗi logic, nghẽn luồng hoặc rò rỉ tài nguyên.',
         operations: [
           {
-            title: '01. ĐỐI CHIẾU YÊU CẦU',
+            title: '01. ĐỐI CHIẾU TIÊU CHÍ',
             tag: 'Correctness',
-            desc: 'Kiểm tra bản git diff thực tế so với từng mục trong acceptance_criteria nhằm đảm bảo vấn đề được giải quyết tận gốc.'
+            desc: 'Kiểm tra bản sửa có giải quyết đúng từng mục trong acceptance_criteria hay không.'
           },
           {
-            title: '02. KIỂM TRA AN TOÀN HỆ THỐNG',
+            title: '02. AN TOÀN VẬN HÀNH',
             tag: 'Safety',
-            desc: 'Rà soát các rủi ro kỹ thuật như nghẽn luồng giao diện (UI blocking), race condition, thiếu timeout mạng hoặc vi phạm bảo mật.'
+            desc: 'Soát rủi ro treo luồng UI, race condition, thiếu timeout mạng và lỗ hổng bảo mật.'
           },
           {
-            title: '03. KIỂM SOÁT PHẠM VI & TEST',
+            title: '03. PHẠM VI & TEST',
             tag: 'Scope & Test',
-            desc: 'Đảm bảo bản vá không làm ảnh hưởng tới các chức năng ngoài mục tiêu (scope_adherence) và không làm suy yếu độ phủ kiểm thử.'
+            desc: 'Đảm bảo không sửa lan ngoài scope và không làm yếu các điều kiện kiểm thử.'
           },
           {
-            title: '04. PHÁN QUYẾT & DỰ PHÒNG',
+            title: '04. DỰ PHÒNG LỖI MẠNG',
             tag: 'Verdict',
-            desc: 'Trả về kết quả JSON phê duyệt hoặc yêu cầu sửa lại. Nếu dịch vụ Review gián đoạn mạng, hệ thống tự động lưu file .patch đã pass test để duyệt thủ công.'
+            desc: 'Trả JSON approve/reject; nếu dịch vụ Review sập, lưu file .patch đã pass để duyệt tay.'
           }
         ],
-        proTip: 'Các tác vụ nhỏ (chế độ quick) tự động bỏ qua bước Reviewer. Với tác vụ chuẩn (standard), prompt đã được nén gọn nên có thể dùng model chất lượng cao cấu hình tại roles.reviewer trong team.yaml.',
+        proTip: 'Task quick tự bỏ qua Reviewer; task standard/high giữ Reviewer khác model với Writer.',
         defaultImg: '/assets/roles/reviewer.webp'
       },
       validator: {
         phase: 'PHA 04',
         specFile: 'scripts/applier.mjs & validator.mjs',
         title: 'GATEKEEPER',
-        subtitle: 'Hệ thống kiểm định cơ khí cục bộ (Applier • Tree-sitter • Test Suite)',
-        kpi1: { label: 'CHI PHÍ TOKEN AI', val: '0 Token', sub: 'Thực thi 100% cục bộ bằng công cụ cấu hình trong policy.yaml' },
-        kpi2: { label: 'CƠ CHẾ BẢO VỆ', val: 'Tự động Git Rollback', sub: 'Ngăn chặn bản vá lỗi trước khi gọi Reviewer' },
+        subtitle: 'Kiểm định cơ khí cục bộ (Applier • AST • Suite)',
+        kpi1: { label: 'CHI PHÍ AI', val: '0 Token', sub: 'Chạy 100% cục bộ theo policy.yaml' },
+        kpi2: { label: 'BẢO VỆ', val: 'Auto Git Rollback', sub: 'Chặn bản vá lỗi trước Reviewer' },
         rec: {
           tier: 'Local Deterministic',
-          primary: 'Node.js Applier + Tree-sitter AST + Policy Validation Checks',
-          secondary: 'Cấu hình tại tab: Chính sách & Kiểm thử (policy.yaml)',
-          reason: 'Thay vì dùng LLM để kiểm tra cú pháp sau mỗi bước, hệ thống sử dụng bộ kiểm định tất định chạy trực tiếp trên máy cục bộ với chi phí 0 token.'
+          primary: 'Node.js Applier + Tree-sitter AST + Policy Checks',
+          secondary: 'Cấu hình tại tab Chính sách & Test',
+          reason: 'Dùng bộ kiểm tra tất định chạy thẳng trên máy để bắt lỗi ngay với 0 token AI.'
         },
-        plainSummary: 'Tầng kiểm duyệt tự động chạy ngay sau khi Writer xuất bản vá: kiểm tra quyền truy cập file, đối chiếu chữ ký hàm bằng AST, chạy Fast Check và thực thi toàn bộ Test Suite của dự án.',
+        plainSummary: 'Kiểm tra quyền scope, đối chiếu chữ ký AST, chạy Fast Check và Test Suite ngay sau khi Writer xuất patch.',
         operations: [
           {
-            title: '01. KIỂM SOÁT PHẠM VI (APPLIER)',
+            title: '01. KHÓA SCOPE',
             tag: 'applier.mjs',
-            desc: 'Chặn mọi khối SEARCH/REPLACE tác động lên file nằm ngoài scope hoặc thuộc danh sách tệp bảo vệ (protected_files).'
+            desc: 'Chặn mọi khối sửa chạm file ngoài scope hoặc nằm trong danh sách protected_files.'
           },
           {
-            title: '02. KIỂM TRA CHỮ KÝ HÀM (AST GATE)',
+            title: '02. CỔNG AST CHỮ KÝ',
             tag: 'Tree-sitter',
-            desc: 'Phân tích cú pháp trước và sau khi vá; tự động chặn nếu Writer thay đổi chữ ký hàm đang được gọi bởi các file ngoài scope.'
+            desc: 'Chặn ngay nếu Writer đổi chữ ký hàm đang được file ngoài scope gọi.'
           },
           {
-            title: '03. BẢO VỆ TÍNH TOÀN VẸN TEST',
+            title: '03. TOÀN VẸN TEST',
             tag: 'Anti-Tamper',
-            desc: 'Ngăn chặn hành vi xóa hàm kiểm thử, gắn cờ bỏ qua (skip) hoặc làm sai lệch điều kiện kiểm chứng (assertion).'
+            desc: 'Cấm xóa bài test, gắn cờ skip hoặc làm yếu assert để qua mặt kiểm thử.'
           },
           {
-            title: '04. CHẠY TEST & KHÔI PHỤC TỰ ĐỘNG',
+            title: '04. ROLLBACK TỰ ĐỘNG',
             tag: 'git-guard.mjs',
-            desc: 'Thực thi kiểm tra nhanh (Fast Check) và bộ Test Suite. Nếu thất bại sau số lần thử lại cho phép, tự động rollback mã nguồn về trạng thái sạch.'
+            desc: 'Chạy Fast Check + Suite; nếu thất bại hết retry thì tự rollback về trạng thái sạch.'
           }
         ],
-        proTip: 'Có thể tùy chỉnh câu lệnh Fast Check, Suite Check, thời gian chờ (timeout) và danh sách tệp bảo vệ tại tab "Chính sách & Kiểm thử (policy.yaml)".',
+        proTip: 'Tùy chỉnh lệnh Fast/Suite Check, timeout và danh sách tệp bảo vệ ở tab Chính sách & Test.',
         defaultImg: '/assets/roles/gatekeeper.webp'
       }
     };
@@ -609,7 +609,7 @@
         if (cfgPanelRoles) cfgPanelRoles.style.display = 'none';
         if (cfgPanelProject) cfgPanelProject.style.display = 'none';
         if (btnSaveTeamConfigEl) btnSaveTeamConfigEl.style.display = 'inline-flex';
-        if (txtBtnSaveConfig) txtBtnSaveConfig.textContent = 'Lưu cấu hình (team.yaml)';
+        if (txtBtnSaveConfig) txtBtnSaveConfig.textContent = 'Lưu Đội ngũ';
       } else if (tabName === 'roles') {
         if (cfgPanelTeam) cfgPanelTeam.style.display = 'none';
         if (cfgPanelRoles) cfgPanelRoles.style.display = 'flex';
@@ -621,7 +621,7 @@
         if (cfgPanelRoles) cfgPanelRoles.style.display = 'none';
         if (cfgPanelProject) cfgPanelProject.style.display = 'flex';
         if (btnSaveTeamConfigEl) btnSaveTeamConfigEl.style.display = 'inline-flex';
-        if (txtBtnSaveConfig) txtBtnSaveConfig.textContent = 'Lưu chính sách (policy.yaml)';
+        if (txtBtnSaveConfig) txtBtnSaveConfig.textContent = 'Lưu Chính sách';
         loadPolicyData();
       }
     }
@@ -733,16 +733,37 @@
     const specModelsSummaryBar = document.getElementById('spec-models-summary-bar');
     const squadTabCountBadge = document.getElementById('squad-tab-count-badge');
 
+    function formatSpecTierPills(specModels) {
+      if (!specModels || typeof specModels !== 'object') return [];
+      const low = specModels.low || specModels.medium || '';
+      const med = specModels.medium || low;
+      const high = specModels.high || specModels.critical || '';
+      const pills = [];
+      if (low) pills.push(`Low/Med · ${String(low).split('/').pop()}`);
+      else if (med) pills.push(`Med · ${String(med).split('/').pop()}`);
+      if (high) pills.push(`High/Crit · ${String(high).split('/').pop()}`);
+      return pills;
+    }
+
     function renderSpecModelsSummaryBar(specModels) {
       if (!specModelsSummaryBar) return;
-      const summary = formatSpecModelsSummary(specModels);
-      if (!summary) {
+      const pills = formatSpecTierPills(specModels);
+      specModelsSummaryBar.replaceChildren();
+      if (pills.length === 0) {
         specModelsSummaryBar.style.display = 'none';
-        specModelsSummaryBar.textContent = '';
         return;
       }
-      specModelsSummaryBar.style.display = 'block';
-      specModelsSummaryBar.textContent = `Architect Tech Spec (team.yaml spec_models): ${summary}`;
+      specModelsSummaryBar.style.display = 'flex';
+      const lbl = document.createElement('span');
+      lbl.className = 'spec-bar-label';
+      lbl.textContent = 'Architect tự động:';
+      specModelsSummaryBar.appendChild(lbl);
+      pills.forEach(text => {
+        const pill = document.createElement('span');
+        pill.className = 'spec-tier-pill';
+        pill.textContent = text;
+        specModelsSummaryBar.appendChild(pill);
+      });
     }
 
     async function load9RouterModels(force = false) {
@@ -752,7 +773,7 @@
       }
       if (spinRefreshModels) spinRefreshModels.style.display = 'inline-block';
       if (spinReconnect) spinReconnect.style.display = 'inline-block';
-      if (cfgModelsCountText) cfgModelsCountText.textContent = 'Đang tải...';
+      if (cfgModelsCountText) cfgModelsCountText.textContent = '...';
 
       const customUrl = (cfg9RouterUrl?.value || '').trim();
       const customKey = (cfg9RouterKey?.value || '').trim();
@@ -774,22 +795,22 @@
         if (data.ok && Array.isArray(data.models)) {
           available9RouterModels = data.models;
           if (cfgModelsCountText) {
-            cfgModelsCountText.textContent = `${data.models.length} Models`;
+            cfgModelsCountText.textContent = String(data.models.length);
           }
           if (cfgRouterBadge) {
             cfgRouterBadge.className = 'cfg-router-status-pill';
-            cfgRouterBadge.textContent = `9Router ${activeHostLabel} (${data.models.length} models)`;
+            cfgRouterBadge.textContent = `9Router ${activeHostLabel}`;
           }
           if (routerConnStatusBadge) {
             routerConnStatusBadge.className = 'router-conn-status online';
-            routerConnStatusBadge.textContent = `✓ Đã kết nối (${data.models.length} models)`;
+            routerConnStatusBadge.textContent = `✓ Đã kết nối • ${data.models.length} models`;
           }
           renderModelPool();
         } else {
           throw new Error(data.error || 'Dữ liệu model rỗng');
         }
       } catch (err) {
-        if (cfgModelsCountText) cfgModelsCountText.textContent = 'Lỗi kết nối';
+        if (cfgModelsCountText) cfgModelsCountText.textContent = '0';
         if (routerConnStatusBadge) {
           routerConnStatusBadge.className = 'router-conn-status offline';
           routerConnStatusBadge.textContent = '✕ Lỗi kết nối';
@@ -798,7 +819,7 @@
           cfgRouterBadge.className = 'cfg-router-status-pill';
           cfgRouterBadge.style.color = '#f87171';
           cfgRouterBadge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
-          cfgRouterBadge.textContent = '9Router: ' + err.message;
+          cfgRouterBadge.textContent = `9Router ${activeHostLabel} DOWN`;
         }
         if (modelPoolGrid) {
           modelPoolGrid.replaceChildren();
@@ -865,9 +886,10 @@
           if (isModelEntryDisabled(entry)) return;
           const cleanId = extractModelId(entry);
           if (!cleanId) return;
+          const shortSlug = cleanId.split('/').pop() || cleanId;
           initial.push({
             model: cleanId,
-            name: rSpec.display_name || cleanId.split('/').pop() || cleanId,
+            name: shortSlug,
             role: rKey,
             latency_ms: null,
             status: 'ready'
@@ -889,35 +911,55 @@
       return span;
     }
 
+    function splitModelDisplayParts(modelId) {
+      const clean = String(modelId || '').trim();
+      const idx = clean.lastIndexOf('/');
+      if (idx <= 0) return { provider: 'local', slug: clean };
+      return {
+        provider: clean.slice(0, idx),
+        slug: clean.slice(idx + 1)
+      };
+    }
+
     function renderSquadPersonnel() {
       if (!squadMembersList) return;
       squadMembersList.replaceChildren();
 
-      if (squadCountBadge) squadCountBadge.textContent = `${squadMembers.length} Thành Viên`;
+      if (squadCountBadge) squadCountBadge.textContent = `${squadMembers.length} model`;
       if (squadTabCountBadge) squadTabCountBadge.textContent = `${squadMembers.length}`;
 
       if (squadMembers.length === 0) {
         const emptyNotice = document.createElement('div');
         emptyNotice.className = 'empty-squad-notice';
-        emptyNotice.textContent = 'Chưa có thành viên nào trong đội. Chọn model từ Kho 9Router bên dưới và bấm "+ Thêm Vào Đội".';
+        emptyNotice.textContent = 'Chưa có model trong đội. Chọn model ở Kho Model bên dưới để thêm.';
         squadMembersList.appendChild(emptyNotice);
         updateRoleCoverageMatrix();
         return;
       }
 
       const roleOptions = [
-        { value: 'standby', label: 'Dự Bị (Standby)' },
-        { value: 'router', label: 'Router (Goal & Scope Planner)' },
-        { value: 'architect', label: 'Architect (Tech Spec — tùy chọn)' },
-        { value: 'writer', label: 'Writer (Code Generator)' },
-        { value: 'designer', label: 'Designer (Visual Auditor)' },
-        { value: 'reviewer', label: 'Reviewer (TechLead Reviewer)' }
+        { value: 'standby', label: 'Dự bị' },
+        { value: 'router', label: 'Router · Điều phối' },
+        { value: 'architect', label: 'Architect · Đặc tả' },
+        { value: 'writer', label: 'Writer · Viết code' },
+        { value: 'designer', label: 'Designer · Giao diện' },
+        { value: 'reviewer', label: 'Reviewer · Duyệt code' }
       ];
       const standardRoles = new Set(roleOptions.map(o => o.value));
+
+      // Compute role occurrence counts & per-member index for Chính / Dự phòng tags
+      const roleTotalCount = {};
+      const roleSeenCount = {};
+      squadMembers.forEach(m => {
+        if (m.role && m.role !== 'standby') {
+          roleTotalCount[m.role] = (roleTotalCount[m.role] || 0) + 1;
+        }
+      });
 
       squadMembers.forEach((member, idx) => {
         const row = document.createElement('div');
         row.className = 'squad-compact-row';
+        row.title = member.model;
 
         const matchedInPool = available9RouterModels.find(m => m.id === member.model);
         const caps = matchedInPool?.capabilities || {
@@ -926,25 +968,43 @@
           reasoning: member.model.includes('thinking') || member.model.includes('opus') || member.model.includes('sonnet')
         };
 
+        const parts = splitModelDisplayParts(member.model);
+        const roleKey = member.role || 'standby';
+
         const left = document.createElement('div');
         left.className = 'compact-left';
+
+        const roleDot = document.createElement('span');
+        roleDot.className = `squad-role-dot dot-role-${standardRoles.has(roleKey) ? roleKey : 'standby'}`;
 
         const titleLine = document.createElement('div');
         titleLine.className = 'compact-title-line';
         const nameSpan = document.createElement('span');
         nameSpan.className = 'compact-model-name';
-        nameSpan.textContent = member.name || member.model;
-        const idSpan = document.createElement('span');
-        idSpan.className = 'compact-model-id';
-        idSpan.textContent = member.model;
-        titleLine.append(nameSpan, idSpan);
+        nameSpan.textContent = parts.slug || member.name || member.model;
+        const provSpan = document.createElement('span');
+        provSpan.className = 'compact-provider-tag';
+        provSpan.textContent = parts.provider;
+        titleLine.append(nameSpan, provSpan);
 
-        const badgesRow = document.createElement('div');
-        badgesRow.className = 'compact-badges-row';
-        if (caps.vision) badgesRow.appendChild(createCapabilityBadge('Vision'));
-        if (caps.tools) badgesRow.appendChild(createCapabilityBadge('Tools'));
-        if (caps.reasoning) badgesRow.appendChild(createCapabilityBadge('Thinking'));
-        left.append(titleLine, badgesRow);
+        left.append(roleDot, titleLine);
+
+        if (roleKey !== 'standby' && (roleTotalCount[roleKey] || 0) >= 2) {
+          const ord = roleSeenCount[roleKey] || 0;
+          roleSeenCount[roleKey] = ord + 1;
+          const slotTag = document.createElement('span');
+          slotTag.className = ord === 0 ? 'compact-slot-tag' : 'compact-slot-tag is-fallback';
+          slotTag.textContent = ord === 0 ? 'Chính' : 'Dự phòng';
+          left.appendChild(slotTag);
+        }
+
+        if (caps.vision || caps.reasoning) {
+          const badgesRow = document.createElement('div');
+          badgesRow.className = 'compact-badges-row';
+          if (caps.vision) badgesRow.appendChild(createCapabilityBadge('Vision'));
+          if (caps.reasoning) badgesRow.appendChild(createCapabilityBadge('Thinking'));
+          left.appendChild(badgesRow);
+        }
 
         const right = document.createElement('div');
         right.className = 'compact-right';
@@ -967,39 +1027,37 @@
           selectEl.appendChild(customOpt);
         }
 
-        const latencyBadge = document.createElement('span');
+        const btnTest = document.createElement('button');
+        btnTest.type = 'button';
+        btnTest.dataset.idx = String(idx);
         if (member.testing) {
-          latencyBadge.className = 'test-result-badge badge-running';
-          latencyBadge.textContent = '...';
+          btnTest.className = 'btn-compact-test btn-test-member is-testing';
+          btnTest.textContent = '...';
+          btnTest.title = 'Đang đo độ trễ';
         } else if (member.latency_ms !== null) {
           if (member.error) {
-            latencyBadge.className = 'test-result-badge badge-error';
-            latencyBadge.title = String(member.error);
-            latencyBadge.textContent = '✕ Lỗi';
+            btnTest.className = 'btn-compact-test btn-test-member is-err';
+            btnTest.textContent = '✕ Lỗi';
+            btnTest.title = String(member.error);
           } else {
-            latencyBadge.className = 'test-result-badge badge-done';
-            latencyBadge.textContent = `✓ ${member.latency_ms}ms`;
+            btnTest.className = 'btn-compact-test btn-test-member is-ok';
+            btnTest.textContent = `✓ ${member.latency_ms}ms`;
+            btnTest.title = 'Đo lại độ trễ';
           }
         } else {
-          latencyBadge.className = 'test-result-badge';
-          latencyBadge.textContent = 'Chưa test';
+          btnTest.className = 'btn-compact-test btn-test-member';
+          btnTest.textContent = 'Ping';
+          btnTest.title = 'Đo độ trễ mạng thực tế';
         }
 
-        const btnTest = document.createElement('button');
-        btnTest.className = 'btn-compact-test btn-test-member';
-        btnTest.dataset.idx = String(idx);
-        btnTest.title = 'Đo độ trễ mạng thực tế';
-        const btnTestSpan = document.createElement('span');
-        btnTestSpan.textContent = 'Test';
-        btnTest.appendChild(btnTestSpan);
-
         const btnRemove = document.createElement('button');
+        btnRemove.type = 'button';
         btnRemove.className = 'btn-compact-remove';
         btnRemove.dataset.idx = String(idx);
         btnRemove.title = 'Gỡ khỏi đội ngũ';
         btnRemove.textContent = '✕';
 
-        right.append(selectEl, latencyBadge, btnTest, btnRemove);
+        right.append(selectEl, btnTest, btnRemove);
         row.append(left, right);
         squadMembersList.appendChild(row);
       });
@@ -1010,7 +1068,7 @@
           const idx = parseInt(e.target.dataset.idx, 10);
           if (squadMembers[idx]) {
             squadMembers[idx].role = e.target.value;
-            updateRoleCoverageMatrix();
+            renderSquadPersonnel();
           }
         });
       });
@@ -1043,11 +1101,11 @@
           renderSquadPersonnel();
           renderModelPool();
           if (cfgSaveStatusMsg) {
-            cfgSaveStatusMsg.textContent = `● Đã gỡ "${removed?.name || 'thành viên'}". Nhấn "Lưu cấu hình (team.yaml)" để lưu vào đĩa.`;
+            cfgSaveStatusMsg.textContent = `● Đã gỡ "${removed?.name || 'model'}". Bấm "Lưu Đội ngũ" để áp dụng.`;
             cfgSaveStatusMsg.style.color = '#f59e0b';
           }
           if (txtBtnSaveConfig) {
-            txtBtnSaveConfig.textContent = 'Lưu cấu hình (team.yaml) ●';
+            txtBtnSaveConfig.textContent = 'Lưu Đội ngũ ●';
           }
         });
       });
@@ -1060,7 +1118,8 @@
       squadMembers.forEach(m => {
         if (m.role && m.role !== 'standby') {
           if (!assignedMap[m.role]) assignedMap[m.role] = [];
-          assignedMap[m.role].push(m.name || m.model.split('/').pop());
+          const slug = String(m.model || '').split('/').pop() || m.name || m.model;
+          assignedMap[m.role].push(slug);
         }
       });
 
@@ -1072,6 +1131,8 @@
         reviewer: 'Reviewer'
       };
 
+      const truncSlug = (s, maxLen = 16) => (s.length > maxLen ? `${s.slice(0, maxLen - 1)}…` : s);
+
       for (const [rKey, pillEl] of Object.entries(covPills)) {
         if (!pillEl) continue;
         const roleName = roleDisplayNames[rKey] || (rKey.charAt(0).toUpperCase() + rKey.slice(1));
@@ -1081,13 +1142,18 @@
         const strongEl = document.createElement('strong');
         if (list.length > 0) {
           pillEl.className = 'cov-mini-pill cov-pill-clickable assigned';
-          strongEl.textContent = list.length === 1 ? list[0] : `${list[0]} (+${list.length - 1})`;
+          const shortFirst = truncSlug(list[0]);
+          strongEl.textContent = list.length === 1 ? shortFirst : `${shortFirst} (+${list.length - 1})`;
+          pillEl.title = `${roleName}: ${list.join(', ')}`;
         } else if (rKey === 'architect' && currentSpecModels) {
           pillEl.className = 'cov-mini-pill cov-pill-clickable assigned';
-          strongEl.textContent = 'Auto (spec_models)';
+          strongEl.textContent = 'Auto';
+          const specSum = formatSpecModelsSummary(currentSpecModels);
+          pillEl.title = specSum ? `Architect tự động (${specSum})` : 'Architect tự động theo spec_models';
         } else {
           pillEl.className = 'cov-mini-pill cov-pill-clickable';
           strongEl.textContent = 'Khuyết';
+          pillEl.title = `${roleName}: Chưa gán model`;
         }
         pillEl.appendChild(strongEl);
       }
@@ -1115,12 +1181,12 @@
 
       if (filtered.length === 0) {
         const emptyEl = document.createElement('div');
-        emptyEl.style.padding = '24px';
+        emptyEl.style.padding = '20px';
         emptyEl.style.textAlign = 'center';
         emptyEl.style.color = 'var(--text-muted)';
         emptyEl.style.fontSize = '11.5px';
         emptyEl.style.whiteSpace = 'nowrap';
-        emptyEl.textContent = `Không tìm thấy model nào khớp với bộ lọc "${kw || activeFilter}".`;
+        emptyEl.textContent = `Không có model khớp "${kw || activeFilter}".`;
         modelPoolGrid.appendChild(emptyEl);
         return;
       }
@@ -1129,30 +1195,37 @@
         const card = document.createElement('div');
         const isAdded = existingModelSet.has(m.id);
         card.className = 'pool-card-compact' + (isAdded ? ' in-squad' : '');
+        card.title = m.id;
+
+        const parts = splitModelDisplayParts(m.id);
 
         const top = document.createElement('div');
         top.className = 'pool-card-top';
         const nameEl = document.createElement('div');
         nameEl.className = 'pool-card-name';
-        nameEl.textContent = m.name;
+        nameEl.textContent = m.name || parts.slug;
         const idEl = document.createElement('div');
         idEl.className = 'pool-card-id';
-        idEl.textContent = m.id;
-        const badgesEl = document.createElement('div');
-        badgesEl.className = 'pool-card-badges';
-        if (m.capabilities?.vision) badgesEl.appendChild(createCapabilityBadge('Vision'));
-        if (m.capabilities?.tools) badgesEl.appendChild(createCapabilityBadge('Tools'));
-        if (m.capabilities?.reasoning) badgesEl.appendChild(createCapabilityBadge('Thinking'));
-        top.append(nameEl, idEl, badgesEl);
+        idEl.textContent = parts.provider;
+        top.append(nameEl, idEl);
+
+        if (m.capabilities?.vision || m.capabilities?.reasoning) {
+          const badgesEl = document.createElement('div');
+          badgesEl.className = 'pool-card-badges';
+          if (m.capabilities?.vision) badgesEl.appendChild(createCapabilityBadge('Vision'));
+          if (m.capabilities?.reasoning) badgesEl.appendChild(createCapabilityBadge('Thinking'));
+          top.appendChild(badgesEl);
+        }
 
         const actionsEl = document.createElement('div');
         actionsEl.className = 'pool-card-actions';
 
         const btnTest = document.createElement('button');
+        btnTest.type = 'button';
         btnTest.className = 'btn-pool-test';
         btnTest.dataset.model = m.id;
         const spTest = document.createElement('span');
-        spTest.textContent = 'Test';
+        spTest.textContent = 'Ping';
         const spLbl = document.createElement('span');
         spLbl.className = 'pool-test-lbl';
         btnTest.append(spTest, spLbl);
@@ -1161,14 +1234,15 @@
         if (isAdded) {
           const addedSpan = document.createElement('span');
           addedSpan.className = 'btn-pool-added-badge';
-          addedSpan.textContent = 'Đã trong đội';
+          addedSpan.textContent = '✓ Đã chọn';
           actionsEl.appendChild(addedSpan);
         } else {
           const btnAdd = document.createElement('button');
+          btnAdd.type = 'button';
           btnAdd.className = 'btn-pool-add';
           btnAdd.dataset.model = m.id;
-          btnAdd.dataset.name = m.name;
-          btnAdd.textContent = '+ Thêm Vào Đội';
+          btnAdd.dataset.name = m.name || parts.slug;
+          btnAdd.textContent = '+ Thêm';
           actionsEl.appendChild(btnAdd);
         }
 
@@ -1609,7 +1683,7 @@
               cfgSaveStatusMsg.style.color = warnSuffix ? '#fbbf24' : '#34d399';
             }
             if (txtBtnSaveConfig) {
-              txtBtnSaveConfig.textContent = 'Lưu cấu hình (team.yaml)';
+              txtBtnSaveConfig.textContent = 'Lưu Đội ngũ';
             }
             await fetchSnapshot();
             initSquadFromConfig(true);

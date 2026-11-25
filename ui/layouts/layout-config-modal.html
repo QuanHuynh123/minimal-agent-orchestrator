@@ -4,26 +4,27 @@
     <!-- Header -->
     <div class="config-modal-header">
       <div class="config-modal-title">
-        <span class="cfg-header-text">Cấu hình hệ thống &amp; Tác tử</span>
+        <span class="cfg-header-text">Cấu hình</span>
+        <span class="cfg-header-sub">Đội ngũ • Vai trò • Chính sách</span>
       </div>
-      <button id="btn-close-config-modal" class="btn-modal-close" title="Đóng cài đặt (Esc)">✕</button>
+      <div class="cfg-header-right">
+        <div id="cfg-router-badge" class="cfg-router-status-pill">9Router :20128</div>
+        <button id="btn-close-config-modal" class="btn-modal-close" aria-label="Đóng cài đặt" title="Đóng (Esc)">✕</button>
+      </div>
     </div>
 
     <!-- Navigation Tabs Bar -->
     <div class="config-nav-tabs">
       <button class="cfg-nav-tab active" data-tab="team">
-        <span>Đội ngũ AI (team.yaml)</span>
+        <span>Đội ngũ AI</span>
         <span id="squad-tab-count-badge" class="cfg-tab-counter">0</span>
       </button>
       <button class="cfg-nav-tab" data-tab="roles" id="cfg-tab-btn-roles">
-        <span>Hồ sơ Vai trò (Role Guide)</span>
-        <span class="cfg-tab-counter">6</span>
+        <span>Vai trò</span>
       </button>
       <button class="cfg-nav-tab" data-tab="project">
-        <span>Chính sách &amp; Kiểm thử (policy.yaml)</span>
+        <span>Chính sách &amp; Test</span>
       </button>
-      <div class="cfg-nav-tabs-spacer"></div>
-      <div id="cfg-router-badge" class="cfg-router-status-pill">9Router :20128</div>
     </div>
 
     <!-- Body Container -->
@@ -33,40 +34,37 @@
         <!-- 9ROUTER HUB CONNECTION BAR (BASE URL & API KEY) -->
         <div class="router-conn-bar">
           <div class="router-conn-left">
-            <span class="router-conn-label">9Router Hub:</span>
+            <span class="router-conn-label">9Router</span>
             <div class="router-conn-field">
-              <span class="router-conn-prefix">Base URL</span>
+              <span class="router-conn-prefix">URL</span>
               <input type="text" id="cfg-9router-url" class="router-conn-input" value="http://127.0.0.1:20128/v1" placeholder="http://127.0.0.1:20128/v1" spellcheck="false" />
             </div>
             <div class="router-conn-field">
-              <span class="router-conn-prefix">API Key</span>
+              <span class="router-conn-prefix">KEY</span>
               <input type="password" id="cfg-9router-key" class="router-conn-input w-key" value="sk-default" placeholder="sk-default" spellcheck="false" />
             </div>
-            <button type="button" id="btn-reconnect-9router" class="btn-router-reconnect" title="Kiểm tra kết nối và tải lại danh sách models">
+            <button type="button" id="btn-reconnect-9router" class="btn-router-reconnect" title="Kiểm tra kết nối và tải lại danh sách model">
               <span id="spin-reconnect" class="spinner" style="display: none;"></span>
-              <span>⚡ Kết nối</span>
+              <span>Kết nối</span>
             </button>
           </div>
-          <span id="router-conn-status-badge" class="router-conn-status online">✓ Sẵn sàng (:20128)</span>
+          <span id="router-conn-status-badge" class="router-conn-status online">Sẵn sàng</span>
         </div>
 
         <!-- NỬA TRÊN: SQUAD PERSONNEL -->
         <div class="squad-section-top">
           <div class="section-micro-header">
             <div class="section-title-group">
-              <span class="section-title-label">Đội ngũ AI hiện tại</span>
-              <span id="squad-count-badge" class="cfg-tag-subtle">0 Thành viên</span>
+              <span class="section-title-label">Đội hình</span>
+              <span id="squad-count-badge" class="cfg-tag-subtle">0 model</span>
             </div>
             <!-- Role Coverage Summary Mini -->
             <div class="role-coverage-pills" id="role-coverage-pills">
-              <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-router" data-role-jump="router" title="Bấm để xem Hồ sơ &amp; Model khuyên dùng cho Router">Router: <strong>Khuyết</strong></span>
-              <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-architect" data-role-jump="architect" title="Bấm để xem Hồ sơ Architect / spec_models">Architect: <strong>Auto</strong></span>
-              <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-writer" data-role-jump="writer" title="Bấm để xem Hồ sơ &amp; Model khuyên dùng cho Writer">Writer: <strong>Khuyết</strong></span>
-              <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-designer" data-role-jump="designer" title="Bấm để xem Hồ sơ &amp; Model khuyên dùng cho Designer">Designer: <strong>Khuyết</strong></span>
-              <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-reviewer" data-role-jump="reviewer" title="Bấm để xem Hồ sơ &amp; Model khuyên dùng cho Reviewer">Reviewer: <strong>Khuyết</strong></span>
-              <button type="button" id="btn-open-role-guide" class="btn-role-guide-shortcut" title="Xem tài liệu đặc tả nhiệm vụ &amp; khuyến nghị Model cho từng vai trò">
-                <span>Hồ sơ Vai trò</span>
-              </button>
+              <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-router" data-role-jump="router" title="Xem vai trò Router">Router: <strong>Khuyết</strong></span>
+              <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-architect" data-role-jump="architect" title="Xem vai trò Architect">Architect: <strong>Auto</strong></span>
+              <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-writer" data-role-jump="writer" title="Xem vai trò Writer">Writer: <strong>Khuyết</strong></span>
+              <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-designer" data-role-jump="designer" title="Xem vai trò Designer">Designer: <strong>Khuyết</strong></span>
+              <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-reviewer" data-role-jump="reviewer" title="Xem vai trò Reviewer">Reviewer: <strong>Khuyết</strong></span>
             </div>
           </div>
 
@@ -81,13 +79,13 @@
         <div class="model-pool-section-bottom">
           <div class="pool-action-bar">
             <div class="pool-title-left">
-              <span class="section-title-label">Kho Model 9Router</span>
-              <span id="cfg-models-count-text" class="cfg-tag-subtle">54 Models</span>
+              <span class="section-title-label">Kho Model</span>
+              <span id="cfg-models-count-text" class="cfg-tag-subtle">0</span>
             </div>
             
             <div class="pool-controls-right">
               <div class="pool-search-box">
-                <input type="text" id="cfg-search-models" class="cfg-search-input" placeholder="Lọc model (claude, deepseek...)" autocomplete="off" />
+                <input type="text" id="cfg-search-models" class="cfg-search-input" placeholder="Tìm nhanh model..." autocomplete="off" />
               </div>
               <div class="pool-filter-pills">
                 <button class="cfg-filter-btn active" data-filter="all">Tất cả</button>
@@ -110,7 +108,6 @@
         <!-- Top Role Selector Bar -->
         <div class="dossier-selector-bar">
           <div class="dossier-selector-left">
-            <span class="dossier-bar-label">VAI TRÒ:</span>
             <div class="dossier-role-tabs" id="dossier-role-tabs">
               <button type="button" class="dossier-role-tab active" data-role="router">
                 <span class="dossier-tab-idx">01</span>
@@ -139,7 +136,7 @@
             </div>
           </div>
           <button type="button" id="btn-dossier-assign-shortcut" class="btn-dossier-assign">
-            <span>⇄ Chuyển sang Gán Model</span>
+            <span>Gán Model →</span>
           </button>
         </div>
 
@@ -161,19 +158,19 @@
             <!-- Model Recommendation Card -->
             <div class="dossier-rec-card">
               <div class="dossier-rec-header">
-                <span class="dossier-rec-tag">KHUYẾN NGHỊ MODEL</span>
+                <span class="dossier-rec-tag">GỢI Ý MODEL</span>
                 <span id="dossier-rec-tier-badge" class="dossier-tier-pill">Fast Tier</span>
               </div>
               <div class="dossier-rec-row">
-                <span class="dossier-rec-lbl">Khuyên dùng:</span>
-                <code id="dossier-rec-primary" class="dossier-rec-code">Năng lực: Suy luận nhanh, độ trễ thấp, xuất JSON hợp lệ trong 1 lượt</code>
+                <span class="dossier-rec-lbl">Chính:</span>
+                <code id="dossier-rec-primary" class="dossier-rec-code">Năng lực: Suy luận nhanh, xuất JSON 1 lượt</code>
               </div>
               <div class="dossier-rec-row">
                 <span class="dossier-rec-lbl">Dự phòng:</span>
-                <code id="dossier-rec-secondary" class="dossier-rec-code secondary">Năng lực dự phòng: Ngữ cảnh rộng hơn để leo thang khi JSON lỗi</code>
+                <code id="dossier-rec-secondary" class="dossier-rec-code secondary">Năng lực dự phòng: Leo thang khi JSON lỗi</code>
               </div>
               <p id="dossier-rec-reason" class="dossier-rec-reason">
-                Sử dụng ngữ cảnh từ bộ trinh sát từ khóa 0-token và Repo Map, đạt độ chính xác phân rã 100% trong 1 lượt gọi mà vẫn bảo toàn quota model mạnh.
+                Phân rã tác vụ 1 lượt dựa trên Repo Map, giữ quota model mạnh cho Spec &amp; Review.
               </p>
             </div>
           </div>
@@ -185,28 +182,27 @@
                 <h2 id="dossier-role-title" class="dossier-hero-title">ROUTER</h2>
                 <code id="dossier-spec-file" class="dossier-spec-path">roles/router.md</code>
               </div>
-              <p id="dossier-role-subtitle" class="dossier-hero-subtitle">Phân tích yêu cầu &amp; Phân rã tác vụ (Goal Decomposition)</p>
+              <p id="dossier-role-subtitle" class="dossier-hero-subtitle">Phân tích yêu cầu &amp; Khóa Scope</p>
             </div>
 
             <!-- Operational Metadata Strip -->
             <div class="dossier-kpi-row">
               <div class="dossier-kpi-card">
-                <span id="dossier-kpi-1-label" class="dossier-kpi-label">CƠ CHẾ VẬN HÀNH</span>
+                <span id="dossier-kpi-1-label" class="dossier-kpi-label">VẬN HÀNH</span>
                 <strong id="dossier-kpi-1-val" class="dossier-kpi-val">1 lượt mặc định</strong>
-                <span id="dossier-kpi-1-sub" class="dossier-kpi-sub">Tự động mở tối đa 5 lượt nếu thiếu từ khóa</span>
+                <span id="dossier-kpi-1-sub" class="dossier-kpi-sub">Tối đa 5 lượt nếu thiếu từ khóa</span>
               </div>
               <div class="dossier-kpi-card">
-                <span id="dossier-kpi-2-label" class="dossier-kpi-label">ĐỊNH MỨC TIÊU THỤ</span>
-                <strong id="dossier-kpi-2-val" class="dossier-kpi-val">~5.7K tokens / yêu cầu</strong>
-                <span id="dossier-kpi-2-sub" class="dossier-kpi-sub">Tiết kiệm ~80% so với quy trình 5 lượt</span>
+                <span id="dossier-kpi-2-label" class="dossier-kpi-label">ĐỊNH MỨC</span>
+                <strong id="dossier-kpi-2-val" class="dossier-kpi-val">~5.7K tok / goal</strong>
+                <span id="dossier-kpi-2-sub" class="dossier-kpi-sub">Trinh sát 0-token trước gọi AI</span>
               </div>
             </div>
 
             <!-- Role Overview Summary -->
             <div class="dossier-plain-box">
-              <div class="dossier-plain-label">TỔNG QUAN VAI TRÒ</div>
               <p id="dossier-plain-summary" class="dossier-plain-text">
-                Tiếp nhận yêu cầu từ người dùng, đối chiếu với cấu trúc thư mục và Repo Map để tách thành 1–3 tác vụ độc lập (&lt;150 dòng thay đổi), đồng thời khóa chặt danh sách file được phép chỉnh sửa (scope).
+                Tách yêu cầu thành 1–3 task nguyên tử (&lt;150 dòng) và khóa chặt danh sách file được phép sửa.
               </p>
             </div>
 
@@ -218,10 +214,10 @@
             <!-- Operational & Quota Note -->
             <div class="dossier-protip-card">
               <div class="dossier-protip-header">
-                <span class="dossier-protip-badge">GHI CHÚ VẬN HÀNH &amp; QUOTA</span>
+                <span class="dossier-protip-badge">MẸO QUOTA</span>
               </div>
               <p id="dossier-protip-text" class="dossier-protip-text">
-                Nên gán model nhanh làm Router mặc định trong team.yaml và giữ escalation_model dự phòng khi JSON trả về không hợp lệ, giúp bảo toàn quota cho Reviewer và Designer.
+                Đặt model nhanh làm mặc định và escalation_model dự phòng khi JSON lỗi.
               </p>
             </div>
           </div>
@@ -236,10 +232,9 @@
           <div class="policy-bento-card">
             <div class="policy-card-header">
               <div class="policy-header-left">
-                <span class="policy-card-title">1. Bộ kiểm thử tự động (Validation Gates)</span>
-                <span class="policy-tag-0token">0-Token Gate • Xác thực Cục bộ</span>
+                <span class="policy-card-title">Kiểm thử tự động</span>
+                <span class="policy-tag-0token">0-Token Gate</span>
               </div>
-              <span class="policy-card-hint">Orchestrator tự động thực thi sau khi Writer sinh code; không tốn LLM token</span>
             </div>
 
             <div class="policy-checks-list">
@@ -247,13 +242,13 @@
               <div class="policy-check-item">
                 <div class="policy-check-title-row">
                   <span class="policy-check-badge fast">FAST</span>
-                  <strong class="policy-check-name">Kiểm tra nhanh (Fast Lint &amp; Syntax Check)</strong>
-                  <span class="policy-check-meta">Ngưỡng: &lt; 30s • Chạy ở mọi task</span>
+                  <strong class="policy-check-name">Kiểm tra nhanh</strong>
+                  <span class="policy-check-meta">&lt; 30s • Mọi task</span>
                 </div>
                 <div class="policy-check-cmd-row">
                   <div class="policy-cmd-input-group">
                     <span class="cmd-prefix">$</span>
-                    <input type="text" id="cfg-fast-cmd" class="policy-cmd-input" placeholder="Lệnh kiểm tra nhanh (ví dụ: npm run lint hoặc node scripts/validator.mjs fast)" spellcheck="false" />
+                    <input type="text" id="cfg-fast-cmd" class="policy-cmd-input" placeholder="npm run lint hoặc node scripts/validator.mjs fast" spellcheck="false" />
                     <div class="timeout-wrap">
                       <span>Timeout:</span>
                       <input type="number" id="cfg-fast-timeout" class="policy-num-input" value="15" min="5" max="120" />
@@ -262,9 +257,9 @@
                   </div>
                   <div class="policy-check-actions">
                     <span id="fast-check-badge" class="test-result-badge">Chưa chạy</span>
-                    <button type="button" id="btn-run-fast-check" class="btn-policy-run" title="Chạy thử nghiệm kiểm tra Fast Check ngay">
+                    <button type="button" id="btn-run-fast-check" class="btn-policy-run" title="Chạy thử Fast Check">
                       <span id="spin-fast-check" class="spinner" style="display: none;"></span>
-                      <span>▶ Test</span>
+                      <span>Chạy thử</span>
                     </button>
                   </div>
                 </div>
@@ -274,13 +269,13 @@
               <div class="policy-check-item">
                 <div class="policy-check-title-row">
                   <span class="policy-check-badge suite">SUITE</span>
-                  <strong class="policy-check-name">Bộ kiểm thử toàn diện (Unit / Integration Suite)</strong>
-                  <span class="policy-check-meta">Ngưỡng: &lt; 180s • Chạy Standard mode &amp; trước khi Done</span>
+                  <strong class="policy-check-name">Kiểm thử toàn diện</strong>
+                  <span class="policy-check-meta">&lt; 180s • Standard / Done</span>
                 </div>
                 <div class="policy-check-cmd-row">
                   <div class="policy-cmd-input-group">
                     <span class="cmd-prefix">$</span>
-                    <input type="text" id="cfg-suite-cmd" class="policy-cmd-input" placeholder="Lệnh kiểm thử toàn diện (ví dụ: npm test hoặc pytest)" spellcheck="false" />
+                    <input type="text" id="cfg-suite-cmd" class="policy-cmd-input" placeholder="npm test hoặc pytest" spellcheck="false" />
                     <div class="timeout-wrap">
                       <span>Timeout:</span>
                       <input type="number" id="cfg-suite-timeout" class="policy-num-input" value="180" min="10" max="600" />
@@ -289,9 +284,9 @@
                   </div>
                   <div class="policy-check-actions">
                     <span id="suite-check-badge" class="test-result-badge">Chưa chạy</span>
-                    <button type="button" id="btn-run-suite-check" class="btn-policy-run" title="Chạy thử nghiệm bộ kiểm thử Suite Check ngay">
+                    <button type="button" id="btn-run-suite-check" class="btn-policy-run" title="Chạy thử Suite Check">
                       <span id="spin-suite-check" class="spinner" style="display: none;"></span>
-                      <span>▶ Test</span>
+                      <span>Chạy thử</span>
                     </button>
                   </div>
                 </div>
@@ -301,7 +296,7 @@
             <!-- Terminal Output Log Box (Ẩn mặc định, hiện khi bấm Test) -->
             <div id="policy-test-output-box" class="policy-terminal-output" style="display: none;">
               <div class="policy-term-header">
-                <span id="policy-term-title">Log kết quả kiểm thử</span>
+                <span id="policy-term-title">Kết quả kiểm thử</span>
                 <button type="button" id="btn-close-term-output" class="btn-term-close">✕</button>
               </div>
               <pre id="policy-term-pre" class="policy-term-pre"></pre>
@@ -314,39 +309,39 @@
             <!-- CỘT TRÁI: KIỂM SOÁT PHẠM VI (SCOPE CONTROL) -->
             <div class="policy-bento-card">
               <div class="policy-card-header">
-                <span class="policy-card-title">2. Phạm vi dự án &amp; Ranh giới (Scope)</span>
+                <span class="policy-card-title">Phạm vi sửa đổi</span>
               </div>
               
               <div class="policy-params-grid">
                 <div class="policy-field-row">
-                  <label class="policy-label">File tối đa / task (max_files):</label>
+                  <label class="policy-label" for="cfg-max-files" title="scope_control.max_files_per_task">Số file tối đa / task</label>
                   <input type="number" id="cfg-max-files" class="policy-num-input" value="5" min="1" max="20" />
                 </div>
                 <div class="policy-field-row">
-                  <label class="policy-label">Số file tối đa AI được xin mở rộng:</label>
+                  <label class="policy-label" for="cfg-max-scope-inc" title="scope_control.max_scope_increase">Mở rộng thêm tối đa</label>
                   <input type="number" id="cfg-max-scope-inc" class="policy-num-input" value="1" min="0" max="5" />
                 </div>
                 <div class="policy-field-row">
-                  <label class="policy-label">Cho phép tạo file mới (allow_new_files):</label>
+                  <label class="policy-label" for="cfg-allow-new-files" title="scope_control.allow_new_files">Cho phép tạo file mới</label>
                   <input type="checkbox" id="cfg-allow-new-files" class="policy-checkbox" checked />
                 </div>
                 <div class="policy-field-row">
-                  <label class="policy-label">Cưỡng chế Scope nghiêm ngặt (strict):</label>
+                  <label class="policy-label" for="cfg-strict-scope" title="scope_control.strict_scope_enforcement">Khóa chặt phạm vi (Strict)</label>
                   <input type="checkbox" id="cfg-strict-scope" class="policy-checkbox" checked />
                 </div>
               </div>
 
               <div class="policy-badges-block">
-                <span class="policy-sub-label">Thư mục được phép can thiệp (allowed_dirs):</span>
+                <span class="policy-sub-label">Thư mục cho phép</span>
                 <div class="policy-badges-wrap" id="wrap-allowed-dirs">
-                  <span class="dir-badge" style="opacity: 0.6;">(Đang đồng bộ từ policy.yaml...)</span>
+                  <span class="dir-badge" style="opacity: 0.6;">(Đang tải...)</span>
                 </div>
               </div>
 
               <div class="policy-badges-block">
-                <span class="policy-sub-label">Tệp bảo vệ đặc biệt (protected_files - Cấm sửa đổi):</span>
+                <span class="policy-sub-label">Tệp bảo vệ</span>
                 <div class="policy-badges-wrap" id="wrap-protected-files">
-                  <span class="prot-badge" style="opacity: 0.6;">(Đang đồng bộ từ policy.yaml...)</span>
+                  <span class="prot-badge" style="opacity: 0.6;">(Đang tải...)</span>
                 </div>
               </div>
             </div>
@@ -354,39 +349,34 @@
             <!-- CỘT PHẢI: RÀO CHẮN AN TOÀN & GIT HYGIENE (GUARDRAILS) -->
             <div class="policy-bento-card">
               <div class="policy-card-header">
-                <span class="policy-card-title">3. Rào chắn an toàn &amp; Git Hygiene</span>
+                <span class="policy-card-title">An toàn &amp; Ngân sách</span>
               </div>
 
               <div class="policy-params-grid">
                 <div class="policy-field-row">
-                  <label class="policy-label">Tự động Rollback code nếu fail test:</label>
+                  <label class="policy-label" for="cfg-git-rollback" title="git_hygiene.rollback_on_validation_fail">Tự rollback khi lỗi test</label>
                   <input type="checkbox" id="cfg-git-rollback" class="policy-checkbox" checked />
                 </div>
                 <div class="policy-field-row">
-                  <label class="policy-label">Tự động tạo Git commit khi Done:</label>
+                  <label class="policy-label" for="cfg-git-autocommit" title="git_hygiene.auto_commit_on_done">Tự Git commit khi hoàn tất</label>
                   <input type="checkbox" id="cfg-git-autocommit" class="policy-checkbox" checked />
                 </div>
                 <div class="policy-field-row">
-                  <label class="policy-label">Bắt buộc Timeout lệnh CLI (HR-1):</label>
+                  <label class="policy-label" for="cfg-enforce-timeouts" title="execution_guardrails.enforce_command_timeouts">Bắt buộc timeout lệnh CLI</label>
                   <input type="checkbox" id="cfg-enforce-timeouts" class="policy-checkbox" checked />
                 </div>
                 <div class="policy-field-row">
-                  <label class="policy-label">Chặn alias PowerShell curl (HR-2):</label>
+                  <label class="policy-label" for="cfg-block-ps-curl" title="execution_guardrails.block_powershell_curl_alias">Chặn alias curl PowerShell</label>
                   <input type="checkbox" id="cfg-block-ps-curl" class="policy-checkbox" checked />
                 </div>
                 <div class="policy-field-row">
-                  <label class="policy-label">Số lần Retry tối đa / task:</label>
+                  <label class="policy-label" for="cfg-max-retries" title="retry_and_escalation.max_retries_per_task">Số lần thử lại tối đa</label>
                   <input type="number" id="cfg-max-retries" class="policy-num-input" value="3" min="1" max="10" />
                 </div>
                 <div class="policy-field-row">
-                  <label class="policy-label">Ngân sách token trần / task:</label>
+                  <label class="policy-label" for="cfg-token-budget" title="retry_and_escalation.token_budget_per_task">Trần token / task</label>
                   <input type="number" id="cfg-token-budget" class="policy-num-input w-wide" value="150000" step="10000" />
                 </div>
-              </div>
-
-              <div class="policy-hint-box">
-                <div class="hint-bullet">• <strong>HR-1 &amp; HR-2:</strong> Diệt tận gốc cây tiến trình treo trên Windows (<code>taskkill /T /F</code>). Cấm lệnh sleep vô tận.</div>
-                <div class="hint-bullet">• <strong>Anti-Drift:</strong> Mọi patch ngoài phạm vi Task Scope bị Applier chặn 100% trước khi ghi đĩa.</div>
               </div>
             </div>
 
@@ -403,7 +393,7 @@
         <button id="btn-cancel-config" class="btn-action-ghost cfg-btn-footer">Đóng</button>
         <button id="btn-save-team-config" class="btn-action-primary cfg-btn-footer cfg-btn-save">
           <span id="spin-save-config" class="spinner" style="display: none;"></span>
-          <span id="txt-btn-save-config">Lưu cấu hình (team.yaml)</span>
+          <span id="txt-btn-save-config">Lưu Đội ngũ</span>
         </button>
       </div>
     </div>
