@@ -8,6 +8,13 @@
   - `runtime/index.mjs` (Bounded Tool Loop, Thinking Stripper & Usage Aggregation)
   - `scripts/lib/risk-policy.mjs` & `scripts/orchestrator.mjs` (Slot-Binding & Auto-Collapse Multi-Model Routing)
 
+> [!NOTE]
+> **Cập nhật Thực thi v3.2 (Implementation Alignment):** Phần giả mã lịch sử v3.1 ở §3.6.6 vẫn giữ nguyên để tham chiếu ngữ cảnh thiết kế ban đầu; trên mã nguồn thực tế v3.2 có 4 điểm chuẩn hóa mới:
+> 1. Bản đặc tả (`draft_spec`) được lưu theo từng phiên tại `state/runs/<task_id>/` và được tái sử dụng `0` token qua các lượt retry cơ học của `Applier` (`SLICE-1`).
+> 2. Model cho `Architect` ưu tiên đọc bảng `spec_models` (`low / medium / high / critical`) trong `config/team.yaml` trước khi fallback về `roles`.
+> 3. `Writer` dùng `models[0]` làm model chính + `fallback_model` dự phòng, ghi log tách bạch từng bucket `attempt-<N>-b<K>.txt` và `safeRollback` toàn bộ `task.scope`.
+> 4. `Router` (`goal-planner.mjs`) nạp sơ đồ `Goal-Focused 1-Hop Symbol & Import Graph` (`<= 12KB`) trong 1 lượt duy nhất (`SLICE-2a`).
+
 ---
 
 ## 1. Bối Cảnh & Tham Chiếu Thực Nghiệm (Antigravity HTTP POST Reverse Benchmark)

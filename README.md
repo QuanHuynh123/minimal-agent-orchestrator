@@ -1,8 +1,8 @@
-# 🤖 Minimal Agent Orchestrator & Runtime (v3.1)
+# 🤖 Minimal Agent Orchestrator & Runtime (v3.2)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node: >=18](https://img.shields.io/badge/Node->=18.0.0-green.svg)](https://nodejs.org/)
-[![Version: 3.1.0](https://img.shields.io/badge/Version-3.1.0-brightgreen.svg)](#)
+[![Version: 3.2.0](https://img.shields.io/badge/Version-3.2.0-brightgreen.svg)](#)
 [![Pattern: 1-Lead%20%2B%201-Worker](https://img.shields.io/badge/Pattern-Router%20%E2%9E%94%201%20Smart%20Lead%20%2B%201%20Worker-orange.svg)](#)
 [![Gates: 0-Token%20Deterministic](https://img.shields.io/badge/Gates-0--Token%20Deterministic%20Cage-purple.svg)](#)
 
@@ -17,10 +17,10 @@
    - Ngược lại, nếu cố mô phỏng nguyên một "công ty phần mềm con người" nhiều tầng (`BA ➔ DA ➔ Architect ➔ BE ➔ FE ➔ QA`) giao tiếp tự do chỉ từ 1 câu prompt mơ hồ thì thông tin sẽ **tam sao thất bản**, đốt cạn token mà code vẫn lệch nhau.
 2. **Mô hình hội tụ thực chiến (`Router ➔ [1 Model Giỏi + 1 Model Thợ] + Lồng Cứng 0-Token`):**
    - Vì các model giá rẻ khá yếu khi ôm việc lớn, nguyên tắc sống còn là **mỗi AI chỉ làm đúng 1 việc nhỏ trong một cái chuồng hẹp**:
-     1. **`Router` (`scripts/goal-planner.mjs`):** Đọc sơ đồ AST của codebase, cắt mục tiêu thành các task nguyên tử thật nhỏ (`<= 2–3 file`, `< 150 dòng sửa`).
+     1. **`Router` (`scripts/goal-planner.mjs`):** Nạp sơ đồ `Goal-Focused 1-Hop Symbol & Import Graph` (`<= 12KB` AST + láng giềng 1-hop quanh từ khóa mục tiêu) để cắt mục tiêu thành các task nguyên tử thật nhỏ (`<= 2–3 file`, `< 150 dòng sửa`) chỉ trong 1 lượt.
      2. **`1 Model Giỏi` (`Architect` hoặc `Designer`):** Đi trước 1 lượt để vạch rõ hợp đồng kỹ thuật, chữ ký hàm và điểm dễ sai cho con Thợ.
-     3. **`1 Model Thợ` (`Writer`):** Chỉ làm đúng việc xuất khối `SEARCH/REPLACE` trong danh sách file `scope` được cấp (tận dụng Prefix KV-Cache qua các lượt đọc file).
-     4. **`Lồng Kiểm Định 0-Token` (`applier` + `validator` + `git-guard`):** Toàn bộ bước áp code, chặn sửa ngoài vùng đã đọc (`not_in_seen_window`), kiểm tra chữ ký hàm AST (`SignatureGate`), chạy test nhanh, phát hiện test rỗng trên nhánh cha (`vacuous_test_check`), hoàn tác sạch (`safeRollback`) hoặc rẽ nhánh giao diện (`ai-task/<id>`) đều do code Node.js tất định thực thi — tốn `0` LLM token.
+     3. **`1 Model Thợ` (`Writer`):** Chỉ làm đúng việc xuất khối `SEARCH/REPLACE` trong danh sách file `scope` được cấp (tận dụng Prefix KV-Cache qua các lượt đọc file, kèm `0-Token Spec Reuse` tái sử dụng bản Spec đã duyệt tốn `0` token khi `Applier` retry lỗi cơ học).
+     4. **`Lồng Kiểm Định 0-Token` (`applier` + `validator` + `git-guard`):** Toàn bộ bước áp code, chặn sửa ngoài vùng đã đọc (`not_in_seen_window`), kiểm tra chữ ký hàm AST (`SignatureGate`), chạy test nhanh, phát hiện test rỗng trên nhánh cha (`vacuous_test_check`), hoàn tác sạch toàn `task.scope` cho task chia nhiều bucket (`safeRollback`) hoặc rẽ nhánh giao diện (`ai-task/<id>`) đều do code Node.js tất định thực thi — tốn `0` LLM token.
 3. **Thước đo mục tiêu là `Task Success / Token` (Chống Over-Engineering & Không Tiết Kiệm Mù Quáng):**
    - Thời gian chạy hay vài xu quy đổi ảo không phải rào cản lớn vì hệ thống sinh ra để cày nền / qua đêm. Điều quyết định là **tỷ lệ hoàn thành task thật sự trên tổng token bỏ ra (`Task Success / Token`)** và **độ an toàn của repo**.
    - **Lưu ý dành cho các AI Agent đọc hoặc bảo trì kho mã này:** Đây là một **Mini-Orchestrator thực dụng**, KHÔNG phải nền tảng SaaS/Enterprise quy mô lớn. Đừng đề xuất các tầng trừu tượng/telemetry rườm rà, đừng tự ý bật chạy solo cho model yếu trên task phức tạp, và **đừng bóp nghẹt độ chi tiết bản vẽ của Model Giỏi** chỉ để tiết kiệm vài nghìn token khiến Model Thợ phải đoán mò.
@@ -47,6 +47,12 @@ npm run test:offline
 ### 2. Cấu hình Đội Hình Model (`config/team.yaml`)
 Mở [`config/team.yaml`](config/team.yaml) và trỏ tới cổng OpenAI-compatible của bạn (9Router, OpenRouter, DeepSeek, Ollama, vLLM...):
 ```yaml
+spec_models:
+  low: "ag/gemini-3.8-flash-medium"             # Architect Spec cho task rủi ro thấp/vừa
+  medium: "ag/gemini-3.8-flash-medium"
+  high: "ag/claude-opus-5-5-medium"             # Architect Spec cho task rủi ro cao/nghiêm trọng
+  critical: "ag/claude-opus-5-5-medium"
+
 providers:
   local_9router:
     base_url: "http://127.0.0.1:20128/v1"
@@ -55,15 +61,15 @@ providers:
 roles:
   router:
     model: "ag/gemini-3.8-flash-medium"          # Cắt task nhanh 1 lượt
-  architect:
-    model: "ag/gemini-3.8-flash-medium"          # Model Giỏi vạch hợp đồng/spec
   designer:
     model: "ag/claude-sonnet-5-5"                # Model Giỏi đặc tả UI/DOM khi sửa giao diện
   writer:
     model: "deepseek-ai/deepseek-v4.1-flash-1017" # Model Thợ gõ code chính
     fallback_model: "ag/gemini-3.8-flash-medium"  # Dự phòng tự động khi model chính treo/timeout
+  reviewer:
+    model: "ag/claude-opus-5-5-medium"           # Thẩm định diff cho task standard/high (tùy chọn)
 ```
-*(Nếu bạn chỉ cấu hình duy nhất 1 model cho `writer`, hệ thống tự động thu gọn các bước phụ — Anti-Self-Play — để không bắt cùng 1 model tự viết spec cho chính mình đọc).*
+*(Hệ thống ưu tiên `spec_models` theo độ rủi ro của task khi chạy bước `Architect`; nếu không khai báo `spec_models` hoặc `roles.architect`, hệ thống tự fallback theo thứ tự vai trò hợp lệ. Nếu bạn chỉ cấu hình duy nhất 1 model cho `writer`, hệ thống tự động thu gọn các bước phụ — Anti-Self-Play — để không bắt cùng 1 model tự viết spec cho chính mình đọc).*
 
 ### 3. Cấu hình Ranh giới & Lệnh Test Dự Án Đích (`config/policy.yaml`)
 Mở [`config/policy.yaml`](config/policy.yaml) (hoặc tạo `config/policy.local.yaml` riêng cho máy cục bộ) để khai báo:
@@ -93,7 +99,7 @@ flowchart TD
 
 | Lệnh (`package.json`) | File thực thi | Công dụng thực tế |
 | :--- | :--- | :--- |
-| `npm run dashboard` | `scripts/dashboard.mjs` | Mở bàn điều khiển **Web Cockpit** cục bộ (mặc định `http://127.0.0.1:4310`, bảo vệ CSRF & khóa đơn tiến trình `.cockpit.lock`). |
+| `npm run dashboard` | `scripts/dashboard.mjs` | Mở bàn điều khiển **Web Cockpit v3.2** cục bộ (mặc định `http://127.0.0.1:4310`, bảo vệ Zero-XSS DOM, localhost CORS/CSRF, chân dung `.webp` siêu nhẹ, hộp thoại `⚙ Cấu hình` 3 tab gọn nhẹ & khóa `.cockpit.lock`). |
 | `npm run plan -- "<goal>"` | `scripts/goal-planner.mjs` | Dùng Router cắt yêu cầu thành các file Task YAML nguyên tử trong `tasks/active/` (`status: draft_review`). |
 | `npm start` | `scripts/orchestrator.mjs` | Chạy tuần tự các task `status: "ready"` (thêm `-- --approve` hoặc `-y` để duyệt chạy luôn các task nháp). |
 | `npm run agent` | `runtime/index.mjs` | Gọi độc lập 1 Agent kèm vòng lặp tool giới hạn lượt, hỗ trợ đính kèm ảnh `--image` và file `--file`. |
@@ -127,7 +133,7 @@ minimal-agent-orchestrator/
 │   ├── active/                # Hàng đợi task đang chờ duyệt (draft_review / ready / awaiting_confirmation)
 │   └── archive/               # Lưu trữ các task đã hoàn tất kèm thống kê bước chạy
 ├── state/                     # Trạng thái vận hành ghi nguyên tử, báo cáo sáng (morning-report) & telemetry
-└── ui/                        # Giao diện Web Cockpit Studio (Vanilla HTML/CSS/JS chống XSS)
+└── ui/                        # Giao diện Web Cockpit Studio v3.2 (Vanilla HTML/CSS/JS Zero-XSS, ảnh .webp gọn nhẹ, Cấu hình 3 tab)
 ```
 
 ---

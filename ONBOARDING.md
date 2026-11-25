@@ -1,4 +1,4 @@
-# 🧭 Sổ Tay Khởi Tạo & Vận Hành Chuẩn (Onboarding Standard v3.1)
+# 🧭 Sổ Tay Khởi Tạo & Vận Hành Chuẩn (Onboarding Standard v3.2)
 
 > **Câu chốt Triết lý & Kiến trúc Cốt lõi (Golden Rule):**  
 > *"Mini-Orchestrator là chiếc Khuôn Gá (Jig / Lồng 0-Token) giúp tận dụng các model giá rẻ/free qua `9router` chạy tự động nhiều task (kể cả qua đêm) mà không làm nát dự án: `Router` cắt việc thật nhỏ (`<= 2–3 file`) ➔ ghép `1 Model Giỏi` (ra bản vẽ/hợp đồng) kèm `1 Model Thợ` (chỉ làm đúng 1 việc sửa code trong `scope` hẹp) ➔ khóa ngoài bằng `Applier + Validator + Git Guard`. Tối ưu `Task Success / Token`, cấm Over-Engineering kiểu Enterprise."*
@@ -45,6 +45,7 @@ roles:
 > **💡 Mô hình Phối hợp Thực Chiến (`1 Model Giỏi + 1 Model Thợ`):**
 > - **Khi chỉ cấu hình 1 Model:** Các role khác (`router`, `architect`, `reviewer`) tự động kế thừa model của `writer` và tự thu gọn bước phụ (*Anti-Self-Play* & *Anti-Self-Review*) để không bắt 1 model tự viết spec cho chính nó đọc.
 > - **Khi cấu hình chuẩn Khuyến nghị (`1 Giỏi + 1 Thợ`):** Bạn gán model mạnh (`Gemini` / `Claude Sonnet`) cho `router` / `architect` / `designer` để cắt việc nhỏ và viết đặc tả thật nét ở lượt đầu, còn `writer` dùng model giá rẻ/free có KV-cache tốt (`DeepSeek` / `Gemini Flash`) kèm `fallback_model` để gõ bản vá trong `scope` hẹp.
+> - **Định tuyến `Architect` theo độ rủi ro (`spec_models`):** `config/team.yaml` hỗ trợ mục `spec_models` (`low / medium / high / critical`) để tự động chọn model phù hợp cho bước lập Tech Spec (`Architect`), hoặc bạn có thể chỉnh trực tiếp trên hộp thoại `⚙ Cấu hình` của Web Cockpit mà không cần sửa tay YAML.
 
 ### B. Ranh giới, Quy Ước Dự Án & Bộ Kiểm Thử (`config/policy.yaml`)
 Hệ thống chuẩn hóa **chỉ có đúng 2 file cấu hình** trong `config/` (`team.yaml` và `policy.yaml`). Toàn bộ ranh giới thư mục, file được bảo vệ, domain patterns và lệnh kiểm thử tự động được quản lý tập trung trong `config/policy.yaml`:
@@ -66,7 +67,7 @@ policy:
         run: "npm test" # Lệnh chạy test của dự án bạn (pytest, go test, npm test, etc.)
         timeout_sec: 30
 ```
-> **📎 Tự động nạp Quy ước Dự án (`<project_conventions>`):** Nếu thư mục gốc dự án của bạn có sẵn các file quy chuẩn như `AGENTS.md`, `CLAUDE.md`, `RULES.md` hoặc `.agents/rules/*.md`, Orchestrator v3.1 sẽ tự động lọc lấy các quy tắc kỹ thuật/kiến trúc để nạp cho AI mà không cần cấu hình thêm.
+> **📎 Tự động nạp Quy ước Dự án (`<project_conventions>`):** Nếu thư mục gốc dự án của bạn có sẵn các file quy chuẩn như `AGENTS.md`, `CLAUDE.md`, `RULES.md` hoặc `.agents/rules/*.md`, Orchestrator v3.2 sẽ tự động lọc lấy các quy tắc kỹ thuật/kiến trúc để nạp cho AI mà không cần cấu hình thêm.
 
 ---
 
@@ -98,9 +99,9 @@ npm run agent -- --role writer --scope "src/auth.py" --prompt "Bổ sung kiểm 
 npm run dashboard
 ```
 1. Mở trình duyệt tại `http://127.0.0.1:<port>` theo cổng cấu hình trong `config/policy.yaml` -> `policy.cockpit.port` (mặc định `4310`, Phòng Điều Khiển Hình Sao - Star Topology Control Room).
-2. Nhập mục tiêu tính năng hoặc câu hỏi tư vấn bằng ngôn ngữ tự nhiên, chọn chế độ định tuyến (`Auto: Task-Demand × Squad`, `Fast 1-Step`, `Spec + Coder`, hoặc `Consult Only`) $\rightarrow$ Bấm **`[Lập Kế Hoạch]`**.
+2. Nhập mục tiêu tính năng hoặc câu hỏi tư vấn bằng ngôn ngữ tự nhiên, chọn chế độ định tuyến (`Auto: Task-Demand × Squad`, `Fast 1-Step`, `Spec + Coder`, hoặc `Consult Only`) $\rightarrow$ Bấm **`[Phân tích & Lập kế hoạch]`**.
 3. AI Planner sẽ đọc codebase và tạo các task nháp ở trạng thái `draft_review`.
-4. Bạn kiểm tra lại các file trong `scope` $\rightarrow$ Bấm **`[Duyệt & Chạy Ngay]`**. Hệ thống sẽ tự động đổi `draft_review` sang `ready`, điều phối các chuyên gia theo mô hình Hình Sao, chạy kiểm thử và báo cáo kết quả.
+4. Bạn kiểm tra lại các file trong `scope` $\rightarrow$ Bấm **`[Phê duyệt & Khởi động]`**. Hệ thống sẽ tự động đổi `draft_review` sang `ready`, điều phối các chuyên gia theo mô hình Hình Sao, chạy kiểm thử và báo cáo kết quả.
 
 #### Cách B: Dùng CLI
 ```bash
@@ -164,7 +165,7 @@ constraints:
 ### Quy tắc 3: Nguyên Tắc Tách Nhỏ Task (< 150 Dòng) & Safe Refactoring
 - **Quy tắc < 150 dòng:** Dù một task chỉ chạm 1–2 file, nếu tổng lượng code sinh mới hoặc sửa đổi vượt quá ~150 dòng, hãy chia thành chuỗi task tuần tự (`T-...-001A`, `T-...-001B`) để tránh bị cắt cụt token (`finish_reason: length`).
 - **Tránh Cross-file Rename:** Hạn chế đổi tên hàm/biến xuất hiện ở nhiều file ngoài `scope`. Chỉ refactor trong phạm vi các file đã được khai báo tường minh trong `scope`.
-- **Cơ chế Block & Retry:** Nếu một task thất bại quá số lần quy định, Orchestrator sẽ đổi sang `status: "blocked"`. Hãy đọc file `state/runs/<TASK-ID>/attempt-<N>.txt` để chẩn đoán nguyên nhân, tinh chỉnh lại `goal`/`scope` rồi chuyển lại `status: "ready"`.
+- **Cơ chế Block & Retry:** Nếu một task thất bại quá số lần quy định, Orchestrator sẽ đổi sang `status: "blocked"`. Hãy đọc file `state/runs/<TASK-ID>/attempt-<N>.txt` (hoặc `attempt-<N>-b<K>.txt` khi task được chia nhiều bucket) để chẩn đoán nguyên nhân, tinh chỉnh lại `goal`/`scope` rồi chuyển lại `status: "ready"`.
 
 ### Quy tắc 4: Cấm Tự Ý Mở Orchestrator / Cockpit & Bắt Buộc Kiểm Tra Khóa/Cổng Trước
 - **Tuyệt đối không tự mở `orchestrator.mjs` hay `dashboard.mjs` (Cockpit):** IDE Agent chỉ soạn/cập nhật task YAML; không tự ý chạy `npm start` hoặc `npm run dashboard` khi chưa có yêu cầu hoặc phê duyệt rõ ràng từ người dùng.
