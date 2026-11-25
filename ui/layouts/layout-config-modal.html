@@ -17,7 +17,7 @@
       </button>
       <button class="cfg-nav-tab" data-tab="roles" id="cfg-tab-btn-roles">
         <span>Hồ sơ Vai trò (Role Guide)</span>
-        <span class="cfg-tab-counter">5</span>
+        <span class="cfg-tab-counter">6</span>
       </button>
       <button class="cfg-nav-tab" data-tab="project">
         <span>Chính sách &amp; Kiểm thử (policy.yaml)</span>
@@ -60,6 +60,7 @@
             <!-- Role Coverage Summary Mini -->
             <div class="role-coverage-pills" id="role-coverage-pills">
               <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-router" data-role-jump="router" title="Bấm để xem Hồ sơ &amp; Model khuyên dùng cho Router">Router: <strong>Khuyết</strong></span>
+              <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-architect" data-role-jump="architect" title="Bấm để xem Hồ sơ Architect / spec_models">Architect: <strong>Auto</strong></span>
               <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-writer" data-role-jump="writer" title="Bấm để xem Hồ sơ &amp; Model khuyên dùng cho Writer">Writer: <strong>Khuyết</strong></span>
               <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-designer" data-role-jump="designer" title="Bấm để xem Hồ sơ &amp; Model khuyên dùng cho Designer">Designer: <strong>Khuyết</strong></span>
               <span class="cov-mini-pill cov-pill-clickable" id="cov-pill-reviewer" data-role-jump="reviewer" title="Bấm để xem Hồ sơ &amp; Model khuyên dùng cho Reviewer">Reviewer: <strong>Khuyết</strong></span>
@@ -68,6 +69,8 @@
               </button>
             </div>
           </div>
+
+          <div id="spec-models-summary-bar" class="spec-models-bar" style="display: none;"></div>
 
           <div id="squad-members-list" class="squad-compact-list">
             <!-- Render dynamically by JS -->
@@ -113,20 +116,24 @@
                 <span class="dossier-tab-idx">01</span>
                 <span class="dossier-tab-name">Router</span>
               </button>
-              <button type="button" class="dossier-role-tab" data-role="designer">
+              <button type="button" class="dossier-role-tab" data-role="architect">
                 <span class="dossier-tab-idx">02</span>
+                <span class="dossier-tab-name">Architect</span>
+              </button>
+              <button type="button" class="dossier-role-tab" data-role="designer">
+                <span class="dossier-tab-idx">03</span>
                 <span class="dossier-tab-name">Designer</span>
               </button>
               <button type="button" class="dossier-role-tab" data-role="writer">
-                <span class="dossier-tab-idx">03</span>
+                <span class="dossier-tab-idx">04</span>
                 <span class="dossier-tab-name">Writer</span>
               </button>
               <button type="button" class="dossier-role-tab" data-role="reviewer">
-                <span class="dossier-tab-idx">04</span>
+                <span class="dossier-tab-idx">05</span>
                 <span class="dossier-tab-name">Reviewer</span>
               </button>
               <button type="button" class="dossier-role-tab" data-role="validator">
-                <span class="dossier-tab-idx">05</span>
+                <span class="dossier-tab-idx">06</span>
                 <span class="dossier-tab-name">Gatekeeper</span>
               </button>
             </div>
@@ -147,7 +154,7 @@
               </div>
 
               <div class="dossier-artwork-container">
-                <img id="dossier-portrait-img" class="dossier-portrait-img" src="/assets/roles/router.png" alt="Role Portrait" />
+                <img id="dossier-portrait-img" class="dossier-portrait-img" src="/assets/roles/router.webp" alt="Role Portrait" />
               </div>
             </div>
 
@@ -240,13 +247,13 @@
               <div class="policy-check-item">
                 <div class="policy-check-title-row">
                   <span class="policy-check-badge fast">FAST</span>
-                  <strong class="policy-check-name">Kiểm tra TAB Indentation &amp; Cú pháp</strong>
+                  <strong class="policy-check-name">Kiểm tra nhanh (Fast Lint &amp; Syntax Check)</strong>
                   <span class="policy-check-meta">Ngưỡng: &lt; 30s • Chạy ở mọi task</span>
                 </div>
                 <div class="policy-check-cmd-row">
                   <div class="policy-cmd-input-group">
                     <span class="cmd-prefix">$</span>
-                    <input type="text" id="cfg-fast-cmd" class="policy-cmd-input" placeholder="Lệnh kiểm tra nhanh (ví dụ: npm run lint hoặc python -m unittest)" spellcheck="false" />
+                    <input type="text" id="cfg-fast-cmd" class="policy-cmd-input" placeholder="Lệnh kiểm tra nhanh (ví dụ: npm run lint hoặc node scripts/validator.mjs fast)" spellcheck="false" />
                     <div class="timeout-wrap">
                       <span>Timeout:</span>
                       <input type="number" id="cfg-fast-timeout" class="policy-num-input" value="15" min="5" max="120" />
@@ -267,13 +274,13 @@
               <div class="policy-check-item">
                 <div class="policy-check-title-row">
                   <span class="policy-check-badge suite">SUITE</span>
-                  <strong class="policy-check-name">Bộ kiểm thử đơn vị Python (Unittest Suite)</strong>
+                  <strong class="policy-check-name">Bộ kiểm thử toàn diện (Unit / Integration Suite)</strong>
                   <span class="policy-check-meta">Ngưỡng: &lt; 180s • Chạy Standard mode &amp; trước khi Done</span>
                 </div>
                 <div class="policy-check-cmd-row">
                   <div class="policy-cmd-input-group">
                     <span class="cmd-prefix">$</span>
-                    <input type="text" id="cfg-suite-cmd" class="policy-cmd-input" placeholder="Lệnh kiểm thử toàn diện (ví dụ: npm test hoặc python -m unittest)" spellcheck="false" />
+                    <input type="text" id="cfg-suite-cmd" class="policy-cmd-input" placeholder="Lệnh kiểm thử toàn diện (ví dụ: npm test hoặc pytest)" spellcheck="false" />
                     <div class="timeout-wrap">
                       <span>Timeout:</span>
                       <input type="number" id="cfg-suite-timeout" class="policy-num-input" value="180" min="10" max="600" />

@@ -52,6 +52,9 @@
 
     const squadModelRouter = document.getElementById('squad-model-router');
     const squadStatusRouter = document.getElementById('squad-status-router');
+    const squadRowArchitect = document.getElementById('squad-row-architect');
+    const squadModelArchitect = document.getElementById('squad-model-architect');
+    const squadStatusArchitect = document.getElementById('squad-status-architect');
     const squadModelWriter = document.getElementById('squad-model-writer');
     const squadStatusWriter = document.getElementById('squad-status-writer');
     const squadModelDesigner = document.getElementById('squad-model-designer');
@@ -60,6 +63,8 @@
     const squadModelReviewer = document.getElementById('squad-model-reviewer');
     const squadStatusReviewer = document.getElementById('squad-status-reviewer');
     const squadActiveModeTag = document.getElementById('squad-active-mode-tag');
+    let currentSpecModels = null;
+    let currentRouterHostLabel = ':20128';
 
     const scopeFilesList = document.getElementById('scope-files-list');
     const scopeCount = document.getElementById('scope-count');
@@ -254,8 +259,47 @@
             desc: 'Không trực tiếp chỉnh sửa mã nguồn; không suy đoán tên file ngoài thực tế dự án; không vượt quá số lượng file tối đa mỗi task (max_files_per_task).'
           }
         ],
-        proTip: 'Nên gán model nhanh làm Router mặc định trong team.yaml và cấu hình escalation_model dự phòng khi JSON không hợp lệ, giúp bảo toàn quota cho Reviewer và Designer.',
-        defaultImg: '/assets/roles/router.png'
+        proTip: 'Nên gán model nhanh làm Router mặc định trong team.yaml và cấu hình escalation_model dự phòng khi JSON không hợp lệ, giúp bảo toàn quota cho Architect, Designer và Reviewer.',
+        defaultImg: '/assets/roles/router.webp'
+      },
+      architect: {
+        phase: 'PHA 02A',
+        specFile: 'roles/architect.md',
+        title: 'ARCHITECT',
+        subtitle: 'Đặc tả Kiến trúc & Hợp đồng Kỹ thuật (Tech Spec & Contract Table)',
+        kpi1: { label: 'CHỌN MODEL THEO RISK', val: 'spec_models', sub: 'Low/Medium dùng model gọn • High/Critical dùng model mạnh' },
+        kpi2: { label: 'TỐI ƯU RETRY', val: 'Tái dùng Spec 0-token', sub: 'Giữ nguyên Spec khi chỉ vướng lỗi Apply cơ khí' },
+        rec: {
+          tier: 'Lead / Spec Tier',
+          primary: 'Năng lực: Phân tích hợp đồng API/Schema, khóa bảng hàm & luồng biên trước khi viết code',
+          secondary: 'Cấu hình trong team.yaml -> spec_models (low/medium/high/critical)',
+          reason: 'Architect đóng vai "1 Người Giỏi" lập Bảng hợp đồng để "1 Người Thợ" (Writer) thi công chính xác trong 1–2 lần thử, giảm retry lan man.'
+        },
+        plainSummary: 'Đọc file trong scope và láng giềng 1-hop để viết đặc tả kỹ thuật kèm Bảng hợp đồng (Function | Input -> Output | Error/Fallback) trước khi Writer viết code. Có thể trả SKIP_SPEC ngay nếu task đơn giản.',
+        operations: [
+          {
+            title: '01. BẢNG HỢP ĐỒNG KỸ THUẬT',
+            tag: 'Contract Table',
+            desc: 'Chốt rõ tên hàm, kiểu dữ liệu vào/ra và nhánh lỗi trước khi sinh bản vá, ưu tiên acceptance_criteria của task.'
+          },
+          {
+            title: '02. PHÂN TẦNG THEO RỦI RO',
+            tag: 'spec_models',
+            desc: 'Hệ thống tự chọn model từ team.yaml -> spec_models tương ứng với risk_level (hoặc roles.architect nếu cấu hình riêng).'
+          },
+          {
+            title: '03. BỎ QUA NHANH & TÁI SỬ DỤNG',
+            tag: 'Smart Reuse',
+            desc: 'Trả SKIP_SPEC nếu tiêu chí đã đủ rõ; khi Writer chỉ lỗi ở bước Applier (chưa đụng test), giữ nguyên Spec 0-token.'
+          },
+          {
+            title: '04. GIỚI HẠN AN TOÀN',
+            tag: 'Read-Only Spec',
+            desc: 'Chỉ xuất tài liệu Markdown vào state/runs/, gắn nhãn [ASSUMPTION] cho phần chưa rõ, không trực tiếp sửa mã nguồn.'
+          }
+        ],
+        proTip: 'Không cần tạo role riêng bắt buộc nếu đã cấu hình bảng spec_models trong team.yaml; giữ writer model độc lập với spec_models để tránh tự phê duyệt.',
+        defaultImg: '/assets/roles/router.webp'
       },
       designer: {
         phase: 'PHA 02',
@@ -294,7 +338,7 @@
           }
         ],
         proTip: 'Sử dụng model Vision (cấu hình tại roles.designer trong team.yaml) khi tác vụ có kèm ảnh mẫu (--image) hoặc cần tái cấu trúc giao diện lớn.',
-        defaultImg: '/assets/roles/designer.png'
+        defaultImg: '/assets/roles/designer.webp'
       },
       writer: {
         phase: 'PHA 03',
@@ -302,7 +346,7 @@
         title: 'WRITER',
         subtitle: 'Thi công mã nguồn & Tạo bản vá (Code Implementation)',
         kpi1: { label: 'PHẠM VI CÔNG CỤ', val: '2–5 lượt', sub: 'Spec: 2 lượt | Quick (đủ): 3 | Smart/Standard: 5 (trần chung 12)' },
-        kpi2: { label: 'ĐỊNH DẠNG ĐẦU RA', val: 'SEARCH / REPLACE', sub: 'Tuân thủ 100% thụt lề TAB (\\t) cho Python' },
+        kpi2: { label: 'ĐỊNH DẠNG ĐẦU RA', val: 'SEARCH / REPLACE', sub: 'Tuân thủ chuẩn định dạng & cú pháp của từng dự án' },
         rec: {
           tier: 'Coder Tier',
           primary: 'Năng lực: Sinh mã & xuất khối SEARCH/REPLACE dài ổn định, đúng cú pháp',
@@ -324,16 +368,16 @@
           {
             title: '03. PHÂN TÁCH MIỀN TỰ ĐỘNG',
             tag: 'Bucket Split',
-            desc: 'Khi tác vụ bao gồm cả Backend (Python) và Frontend (HTML/JS) hoặc file dung lượng lớn (>55KB), hệ thống tự động chia thành các bước tuần tự.'
+            desc: 'Khi tác vụ bao gồm cả Backend và Frontend hoặc file dung lượng lớn (>55KB), hệ thống tự động chia thành các bước tuần tự theo bucket.'
           },
           {
             title: '04. GIỚI HẠN AN TOÀN',
             tag: 'Strict Scope',
-            desc: 'Cấm sửa file ngoài scope; cấm lược bỏ code bằng chú thích rút gọn; bắt buộc dùng 100% TAB (\\t) cho Python và render an toàn (.textContent) cho giao diện.'
+            desc: 'Cấm sửa file ngoài scope; cấm lược bỏ code bằng chú thích rút gọn; tuân thủ policy kiểm tra cú pháp dự án và render DOM an toàn (.textContent).'
           }
         ],
-        proTip: 'Mọi bản vá của Writer đều được kiểm tra tự động bởi Gatekeeper (Applier + Tree-sitter + Unit Tests), do đó nên đặt model viết code tối ưu chi phí ở models[0] và model dự phòng ở models[1..].',
-        defaultImg: '/assets/roles/writer.png'
+        proTip: 'Mọi bản vá của Writer đều được kiểm tra tự động bởi Gatekeeper (Applier + Tree-sitter + Bộ Test), do đó nên đặt model viết code tối ưu chi phí ở models[0] và model dự phòng ở models[1..].',
+        defaultImg: '/assets/roles/writer.webp'
       },
       reviewer: {
         phase: 'PHA 05',
@@ -372,22 +416,22 @@
           }
         ],
         proTip: 'Các tác vụ nhỏ (chế độ quick) tự động bỏ qua bước Reviewer. Với tác vụ chuẩn (standard), prompt đã được nén gọn nên có thể dùng model chất lượng cao cấu hình tại roles.reviewer trong team.yaml.',
-        defaultImg: '/assets/roles/reviewer.png'
+        defaultImg: '/assets/roles/reviewer.webp'
       },
       validator: {
         phase: 'PHA 04',
         specFile: 'scripts/applier.mjs & validator.mjs',
         title: 'GATEKEEPER',
-        subtitle: 'Hệ thống kiểm định cơ khí cục bộ (Applier • Tree-sitter • Unittest)',
-        kpi1: { label: 'CHI PHÍ TOKEN AI', val: '0 Token', sub: 'Thực thi 100% cục bộ bằng Node.js & Python' },
+        subtitle: 'Hệ thống kiểm định cơ khí cục bộ (Applier • Tree-sitter • Test Suite)',
+        kpi1: { label: 'CHI PHÍ TOKEN AI', val: '0 Token', sub: 'Thực thi 100% cục bộ bằng công cụ cấu hình trong policy.yaml' },
         kpi2: { label: 'CƠ CHẾ BẢO VỆ', val: 'Tự động Git Rollback', sub: 'Ngăn chặn bản vá lỗi trước khi gọi Reviewer' },
         rec: {
           tier: 'Local Deterministic',
-          primary: 'Node.js Applier + Tree-sitter AST + Python Unittest',
+          primary: 'Node.js Applier + Tree-sitter AST + Policy Validation Checks',
           secondary: 'Cấu hình tại tab: Chính sách & Kiểm thử (policy.yaml)',
           reason: 'Thay vì dùng LLM để kiểm tra cú pháp sau mỗi bước, hệ thống sử dụng bộ kiểm định tất định chạy trực tiếp trên máy cục bộ với chi phí 0 token.'
         },
-        plainSummary: 'Tầng kiểm duyệt tự động chạy ngay sau khi Writer xuất bản vá: kiểm tra quyền truy cập file, đối chiếu chữ ký hàm bằng AST, xác thực thụt lề TAB và thực thi toàn bộ Unit Test liên quan.',
+        plainSummary: 'Tầng kiểm duyệt tự động chạy ngay sau khi Writer xuất bản vá: kiểm tra quyền truy cập file, đối chiếu chữ ký hàm bằng AST, chạy Fast Check và thực thi toàn bộ Test Suite của dự án.',
         operations: [
           {
             title: '01. KIỂM SOÁT PHẠM VI (APPLIER)',
@@ -402,25 +446,37 @@
           {
             title: '03. BẢO VỆ TÍNH TOÀN VẸN TEST',
             tag: 'Anti-Tamper',
-            desc: 'Ngăn chặn hành vi xóa hàm kiểm thử (def test_*), gắn cờ bỏ qua (@unittest.skip) hoặc làm sai lệch điều kiện assert.'
+            desc: 'Ngăn chặn hành vi xóa hàm kiểm thử, gắn cờ bỏ qua (skip) hoặc làm sai lệch điều kiện kiểm chứng (assertion).'
           },
           {
             title: '04. CHẠY TEST & KHÔI PHỤC TỰ ĐỘNG',
             tag: 'git-guard.mjs',
-            desc: 'Thực thi kiểm tra nhanh (Fast Check) và bộ Unit Test. Nếu thất bại sau số lần thử lại cho phép, tự động rollback mã nguồn về trạng thái sạch.'
+            desc: 'Thực thi kiểm tra nhanh (Fast Check) và bộ Test Suite. Nếu thất bại sau số lần thử lại cho phép, tự động rollback mã nguồn về trạng thái sạch.'
           }
         ],
         proTip: 'Có thể tùy chỉnh câu lệnh Fast Check, Suite Check, thời gian chờ (timeout) và danh sách tệp bảo vệ tại tab "Chính sách & Kiểm thử (policy.yaml)".',
-        defaultImg: '/assets/roles/gatekeeper.png'
+        defaultImg: '/assets/roles/gatekeeper.webp'
       }
     };
 
     // Clean up any legacy localStorage portrait keys so roles always load fixed static files
     try {
-      ['router', 'designer', 'writer', 'reviewer', 'validator'].forEach(r => {
+      ['router', 'architect', 'designer', 'writer', 'reviewer', 'validator'].forEach(r => {
         localStorage.removeItem(`cockpit_role_portrait_${r}`);
       });
     } catch {}
+
+    function formatSpecModelsSummary(specModels) {
+      if (!specModels || typeof specModels !== 'object') return '';
+      const low = specModels.low || specModels.medium || '';
+      const med = specModels.medium || low;
+      const high = specModels.high || specModels.critical || '';
+      const parts = [];
+      if (low) parts.push(`low/med: ${String(low).split('/').pop()}`);
+      else if (med) parts.push(`med: ${String(med).split('/').pop()}`);
+      if (high) parts.push(`high/crit: ${String(high).split('/').pop()}`);
+      return parts.join(' | ');
+    }
 
     function getAssignedModelForRole(roleKey) {
       if (roleKey === 'validator') {
@@ -435,6 +491,10 @@
       if (cfgRole && cfgRole.enabled !== false && (cfgRole.model || cfgRole.default_model)) {
         const raw = cfgRole.display_name || cfgRole.model || cfgRole.default_model;
         return String(raw).split('/').pop();
+      }
+      if (roleKey === 'architect') {
+        const specSummary = formatSpecModelsSummary(currentSpecModels);
+        return specSummary ? `spec_models (${specSummary})` : 'Tự động theo spec_models';
       }
       return 'Chưa gán';
     }
@@ -483,12 +543,16 @@
 
       // Recommended Model Card (read dynamically from live team.yaml when configured)
       const cfgRole = currentSquadRolesConfig?.[roleKey];
-      const cfgPrimary = cfgRole && cfgRole.enabled !== false
+      let cfgPrimary = cfgRole && cfgRole.enabled !== false
         ? (extractModelId(Array.isArray(cfgRole.models) ? cfgRole.models[0] : null) || cfgRole.default_model || cfgRole.model || '')
         : '';
-      const cfgSecondary = cfgRole && cfgRole.enabled !== false
+      let cfgSecondary = cfgRole && cfgRole.enabled !== false
         ? (extractModelId(Array.isArray(cfgRole.models) ? cfgRole.models[1] : null) || cfgRole.escalation_model || cfgRole.fallback_model || '')
         : '';
+      if (roleKey === 'architect' && !cfgPrimary && currentSpecModels) {
+        cfgPrimary = currentSpecModels.low || currentSpecModels.medium || '';
+        cfgSecondary = currentSpecModels.high || currentSpecModels.critical || '';
+      }
       setTxt('dossier-rec-tier-badge', roleInfo.rec.tier);
       setTxt('dossier-rec-primary', cfgPrimary || roleInfo.rec.primary);
       setTxt('dossier-rec-secondary', cfgSecondary || roleInfo.rec.secondary);
@@ -661,11 +725,25 @@
 
     const covPills = {
       router: document.getElementById('cov-pill-router'),
+      architect: document.getElementById('cov-pill-architect'),
       writer: document.getElementById('cov-pill-writer'),
       designer: document.getElementById('cov-pill-designer'),
       reviewer: document.getElementById('cov-pill-reviewer')
     };
+    const specModelsSummaryBar = document.getElementById('spec-models-summary-bar');
     const squadTabCountBadge = document.getElementById('squad-tab-count-badge');
+
+    function renderSpecModelsSummaryBar(specModels) {
+      if (!specModelsSummaryBar) return;
+      const summary = formatSpecModelsSummary(specModels);
+      if (!summary) {
+        specModelsSummaryBar.style.display = 'none';
+        specModelsSummaryBar.textContent = '';
+        return;
+      }
+      specModelsSummaryBar.style.display = 'block';
+      specModelsSummaryBar.textContent = `Architect Tech Spec (team.yaml spec_models): ${summary}`;
+    }
 
     async function load9RouterModels(force = false) {
       if (available9RouterModels.length > 0 && !force) {
@@ -682,6 +760,14 @@
       if (customUrl) queryStr += `?url=${encodeURIComponent(customUrl)}`;
       if (customKey) queryStr += `${queryStr ? '&' : '?'}key=${encodeURIComponent(customKey)}`;
 
+      let activeHostLabel = currentRouterHostLabel || ':20128';
+      if (customUrl) {
+        try {
+          const parsedUrl = new URL(customUrl);
+          activeHostLabel = parsedUrl.port ? `:${parsedUrl.port}` : (parsedUrl.host || activeHostLabel);
+        } catch {}
+      }
+
       try {
         const data = await (await fetch(`/api/models${queryStr}`)).json();
 
@@ -692,7 +778,7 @@
           }
           if (cfgRouterBadge) {
             cfgRouterBadge.className = 'cfg-router-status-pill';
-            cfgRouterBadge.textContent = `9Router :20128 (${data.models.length} models)`;
+            cfgRouterBadge.textContent = `9Router ${activeHostLabel} (${data.models.length} models)`;
           }
           if (routerConnStatusBadge) {
             routerConnStatusBadge.className = 'router-conn-status online';
@@ -715,12 +801,28 @@
           cfgRouterBadge.textContent = '9Router: ' + err.message;
         }
         if (modelPoolGrid) {
-          modelPoolGrid.innerHTML = `
-            <div style="padding: 16px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 6px; font-size: 11.5px; color: #fca5a5;">
-              <strong>Chú ý:</strong> ${escapeHtml(err.message)}<br/>
-              <span style="font-size: 11px; opacity: 0.8; margin-top: 4px; display: inline-block;">Gợi ý: Nếu bạn vừa cập nhật code, hãy bấm <code>Ctrl + C</code> trong terminal đang chạy Dashboard và chạy lại: <code>node agent-team/scripts/dashboard.mjs</code></span>
-            </div>
-          `;
+          modelPoolGrid.replaceChildren();
+          const errBox = document.createElement('div');
+          errBox.style.padding = '16px';
+          errBox.style.background = 'rgba(239, 68, 68, 0.08)';
+          errBox.style.border = '1px solid rgba(239, 68, 68, 0.25)';
+          errBox.style.borderRadius = '6px';
+          errBox.style.fontSize = '11.5px';
+          errBox.style.color = '#fca5a5';
+
+          const strongEl = document.createElement('strong');
+          strongEl.textContent = 'Chú ý: ';
+          const msgTxt = document.createTextNode(String(err.message || 'Lỗi kết nối'));
+          const brEl = document.createElement('br');
+          const hintSpan = document.createElement('span');
+          hintSpan.style.fontSize = '11px';
+          hintSpan.style.opacity = '0.8';
+          hintSpan.style.marginTop = '4px';
+          hintSpan.style.display = 'inline-block';
+          hintSpan.textContent = 'Gợi ý: Nếu bạn vừa cập nhật code, hãy bấm Ctrl + C trong terminal đang chạy Dashboard và chạy lại: node agent-team/scripts/dashboard.mjs';
+
+          errBox.append(strongEl, msgTxt, brEl, hintSpan);
+          modelPoolGrid.appendChild(errBox);
         }
       } finally {
         if (spinRefreshModels) spinRefreshModels.style.display = 'none';
@@ -780,18 +882,38 @@
     }
 
     // Render Compact Horizontal Rows (Cao ~54px, chống tràn text)
+    function createCapabilityBadge(label) {
+      const span = document.createElement('span');
+      span.className = 'badge-neutral';
+      span.textContent = label;
+      return span;
+    }
+
     function renderSquadPersonnel() {
       if (!squadMembersList) return;
-      squadMembersList.innerHTML = '';
+      squadMembersList.replaceChildren();
 
       if (squadCountBadge) squadCountBadge.textContent = `${squadMembers.length} Thành Viên`;
       if (squadTabCountBadge) squadTabCountBadge.textContent = `${squadMembers.length}`;
 
       if (squadMembers.length === 0) {
-        squadMembersList.innerHTML = '<div class="empty-squad-notice">Chưa có thành viên nào trong đội. Chọn model từ Kho 9Router bên dưới và bấm "+ Thêm Vào Đội".</div>';
+        const emptyNotice = document.createElement('div');
+        emptyNotice.className = 'empty-squad-notice';
+        emptyNotice.textContent = 'Chưa có thành viên nào trong đội. Chọn model từ Kho 9Router bên dưới và bấm "+ Thêm Vào Đội".';
+        squadMembersList.appendChild(emptyNotice);
         updateRoleCoverageMatrix();
         return;
       }
+
+      const roleOptions = [
+        { value: 'standby', label: 'Dự Bị (Standby)' },
+        { value: 'router', label: 'Router (Goal & Scope Planner)' },
+        { value: 'architect', label: 'Architect (Tech Spec — tùy chọn)' },
+        { value: 'writer', label: 'Writer (Code Generator)' },
+        { value: 'designer', label: 'Designer (Visual Auditor)' },
+        { value: 'reviewer', label: 'Reviewer (TechLead Reviewer)' }
+      ];
+      const standardRoles = new Set(roleOptions.map(o => o.value));
 
       squadMembers.forEach((member, idx) => {
         const row = document.createElement('div');
@@ -804,51 +926,81 @@
           reasoning: member.model.includes('thinking') || member.model.includes('opus') || member.model.includes('sonnet')
         };
 
-        // Badges trung tính, không emoji lòe loẹt
-        const capsHtml = `
-          ${caps.vision ? '<span class="badge-neutral">Vision</span>' : ''}
-          ${caps.tools ? '<span class="badge-neutral">Tools</span>' : ''}
-          ${caps.reasoning ? '<span class="badge-neutral">Thinking</span>' : ''}
-        `;
+        const left = document.createElement('div');
+        left.className = 'compact-left';
 
-        const latencyBadgeHtml = member.testing
-          ? '<span class="test-result-badge badge-running">...</span>'
-          : (member.latency_ms !== null
-              ? (member.error
-                  ? `<span class="test-result-badge badge-error" title="${escapeHtml(member.error)}">✕ Lỗi</span>`
-                  : `<span class="test-result-badge badge-done">✓ ${member.latency_ms}ms</span>`)
-              : '<span class="test-result-badge">Chưa test</span>');
+        const titleLine = document.createElement('div');
+        titleLine.className = 'compact-title-line';
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'compact-model-name';
+        nameSpan.textContent = member.name || member.model;
+        const idSpan = document.createElement('span');
+        idSpan.className = 'compact-model-id';
+        idSpan.textContent = member.model;
+        titleLine.append(nameSpan, idSpan);
 
-        const standardRoles = new Set(['standby', 'router', 'writer', 'designer', 'reviewer']);
-        const customRoleOpt = (!standardRoles.has(member.role) && member.role)
-          ? `<option value="${escapeHtml(member.role)}" selected>${escapeHtml(member.role)}</option>`
-          : '';
+        const badgesRow = document.createElement('div');
+        badgesRow.className = 'compact-badges-row';
+        if (caps.vision) badgesRow.appendChild(createCapabilityBadge('Vision'));
+        if (caps.tools) badgesRow.appendChild(createCapabilityBadge('Tools'));
+        if (caps.reasoning) badgesRow.appendChild(createCapabilityBadge('Thinking'));
+        left.append(titleLine, badgesRow);
 
-        row.innerHTML = `
-          <div class="compact-left">
-            <div class="compact-title-line">
-              <span class="compact-model-name">${escapeHtml(member.name || member.model)}</span>
-              <span class="compact-model-id">${escapeHtml(member.model)}</span>
-            </div>
-            <div class="compact-badges-row">${capsHtml}</div>
-          </div>
-          <div class="compact-right">
-            <select class="compact-role-select" data-idx="${idx}">
-              <option value="standby" ${member.role === 'standby' ? 'selected' : ''}>Dự Bị (Standby)</option>
-              <option value="router" ${member.role === 'router' ? 'selected' : ''}>Router (Architect &amp; Planner)</option>
-              <option value="writer" ${member.role === 'writer' ? 'selected' : ''}>Writer (Code Generator)</option>
-              <option value="designer" ${member.role === 'designer' ? 'selected' : ''}>Designer (Visual Auditor)</option>
-              <option value="reviewer" ${member.role === 'reviewer' ? 'selected' : ''}>Reviewer (TechLead Reviewer)</option>
-              ${customRoleOpt}
-            </select>
-            ${latencyBadgeHtml}
-            <button class="btn-compact-test btn-test-member" data-idx="${idx}" title="Đo độ trễ mạng thực tế">
-              <span>Test</span>
-            </button>
-            <button class="btn-compact-remove" data-idx="${idx}" title="Gỡ khỏi đội ngũ">✕</button>
-          </div>
-        `;
+        const right = document.createElement('div');
+        right.className = 'compact-right';
 
+        const selectEl = document.createElement('select');
+        selectEl.className = 'compact-role-select';
+        selectEl.dataset.idx = String(idx);
+        roleOptions.forEach(optDef => {
+          const opt = document.createElement('option');
+          opt.value = optDef.value;
+          opt.textContent = optDef.label;
+          if (member.role === optDef.value) opt.selected = true;
+          selectEl.appendChild(opt);
+        });
+        if (!standardRoles.has(member.role) && member.role) {
+          const customOpt = document.createElement('option');
+          customOpt.value = member.role;
+          customOpt.textContent = member.role;
+          customOpt.selected = true;
+          selectEl.appendChild(customOpt);
+        }
+
+        const latencyBadge = document.createElement('span');
+        if (member.testing) {
+          latencyBadge.className = 'test-result-badge badge-running';
+          latencyBadge.textContent = '...';
+        } else if (member.latency_ms !== null) {
+          if (member.error) {
+            latencyBadge.className = 'test-result-badge badge-error';
+            latencyBadge.title = String(member.error);
+            latencyBadge.textContent = '✕ Lỗi';
+          } else {
+            latencyBadge.className = 'test-result-badge badge-done';
+            latencyBadge.textContent = `✓ ${member.latency_ms}ms`;
+          }
+        } else {
+          latencyBadge.className = 'test-result-badge';
+          latencyBadge.textContent = 'Chưa test';
+        }
+
+        const btnTest = document.createElement('button');
+        btnTest.className = 'btn-compact-test btn-test-member';
+        btnTest.dataset.idx = String(idx);
+        btnTest.title = 'Đo độ trễ mạng thực tế';
+        const btnTestSpan = document.createElement('span');
+        btnTestSpan.textContent = 'Test';
+        btnTest.appendChild(btnTestSpan);
+
+        const btnRemove = document.createElement('button');
+        btnRemove.className = 'btn-compact-remove';
+        btnRemove.dataset.idx = String(idx);
+        btnRemove.title = 'Gỡ khỏi đội ngũ';
+        btnRemove.textContent = '✕';
+
+        right.append(selectEl, latencyBadge, btnTest, btnRemove);
+        row.append(left, right);
         squadMembersList.appendChild(row);
       });
 
@@ -914,6 +1066,7 @@
 
       const roleDisplayNames = {
         router: 'Router',
+        architect: 'Architect',
         writer: 'Writer',
         designer: 'Designer',
         reviewer: 'Reviewer'
@@ -923,21 +1076,27 @@
         if (!pillEl) continue;
         const roleName = roleDisplayNames[rKey] || (rKey.charAt(0).toUpperCase() + rKey.slice(1));
         const list = assignedMap[rKey] || [];
+        pillEl.replaceChildren();
+        pillEl.appendChild(document.createTextNode(`${roleName}: `));
+        const strongEl = document.createElement('strong');
         if (list.length > 0) {
-          pillEl.className = 'cov-mini-pill assigned';
-          const label = list.length === 1 ? list[0] : `${list[0]} (+${list.length - 1})`;
-          pillEl.innerHTML = `${roleName}: <strong>${escapeHtml(label)}</strong>`;
+          pillEl.className = 'cov-mini-pill cov-pill-clickable assigned';
+          strongEl.textContent = list.length === 1 ? list[0] : `${list[0]} (+${list.length - 1})`;
+        } else if (rKey === 'architect' && currentSpecModels) {
+          pillEl.className = 'cov-mini-pill cov-pill-clickable assigned';
+          strongEl.textContent = 'Auto (spec_models)';
         } else {
-          pillEl.className = 'cov-mini-pill';
-          pillEl.innerHTML = `${roleName}: <strong>Khuyết</strong>`;
+          pillEl.className = 'cov-mini-pill cov-pill-clickable';
+          strongEl.textContent = 'Khuyết';
         }
+        pillEl.appendChild(strongEl);
       }
     }
 
     // Render Kho Model 9Router (Horizontal Scroll Track)
     function renderModelPool() {
       if (!modelPoolGrid) return;
-      modelPoolGrid.innerHTML = '';
+      modelPoolGrid.replaceChildren();
 
       const kw = (cfgSearchModels ? cfgSearchModels.value : '').toLowerCase().trim();
       const existingModelSet = new Set(squadMembers.map(m => m.model));
@@ -955,11 +1114,14 @@
       }
 
       if (filtered.length === 0) {
-        modelPoolGrid.innerHTML = `
-          <div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 11.5px; white-space: nowrap;">
-            Không tìm thấy model nào khớp với từ khóa "${escapeHtml(kw)}".
-          </div>
-        `;
+        const emptyEl = document.createElement('div');
+        emptyEl.style.padding = '24px';
+        emptyEl.style.textAlign = 'center';
+        emptyEl.style.color = 'var(--text-muted)';
+        emptyEl.style.fontSize = '11.5px';
+        emptyEl.style.whiteSpace = 'nowrap';
+        emptyEl.textContent = `Không tìm thấy model nào khớp với bộ lọc "${kw || activeFilter}".`;
+        modelPoolGrid.appendChild(emptyEl);
         return;
       }
 
@@ -968,30 +1130,49 @@
         const isAdded = existingModelSet.has(m.id);
         card.className = 'pool-card-compact' + (isAdded ? ' in-squad' : '');
 
-        const capsHtml = `
-          ${m.capabilities?.vision ? '<span class="badge-neutral">Vision</span>' : ''}
-          ${m.capabilities?.tools ? '<span class="badge-neutral">Tools</span>' : ''}
-          ${m.capabilities?.reasoning ? '<span class="badge-neutral">Thinking</span>' : ''}
-        `;
+        const top = document.createElement('div');
+        top.className = 'pool-card-top';
+        const nameEl = document.createElement('div');
+        nameEl.className = 'pool-card-name';
+        nameEl.textContent = m.name;
+        const idEl = document.createElement('div');
+        idEl.className = 'pool-card-id';
+        idEl.textContent = m.id;
+        const badgesEl = document.createElement('div');
+        badgesEl.className = 'pool-card-badges';
+        if (m.capabilities?.vision) badgesEl.appendChild(createCapabilityBadge('Vision'));
+        if (m.capabilities?.tools) badgesEl.appendChild(createCapabilityBadge('Tools'));
+        if (m.capabilities?.reasoning) badgesEl.appendChild(createCapabilityBadge('Thinking'));
+        top.append(nameEl, idEl, badgesEl);
 
-        card.innerHTML = `
-          <div class="pool-card-top">
-            <div class="pool-card-name">${escapeHtml(m.name)}</div>
-            <div class="pool-card-id">${escapeHtml(m.id)}</div>
-            <div class="pool-card-badges">${capsHtml}</div>
-          </div>
-          <div class="pool-card-actions">
-            <button class="btn-pool-test" data-model="${escapeHtml(m.id)}">
-              <span>Test</span>
-              <span class="pool-test-lbl"></span>
-            </button>
-            ${isAdded
-              ? '<span class="btn-pool-added-badge">Đã trong đội</span>'
-              : `<button class="btn-pool-add" data-model="${escapeHtml(m.id)}" data-name="${escapeHtml(m.name)}">+ Thêm Vào Đội</button>`
-            }
-          </div>
-        `;
+        const actionsEl = document.createElement('div');
+        actionsEl.className = 'pool-card-actions';
 
+        const btnTest = document.createElement('button');
+        btnTest.className = 'btn-pool-test';
+        btnTest.dataset.model = m.id;
+        const spTest = document.createElement('span');
+        spTest.textContent = 'Test';
+        const spLbl = document.createElement('span');
+        spLbl.className = 'pool-test-lbl';
+        btnTest.append(spTest, spLbl);
+        actionsEl.appendChild(btnTest);
+
+        if (isAdded) {
+          const addedSpan = document.createElement('span');
+          addedSpan.className = 'btn-pool-added-badge';
+          addedSpan.textContent = 'Đã trong đội';
+          actionsEl.appendChild(addedSpan);
+        } else {
+          const btnAdd = document.createElement('button');
+          btnAdd.className = 'btn-pool-add';
+          btnAdd.dataset.model = m.id;
+          btnAdd.dataset.name = m.name;
+          btnAdd.textContent = '+ Thêm Vào Đội';
+          actionsEl.appendChild(btnAdd);
+        }
+
+        card.append(top, actionsEl);
         modelPoolGrid.appendChild(card);
       });
 
@@ -1055,9 +1236,10 @@
     }
 
     // Filter pill events
-    document.querySelectorAll('.btn-filter-pill').forEach(pill => {
+    const filterButtons = document.querySelectorAll('.cfg-filter-btn, .btn-filter-pill');
+    filterButtons.forEach(pill => {
       pill.addEventListener('click', () => {
-        document.querySelectorAll('.btn-filter-pill').forEach(p => p.classList.remove('active'));
+        filterButtons.forEach(p => p.classList.remove('active'));
         pill.classList.add('active');
         activeFilter = pill.dataset.filter || 'all';
         renderModelPool();
@@ -1120,7 +1302,7 @@
       // Allowed dirs & protected files badges
       const wrapAllowedDirs = document.getElementById('wrap-allowed-dirs');
       if (wrapAllowedDirs && Array.isArray(pol.scope_control?.allowed_dirs)) {
-        wrapAllowedDirs.innerHTML = '';
+        wrapAllowedDirs.replaceChildren();
         pol.scope_control.allowed_dirs.forEach(d => {
           const badge = document.createElement('span');
           badge.className = 'dir-badge';
@@ -1131,7 +1313,7 @@
 
       const wrapProtectedFiles = document.getElementById('wrap-protected-files');
       if (wrapProtectedFiles && Array.isArray(pol.scope_control?.protected_files)) {
-        wrapProtectedFiles.innerHTML = '';
+        wrapProtectedFiles.replaceChildren();
         pol.scope_control.protected_files.forEach(f => {
           const badge = document.createElement('span');
           badge.className = 'prot-badge';
@@ -1240,7 +1422,7 @@
         if (policyTestOutputBox && policyTermPre) {
           policyTestOutputBox.style.display = 'block';
           if (policyTermTitle) {
-            policyTermTitle.textContent = `Kết quả ${isFast ? 'Fast Check (TAB & Syntax)' : 'Suite Check (Python Unittest)'} — ${res.ok ? 'PASS' : 'FAIL'} (${res.duration_ms}ms)`;
+            policyTermTitle.textContent = `Kết quả ${isFast ? 'Fast Check' : 'Suite Check'} — ${res.ok ? 'PASS' : 'FAIL'} (${res.duration_ms}ms)`;
           }
           policyTermPre.textContent = res.output || res.error || 'Không có log đầu ra.';
         }
@@ -1273,18 +1455,44 @@
             cfgSaveStatusMsg.style.color = 'var(--text-secondary)';
           }
 
+          const prevFast = Array.isArray(currentPolicyConfig?.validation?.fast_checks)
+            ? currentPolicyConfig.validation.fast_checks
+            : [];
+          const prevSuite = Array.isArray(currentPolicyConfig?.validation?.suite_checks)
+            ? currentPolicyConfig.validation.suite_checks
+            : [];
+          const fastCmdVal = (document.getElementById('cfg-fast-cmd')?.value || '').trim();
+          const fastTimeoutVal = parseInt(document.getElementById('cfg-fast-timeout')?.value, 10) || 15;
+          const suiteCmdVal = (document.getElementById('cfg-suite-cmd')?.value || '').trim();
+          const suiteTimeoutVal = parseInt(document.getElementById('cfg-suite-timeout')?.value, 10) || 180;
+
+          const nextFastChecks = (!fastCmdVal && prevFast.length <= 1)
+            ? []
+            : [
+                {
+                  ...(prevFast[0] || {}),
+                  name: prevFast[0]?.name || 'fast_check',
+                  run: fastCmdVal,
+                  timeout_sec: fastTimeoutVal
+                },
+                ...prevFast.slice(1)
+              ];
+          const nextSuiteChecks = (!suiteCmdVal && prevSuite.length <= 1)
+            ? []
+            : [
+                {
+                  ...(prevSuite[0] || {}),
+                  name: prevSuite[0]?.name || 'suite_check',
+                  run: suiteCmdVal,
+                  timeout_sec: suiteTimeoutVal
+                },
+                ...prevSuite.slice(1)
+              ];
+
           const policyPayload = {
             validation: {
-              fast_checks: [{
-                name: 'tab_indentation_check',
-                run: (document.getElementById('cfg-fast-cmd')?.value || '').trim(),
-                timeout_sec: parseInt(document.getElementById('cfg-fast-timeout')?.value, 10) || 15
-              }],
-              suite_checks: [{
-                name: 'unit_test_suite',
-                run: (document.getElementById('cfg-suite-cmd')?.value || '').trim(),
-                timeout_sec: parseInt(document.getElementById('cfg-suite-timeout')?.value, 10) || 180
-              }]
+              fast_checks: nextFastChecks,
+              suite_checks: nextSuiteChecks
             },
             scope_control: {
               max_files_per_task: parseInt(document.getElementById('cfg-max-files')?.value, 10) || 5,
@@ -1691,9 +1899,9 @@
       if (taskDetailGoal) taskDetailGoal.value = '';
       if (taskDetailOwner) taskDetailOwner.value = '';
       if (taskDetailModel) taskDetailModel.value = '';
-      if (taskDetailScopePills) taskDetailScopePills.innerHTML = '';
-      if (taskDetailCriteriaList) taskDetailCriteriaList.innerHTML = '';
-      if (taskDetailConstraintsList) taskDetailConstraintsList.innerHTML = '';
+      if (taskDetailScopePills) taskDetailScopePills.replaceChildren();
+      if (taskDetailCriteriaList) taskDetailCriteriaList.replaceChildren();
+      if (taskDetailConstraintsList) taskDetailConstraintsList.replaceChildren();
       if (taskDetailRawYaml) taskDetailRawYaml.textContent = 'Đang tải file YAML...';
 
       try {
@@ -1728,10 +1936,15 @@
 
         // Scope pills
         if (taskDetailScopePills) {
-          taskDetailScopePills.innerHTML = '';
+          taskDetailScopePills.replaceChildren();
           const scopes = Array.isArray(t.scope) ? t.scope : [];
           if (scopes.length === 0) {
-            taskDetailScopePills.innerHTML = '<span style="color:var(--text-muted);font-style:italic;font-size:11px;">(Chưa giới hạn scope)</span>';
+            const emptyScope = document.createElement('span');
+            emptyScope.style.color = 'var(--text-muted)';
+            emptyScope.style.fontStyle = 'italic';
+            emptyScope.style.fontSize = '11px';
+            emptyScope.textContent = '(Chưa giới hạn scope)';
+            taskDetailScopePills.appendChild(emptyScope);
           } else {
             scopes.forEach(sc => {
               const pill = document.createElement('span');
@@ -1744,7 +1957,7 @@
 
         // Criteria list
         if (taskDetailCriteriaList) {
-          taskDetailCriteriaList.innerHTML = '';
+          taskDetailCriteriaList.replaceChildren();
           const crits = Array.isArray(t.acceptance_criteria) ? t.acceptance_criteria : [];
           crits.forEach(c => {
             const li = document.createElement('li');
@@ -1752,13 +1965,17 @@
             taskDetailCriteriaList.appendChild(li);
           });
           if (crits.length === 0) {
-            taskDetailCriteriaList.innerHTML = '<li style="color:var(--text-muted);font-style:italic;">(Không có)</li>';
+            const emptyCrit = document.createElement('li');
+            emptyCrit.style.color = 'var(--text-muted)';
+            emptyCrit.style.fontStyle = 'italic';
+            emptyCrit.textContent = '(Không có)';
+            taskDetailCriteriaList.appendChild(emptyCrit);
           }
         }
 
         // Constraints list
         if (taskDetailConstraintsList) {
-          taskDetailConstraintsList.innerHTML = '';
+          taskDetailConstraintsList.replaceChildren();
           const cons = Array.isArray(t.constraints) ? t.constraints : [];
           cons.forEach(c => {
             const li = document.createElement('li');
@@ -1766,7 +1983,11 @@
             taskDetailConstraintsList.appendChild(li);
           });
           if (cons.length === 0) {
-            taskDetailConstraintsList.innerHTML = '<li style="color:var(--text-muted);font-style:italic;">(Không có)</li>';
+            const emptyCon = document.createElement('li');
+            emptyCon.style.color = 'var(--text-muted)';
+            emptyCon.style.fontStyle = 'italic';
+            emptyCon.textContent = '(Không có)';
+            taskDetailConstraintsList.appendChild(emptyCon);
           }
         }
 
@@ -2095,25 +2316,60 @@
         }
       }
 
+      // 1b. Architect Spec Lead (roles.architect or team.yaml spec_models)
+      const hasExplicitArchitect = Boolean(rolesConfig.architect && rolesConfig.architect.enabled !== false && (rolesConfig.architect.model || rolesConfig.architect.default_model));
+      const specSummary = formatSpecModelsSummary(currentSpecModels);
+      if (squadRowArchitect) {
+        squadRowArchitect.style.display = (hasExplicitArchitect || specSummary) ? 'flex' : 'none';
+      }
+      if (squadModelArchitect) {
+        squadModelArchitect.textContent = hasExplicitArchitect
+          ? getCleanRoleModelText(rolesConfig.architect, 'Architect')
+          : (specSummary || 'spec_models');
+      }
+      if (squadStatusArchitect) {
+        if (!isRunning) {
+          squadStatusArchitect.textContent = 'IDLE';
+          squadStatusArchitect.className = 'status-badge badge-idle';
+        } else if (mode === 'quick') {
+          squadStatusArchitect.textContent = 'SKIPPED';
+          squadStatusArchitect.className = 'status-badge badge-skipped';
+        } else if (activeStage === 'architect' || rolesStatus.architect?.status === 'working') {
+          squadStatusArchitect.textContent = 'WORKING';
+          squadStatusArchitect.className = 'status-badge badge-working';
+        } else if (rolesStatus.architect?.status === 'done' || ['applier', 'validator', 'reviewer', 'git', 'done'].includes(activeStage)) {
+          squadStatusArchitect.textContent = 'DONE';
+          squadStatusArchitect.className = 'status-badge badge-done';
+        } else {
+          squadStatusArchitect.textContent = 'STANDBY';
+          squadStatusArchitect.className = 'status-badge badge-idle';
+        }
+      }
+
       // 2. Writer Agent
       if (squadModelWriter) {
         const safeWriterModels = Array.isArray(rolesConfig.writer?.models)
           ? rolesConfig.writer.models.filter(e => !isModelEntryDisabled(e)).map(extractModelId).filter(Boolean)
           : [];
         if (safeWriterModels.length > 1) {
-          squadModelWriter.innerHTML = safeWriterModels.map((m, idx) => {
+          squadModelWriter.replaceChildren();
+          safeWriterModels.forEach((m, idx) => {
             const clean = m.split('/').pop() || m;
-            return `<div class="sidebar-writer-row">${idx === 0 ? '★ ' : '↳ '}${escapeHtml(clean)}</div>`;
-          }).join('');
+            const div = document.createElement('div');
+            div.className = 'sidebar-writer-row';
+            div.textContent = `${idx === 0 ? '★ ' : '↳ '}${clean}`;
+            squadModelWriter.appendChild(div);
+          });
         } else {
           squadModelWriter.textContent = getCleanRoleModelText(rolesConfig.writer, 'Chưa cấu hình');
         }
       }
+      const isSpecWorking = rolesStatus.architect?.status === 'working' || rolesStatus.designer?.status === 'working';
       if (squadStatusWriter) {
         if (!isRunning) {
           squadStatusWriter.textContent = 'IDLE';
           squadStatusWriter.className = 'status-badge badge-idle';
-        } else if (activeStage === 'writer') {
+        } else if (rolesStatus.writer?.status === 'working' || (activeStage === 'writer' && !isSpecWorking)) {
           squadStatusWriter.textContent = 'WORKING';
           squadStatusWriter.className = 'status-badge badge-working';
         } else if (['applier', 'validator', 'reviewer', 'git', 'done'].includes(activeStage) || rolesStatus.writer?.status === 'done') {
@@ -2133,7 +2389,7 @@
         if (!isRunning) {
           squadStatusDesigner.textContent = 'IDLE';
           squadStatusDesigner.className = 'status-badge badge-idle';
-        } else if (activeStage === 'designer') {
+        } else if (activeStage === 'designer' || rolesStatus.designer?.status === 'working') {
           squadStatusDesigner.textContent = 'WORKING';
           squadStatusDesigner.className = 'status-badge badge-working';
         } else if (rolesStatus.designer?.status === 'done') {
@@ -2251,10 +2507,27 @@
           key: 'router',
           roleTag: 'Router',
           icon: 'R',
-          modelName: formatCleanModel(rolesConfig.router, 'Claude Sonnet 4.5'),
+          modelName: formatCleanModel(rolesConfig.router, 'Router'),
           fullModel: rolesConfig.router.model,
           tooltip: `Router Agent (${rolesConfig.router.model}) - Plan & Scope Router`,
-          defaultPos: { left: '22%', top: '22%' }
+          defaultPos: { left: '18%', top: '23%' }
+        });
+      }
+
+      // Architect (Rendered if roles.architect OR spec_models is configured in team.yaml)
+      const hasArchRole = Boolean(rolesConfig.architect && rolesConfig.architect.enabled !== false && rolesConfig.architect.model);
+      const specSummaryTopo = formatSpecModelsSummary(snap?.spec_models || currentSpecModels);
+      if (hasArchRole || specSummaryTopo) {
+        activeSpokeDefs.push({
+          key: 'architect',
+          roleTag: 'Architect',
+          icon: 'A',
+          modelName: hasArchRole ? formatCleanModel(rolesConfig.architect, 'Architect') : specSummaryTopo,
+          fullModel: hasArchRole ? rolesConfig.architect.model : specSummaryTopo,
+          tooltip: hasArchRole
+            ? `Architect Agent (${rolesConfig.architect.model}) - Tech Spec & Contract Table`
+            : `Architect Tech Spec (team.yaml spec_models: ${specSummaryTopo})`,
+          defaultPos: { left: '50%', top: '14%' }
         });
       }
 
@@ -2264,10 +2537,10 @@
           key: 'designer',
           roleTag: 'Designer',
           icon: 'D',
-          modelName: formatCleanModel(rolesConfig.designer, 'Claude Sonnet 5.5'),
+          modelName: formatCleanModel(rolesConfig.designer, 'Designer'),
           fullModel: rolesConfig.designer.model,
           tooltip: `Designer Agent (${rolesConfig.designer.model}) - UI / UX Visual Audit`,
-          defaultPos: { left: '78%', top: '22%' }
+          defaultPos: { left: '82%', top: '23%' }
         });
       }
 
@@ -2319,31 +2592,36 @@
           key: 'reviewer',
           roleTag: 'Reviewer',
           icon: 'T',
-          modelName: formatCleanModel(rolesConfig.reviewer, 'Claude Opus 5.5'),
+          modelName: formatCleanModel(rolesConfig.reviewer, 'Reviewer'),
           fullModel: rolesConfig.reviewer.model,
           tooltip: `Reviewer Agent (${rolesConfig.reviewer.model}) - TechLead Reviewer`,
           defaultPos: { left: '80%', top: '74%' }
         });
       }
 
-      // 3. Render Spoke Nodes & SVG Lines dynamically
-      spokesContainer.innerHTML = '';
-      svgEl.innerHTML = '';
+      // 3. Render Spoke Nodes & SVG Lines dynamically (Strict DOM nodes)
+      spokesContainer.replaceChildren();
+      svgEl.replaceChildren();
+
+      const isSpecStageWorking = rolesStatus.architect?.status === 'working' || rolesStatus.designer?.status === 'working';
 
       activeSpokeDefs.forEach(def => {
         let statusClass = '';
         let lineClass = 'link-path';
 
         const rStat = rolesStatus[def.key]?.status || 'idle';
+        const isDefActive = (def.key === 'validator' && ['applier', 'validator'].includes(activeStage))
+          || (def.key === 'writer' && (rStat === 'working' || (activeStage === 'writer' && !isSpecStageWorking)))
+          || (def.key !== 'writer' && (activeStage === def.key || rStat === 'working'));
 
-        if (mode === 'quick' && (def.key === 'router' || def.key === 'reviewer')) {
+        if (mode === 'quick' && (def.key === 'router' || def.key === 'architect' || def.key === 'reviewer')) {
           statusClass = 'skipped';
           lineClass = 'link-path skipped';
-        } else if (activeStage === def.key || (def.key === 'validator' && ['applier', 'validator'].includes(activeStage))) {
+        } else if (isDefActive) {
           statusClass = 'active';
           lineClass = 'link-path active';
         } else if (rStat === 'done' || rStat === 'approved' || activeStage === 'done' ||
-                   (def.key === 'router' && ['writer', 'designer', 'applier', 'validator', 'reviewer', 'git'].includes(activeStage)) ||
+                   (def.key === 'router' && ['writer', 'architect', 'designer', 'applier', 'validator', 'reviewer', 'git'].includes(activeStage)) ||
                    (def.key === 'writer' && ['applier', 'validator', 'reviewer', 'git'].includes(activeStage)) ||
                    (def.key === 'validator' && ['reviewer', 'git'].includes(activeStage)) ||
                    (def.key === 'reviewer' && ['git'].includes(activeStage))) {
@@ -2352,21 +2630,6 @@
         }
 
         const isStacked = Array.isArray(def.models) && def.models.length > 1;
-        let labelContentHtml = '';
-        if (isStacked) {
-          labelContentHtml = `
-            <div class="spoke-models-stack">
-              ${def.models.map(m => `
-                <div class="spoke-model-row ${m.isPrimary ? 'primary-writer' : 'sub-writer'}" title="${escapeHtml(m.id)} (${m.tag})">
-                  <span class="spoke-model-bullet">${m.isPrimary ? '●' : '○'}</span>
-                  <span class="spoke-model-name">${escapeHtml(m.name)}</span>
-                </div>
-              `).join('')}
-            </div>
-          `;
-        } else {
-          labelContentHtml = `<span class="node-label">${escapeHtml(def.modelName)}</span>`;
-        }
 
         // Spoke node element
         const nodeEl = document.createElement('div');
@@ -2375,14 +2638,47 @@
         nodeEl.title = def.tooltip;
         nodeEl.style.left = def.defaultPos.left;
         nodeEl.style.top = def.defaultPos.top;
-        nodeEl.innerHTML = `
-          <div class="node-icon icon-${def.key}">${def.icon}</div>
-          <div class="spoke-text">
-            <span class="node-role-tag">${escapeHtml(def.roleTag)}</span>
-            ${labelContentHtml}
-          </div>
-          <div class="node-status-dot"></div>
-        `;
+
+        const iconDiv = document.createElement('div');
+        iconDiv.className = `node-icon icon-${def.key}`;
+        iconDiv.textContent = def.icon;
+
+        const spokeText = document.createElement('div');
+        spokeText.className = 'spoke-text';
+
+        const roleTagSpan = document.createElement('span');
+        roleTagSpan.className = 'node-role-tag';
+        roleTagSpan.textContent = def.roleTag;
+        spokeText.appendChild(roleTagSpan);
+
+        if (isStacked) {
+          const stackDiv = document.createElement('div');
+          stackDiv.className = 'spoke-models-stack';
+          def.models.forEach(m => {
+            const mRow = document.createElement('div');
+            mRow.className = `spoke-model-row ${m.isPrimary ? 'primary-writer' : 'sub-writer'}`;
+            mRow.title = `${m.id} (${m.tag})`;
+            const bulletSpan = document.createElement('span');
+            bulletSpan.className = 'spoke-model-bullet';
+            bulletSpan.textContent = m.isPrimary ? '●' : '○';
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'spoke-model-name';
+            nameSpan.textContent = m.name;
+            mRow.append(bulletSpan, nameSpan);
+            stackDiv.appendChild(mRow);
+          });
+          spokeText.appendChild(stackDiv);
+        } else {
+          const labelSpan = document.createElement('span');
+          labelSpan.className = 'node-label';
+          labelSpan.textContent = def.modelName;
+          spokeText.appendChild(labelSpan);
+        }
+
+        const dotDiv = document.createElement('div');
+        dotDiv.className = 'node-status-dot';
+
+        nodeEl.append(iconDiv, spokeText, dotDiv);
         spokesContainer.appendChild(nodeEl);
 
         // SVG connection line
@@ -2632,7 +2928,10 @@
         q.active.forEach(t => {
           hasItems = true;
           const item = document.createElement('div');
-          item.className = 'queue-item';
+          item.className = 'queue-item queue-item-clickable';
+          if (t.task_id) {
+            item.addEventListener('click', () => openTaskDetailModal(t.task_id));
+          }
 
           const left = document.createElement('div');
           left.className = 'queue-item-left';
@@ -2663,7 +2962,10 @@
         q.blocked.forEach(t => {
           hasItems = true;
           const item = document.createElement('div');
-          item.className = 'queue-item';
+          item.className = 'queue-item queue-item-clickable';
+          if (t.task_id) {
+            item.addEventListener('click', () => openTaskDetailModal(t.task_id));
+          }
 
           const left = document.createElement('div');
           left.className = 'queue-item-left';
@@ -2712,7 +3014,10 @@
         q.recent_completed.forEach(t => {
           hasItems = true;
           const item = document.createElement('div');
-          item.className = 'queue-item';
+          item.className = 'queue-item queue-item-clickable';
+          if (t.task_id) {
+            item.addEventListener('click', () => openTaskDetailModal(t.task_id));
+          }
 
           const left = document.createElement('div');
           left.className = 'queue-item-left';
@@ -2788,9 +3093,12 @@
         topRow.style.gap = '6px';
 
         const tid = document.createElement('span');
-        tid.className = 'queue-item-id';
+        tid.className = 'queue-item-id queue-item-clickable';
         tid.textContent = entry.task_id || 'task';
         tid.title = entry.title || entry.task_id || '';
+        if (entry.task_id) {
+          tid.addEventListener('click', () => openTaskDetailModal(entry.task_id));
+        }
 
         const delCnt = Number(entry.delete_count || 0);
         const blkCnt = Number(entry.block_count ?? entry.blocks?.length ?? 0);
@@ -2863,9 +3171,12 @@
         topRow.style.gap = '6px';
 
         const tid = document.createElement('span');
-        tid.className = 'queue-item-id';
+        tid.className = 'queue-item-id queue-item-clickable';
         tid.textContent = entry.task_id || 'review-task';
         tid.title = entry.title || entry.task_id || '';
+        if (entry.task_id) {
+          tid.addEventListener('click', () => openTaskDetailModal(entry.task_id));
+        }
 
         const badge = document.createElement('span');
         badge.className = 'queue-item-badge q-blocked';
@@ -3195,6 +3506,9 @@
         }
 
         if (data.router_provider) {
+          if (data.router_provider.host_label) {
+            currentRouterHostLabel = data.router_provider.host_label;
+          }
           if (cfg9RouterUrl && !cfg9RouterUrl.dataset.userEdited && data.router_provider.base_url) {
             cfg9RouterUrl.value = data.router_provider.base_url;
           }
@@ -3202,6 +3516,9 @@
             cfg9RouterKey.value = data.router_provider.default_key;
           }
         }
+
+        currentSpecModels = (data.spec_models && typeof data.spec_models === 'object') ? data.spec_models : null;
+        renderSpecModelsSummaryBar(currentSpecModels);
 
         txtPolling.textContent = '1s Polling';
 
@@ -3211,12 +3528,13 @@
         }
 
         // 2. 9Router Hub Health & Latency
+        const hostLabel = data.router_health?.host_label || currentRouterHostLabel || ':20128';
         if (data.router_health && data.router_health.ok) {
           dotRouter.className = 'dot online';
-          txtRouter.textContent = '9Router :20128 (' + data.router_health.latency_ms + 'ms)';
+          txtRouter.textContent = '9Router ' + hostLabel + ' (' + data.router_health.latency_ms + 'ms)';
         } else {
           dotRouter.className = 'dot offline';
-          txtRouter.textContent = '9Router DOWN';
+          txtRouter.textContent = '9Router ' + hostLabel + ' DOWN';
         }
 
         // 3. Orchestrator Process Status

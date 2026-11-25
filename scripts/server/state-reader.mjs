@@ -14,6 +14,8 @@ export { loadYamlSafe, isProcessAlive };
 
 let routerHealthCache = {
   checked_at: 0,
+  base_url: null,
+  host_label: ':20128',
   ok: false,
   latency_ms: 0,
   model_count: 0,
@@ -21,20 +23,54 @@ let routerHealthCache = {
 };
 let isCheckingHealth = false;
 
-export async function get9RouterHealth() {
+export function resolve9RouterProviderConfig(teamYaml = {}) {
+  const raw = teamYaml?.providers?.local_9router || teamYaml?.team?.providers?.local_9router || {};
+  const baseUrl = String(raw.base_url || 'http://127.0.0.1:20128/v1').trim() || 'http://127.0.0.1:20128/v1';
+  const defaultKey = String(raw.default_key || 'sk-default').trim() || 'sk-default';
+  const envKey = raw.api_key_env ? String(process.env[raw.api_key_env] || '').trim() : '';
+  const apiKey = envKey || defaultKey;
+  let hostLabel = ':20128';
+  try {
+    const parsed = new URL(baseUrl);
+    hostLabel = parsed.port ? `:${parsed.port}` : (parsed.host || ':20128');
+  } catch {}
+  return {
+    base_url: baseUrl,
+    default_key: defaultKey,
+    api_key: apiKey,
+    host_label: hostLabel
+  };
+}
+
+export async function get9RouterHealth(providerOpts = {}) {
+  const baseUrl = String(providerOpts?.base_url || 'http://127.0.0.1:20128/v1').trim() || 'http://127.0.0.1:20128/v1';
+  const apiKey = String(providerOpts?.api_key || providerOpts?.default_key || 'sk-default').trim() || 'sk-default';
+  let hostLabel = providerOpts?.host_label || ':20128';
+  if (!providerOpts?.host_label) {
+    try {
+      const parsed = new URL(baseUrl);
+      hostLabel = parsed.port ? `:${parsed.port}` : (parsed.host || ':20128');
+    } catch {}
+  }
+
   const now = Date.now();
-  if (now - routerHealthCache.checked_at < 10000) {
+  if (routerHealthCache.base_url === baseUrl && now - routerHealthCache.checked_at < 10000) {
     return routerHealthCache;
   }
   if (isCheckingHealth) {
-    return routerHealthCache;
+    return {
+      ...routerHealthCache,
+      base_url: baseUrl,
+      host_label: hostLabel
+    };
   }
   isCheckingHealth = true;
   const start = Date.now();
+  const modelsUrl = baseUrl.endsWith('/') ? `${baseUrl}models` : `${baseUrl}/models`;
   try {
-    const res = await fetch('http://127.0.0.1:20128/v1/models', {
+    const res = await fetch(modelsUrl, {
       method: 'GET',
-      headers: { Authorization: 'Bearer sk-default' },
+      headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(1500)
     });
     const latency = Date.now() - start;
@@ -42,6 +78,8 @@ export async function get9RouterHealth() {
       const data = await res.json().catch(() => ({ data: [] }));
       routerHealthCache = {
         checked_at: now,
+        base_url: baseUrl,
+        host_label: hostLabel,
         ok: true,
         latency_ms: latency,
         model_count: Array.isArray(data.data) ? data.data.length : 0,
@@ -50,6 +88,8 @@ export async function get9RouterHealth() {
     } else {
       routerHealthCache = {
         checked_at: now,
+        base_url: baseUrl,
+        host_label: hostLabel,
         ok: false,
         latency_ms: latency,
         model_count: 0,
@@ -59,6 +99,8 @@ export async function get9RouterHealth() {
   } catch (err) {
     routerHealthCache = {
       checked_at: now,
+      base_url: baseUrl,
+      host_label: hostLabel,
       ok: false,
       latency_ms: Date.now() - start,
       model_count: 0,
@@ -105,6 +147,8 @@ export function readLatestRunOutput(targetTaskId, targetLogPath, runsDir, teamDi
     return {
       file_path: null,
       attempt_number: null,
+      bucket_index: null,
+      bucket_count: null,
       timestamp: null,
       content: '(No writer output recorded yet)',
       model_requested: 'N/A',
@@ -122,30 +166,47 @@ export function readLatestRunOutput(targetTaskId, targetLogPath, runsDir, teamDi
 
   try {
     const stat = fs.statSync(chosenPath);
+    const HEAD_META_BYTES = 2048;
     const MAX_OUTPUT_BYTES = 16384;
+    let headText = '';
     let content = '';
     let truncated = false;
 
     if (stat.size <= MAX_OUTPUT_BYTES) {
       content = fs.readFileSync(chosenPath, 'utf8');
+      headText = content.slice(0, HEAD_META_BYTES);
     } else {
       truncated = true;
       const fd = fs.openSync(chosenPath, 'r');
-      const buf = Buffer.alloc(MAX_OUTPUT_BYTES);
-      fs.readSync(fd, buf, 0, MAX_OUTPUT_BYTES, stat.size - MAX_OUTPUT_BYTES);
-      fs.closeSync(fd);
-      content = `[... Truncated earlier output. Showing last 16 KB of ${Math.round(stat.size / 1024)} KB ...]\n` + buf.toString('utf8');
+      let tailText = '';
+      try {
+        const headLen = Math.min(HEAD_META_BYTES, stat.size);
+        const headBuf = Buffer.alloc(headLen);
+        fs.readSync(fd, headBuf, 0, headLen, 0);
+        headText = headBuf.toString('utf8');
+
+        const tailBuf = Buffer.alloc(MAX_OUTPUT_BYTES);
+        fs.readSync(fd, tailBuf, 0, MAX_OUTPUT_BYTES, stat.size - MAX_OUTPUT_BYTES);
+        tailText = tailBuf.toString('utf8');
+      } finally {
+        fs.closeSync(fd);
+      }
+      const blankIdx = headText.search(/\r?\n\r?\n/);
+      const headerBlock = (blankIdx !== -1 ? headText.slice(0, blankIdx) : headText).slice(0, 600).trimEnd();
+      content = `${headerBlock}\n\n[... Truncated middle output. Showing last 16 KB of ${Math.round(stat.size / 1024)} KB ...]\n${tailText}`;
     }
 
-    const attemptMatch = content.match(/===\s*WRITER ATTEMPT\s+(\d+)\s*===/i);
-    const tsMatch = content.match(/Timestamp:\s*([^\r\n]+)/);
-    const modelReqMatch = content.match(/Model (?:Requested|Used):\s*([^\r\n]+)/);
-    const modelRespMatch = content.match(/Model Responded:\s*([^\r\n]+)/);
-    const finishMatch = content.match(/Finish Reason:\s*([^\r\n]+)/);
-    const promptTokMatch = content.match(/Prompt Tokens:\s*(\d+)/);
-    const compTokMatch = content.match(/Completion Tokens:\s*(\d+)/);
+    const attemptMatch = headText.match(/===\s*WRITER ATTEMPT\s+(\d+)(?:\s*\(BUCKET\s+(\d+)\/(\d+)\))?\s*===/i);
+    const tsMatch = headText.match(/Timestamp:\s*([^\r\n]+)/);
+    const modelReqMatch = headText.match(/Model (?:Requested|Used):\s*([^\r\n]+)/);
+    const modelRespMatch = headText.match(/Model Responded:\s*([^\r\n]+)/);
+    const finishMatch = headText.match(/Finish Reason:\s*([^\r\n]+)/);
+    const promptTokMatch = headText.match(/Prompt Tokens:\s*(\d+)/);
+    const compTokMatch = headText.match(/Completion Tokens:\s*(\d+)/);
 
     const attemptNumber = attemptMatch ? parseInt(attemptMatch[1], 10) : null;
+    const bucketIndex = attemptMatch?.[2] ? parseInt(attemptMatch[2], 10) : null;
+    const bucketCount = attemptMatch?.[3] ? parseInt(attemptMatch[3], 10) : null;
     const outputTimestamp = tsMatch ? tsMatch[1].trim() : null;
     const modelRequested = modelReqMatch ? modelReqMatch[1].trim() : 'unknown';
     const modelResponded = modelRespMatch ? modelRespMatch[1].trim() : 'N/A';
@@ -167,6 +228,8 @@ export function readLatestRunOutput(targetTaskId, targetLogPath, runsDir, teamDi
     return {
       file_path: path.relative(teamDir, chosenPath).replace(/\\/g, '/'),
       attempt_number: attemptNumber,
+      bucket_index: bucketIndex,
+      bucket_count: bucketCount,
       timestamp: outputTimestamp,
       content,
       model_requested: modelRequested,
@@ -184,6 +247,8 @@ export function readLatestRunOutput(targetTaskId, targetLogPath, runsDir, teamDi
     return {
       file_path: chosenPath,
       attempt_number: null,
+      bucket_index: null,
+      bucket_count: null,
       timestamp: null,
       content: '(Error reading output file)',
       model_requested: 'N/A',
@@ -447,7 +512,8 @@ export async function createSnapshot(paths = {}) {
   const lastCompletedTask = completedList.length > 0 ? completedList[completedList.length - 1] : null;
 
   // 7. 9Router Health Check & Circuit Breaker Status (TTL-bounded)
-  const routerHealth = await get9RouterHealth();
+  const providerResolved = resolve9RouterProviderConfig(teamYaml);
+  const routerHealth = await get9RouterHealth(providerResolved);
   const cbTtlMs = resolveCircuitBreakerTtlMs(policyYaml);
   const nowMs = Date.now();
   const inProcCb = getCircuitBreakerSnapshot({ now: nowMs, ttlMs: cbTtlMs });
@@ -501,7 +567,12 @@ export async function createSnapshot(paths = {}) {
     },
     router_health: routerHealth,
     circuit_breakers: circuitBreakers,
-    router_provider: teamYaml.team?.providers?.local_9router || { base_url: 'http://127.0.0.1:20128/v1', default_key: 'sk-default' },
+    router_provider: {
+      base_url: providerResolved.base_url,
+      default_key: providerResolved.default_key,
+      host_label: providerResolved.host_label
+    },
+    spec_models: (teamYaml.spec_models && typeof teamYaml.spec_models === 'object') ? teamYaml.spec_models : null,
     roles,
     roster_models: collectActiveRosterModels(teamYaml),
     policy,

@@ -40,6 +40,7 @@ function main() {
   // Must not embed hardcoded vendor/model slugs in ROLE_DOSSIER_DATA or static recommendation HTML
   const forbiddenSlugs = /\b(?:ag|kr|deepseek-ai)\/|\bclaude-(?:sonnet|opus|haiku)-\d|\bgemini-\d|\bdeepseek-v\d/i;
   assert.doesNotMatch(block, forbiddenSlugs, 'ROLE_DOSSIER_DATA must NOT contain hardcoded model IDs');
+  assert.ok(/\barchitect:\s*\{/.test(block), 'ROLE_DOSSIER_CATALOG must document architect role');
   const recSectionMatch = /<div class="dossier-rec-card">([\s\S]*?)<\/div>\s*<\/div>\s*<!-- COLUMN 2/.exec(modalHtml);
   assert.ok(recSectionMatch, 'dossier-rec-card section must exist in layout-config-modal.html');
   assert.doesNotMatch(recSectionMatch[1], forbiddenSlugs, 'Static Role Dossier HTML must NOT contain hardcoded model IDs');

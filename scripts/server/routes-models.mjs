@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { exec } from 'node:child_process';
 import YAML from 'yaml';
-import { verifyCsrfAndOrigin, parseJsonBody } from './security.mjs';
+import { verifyCsrfAndOrigin, parseJsonBody, buildLocalhostCorsHeaders } from './security.mjs';
 import { loadMergedPolicy, loadMergedTeamConfig, loadYamlSafe, loadYamlStrict } from '../lib/policy-loader.mjs';
 import { collectActiveRosterModels } from '../lib/client-9router.mjs';
 import { callModelEndpoint } from '../../runtime/provider-gateway.mjs';
@@ -19,7 +19,7 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
   const repoRoot = options.REPO_ROOT
     || (fs.existsSync(path.resolve('agent-team'))
         ? path.resolve('.')
-        : path.resolve('..'));
+        : (path.basename(path.resolve('.')) === 'agent-team' ? path.resolve('..') : path.resolve('.')));
 
   if (req.method === 'GET' && url.pathname === '/api/models') {
     try {
@@ -81,7 +81,7 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
       res.writeHead(200, {
         'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Access-Control-Allow-Origin': '*'
+        ...buildLocalhostCorsHeaders(req)
       });
       res.end(JSON.stringify({
         ok: true,
@@ -93,7 +93,7 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
     } catch (err) {
       res.writeHead(500, {
         'Content-Type': 'application/json; charset=utf-8',
-        'Access-Control-Allow-Origin': '*'
+        ...buildLocalhostCorsHeaders(req)
       });
       res.end(JSON.stringify({ ok: false, error: err.message }));
     }

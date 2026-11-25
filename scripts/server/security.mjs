@@ -3,6 +3,21 @@ import crypto from 'node:crypto';
 // Zero-Trust Localhost CSRF Token generated fresh on dashboard startup
 export const DASHBOARD_CSRF_TOKEN = crypto.randomUUID();
 
+export function buildLocalhostCorsHeaders(req) {
+  const origin = req?.headers?.origin || '';
+  if (!origin) return {};
+  try {
+    const parsed = new URL(origin);
+    if (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost') {
+      return {
+        'Access-Control-Allow-Origin': parsed.origin,
+        Vary: 'Origin'
+      };
+    }
+  } catch {}
+  return {};
+}
+
 export function verifyCsrfAndOrigin(req) {
   const origin = req.headers['origin'] || req.headers['referer'] || '';
   if (origin) {

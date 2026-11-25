@@ -720,6 +720,14 @@ main.bento-container.sidebar-collapsed .left-col {
   border: 1px solid var(--border-subtle);
   border-radius: 3px;
 }
+.queue-item-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.queue-item-clickable:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-card-subtle);
+}
 .queue-item-left {
   display: flex;
   align-items: center;
@@ -1034,6 +1042,7 @@ main.bento-container.sidebar-collapsed .left-col {
 
 /* Satellite Spoke Positioning */
 .node-router    { left: 20%; top: 24%; transform: translate(-50%, -50%); }
+.node-architect { left: 50%; top: 15%; transform: translate(-50%, -50%); }
 .node-designer  { left: 80%; top: 24%; transform: translate(-50%, -50%); }
 .node-writer    { left: 18%; top: 74%; transform: translate(-50%, -50%); }
 .node-validator { left: 50%; top: 84%; transform: translate(-50%, -50%); }
@@ -1132,6 +1141,7 @@ main.bento-container.sidebar-collapsed .left-col {
   flex-shrink: 0;
 }
 .icon-router,
+.icon-architect,
 .icon-designer,
 .icon-writer,
 .icon-validator,
@@ -1180,6 +1190,7 @@ main.bento-container.sidebar-collapsed .left-col {
 }
 
 .node-router.active    { border-color: #c45519; }
+.node-architect.active { border-color: #c45519; }
 .node-designer.active  { border-color: #c45519; }
 .node-writer.active    { border-color: #c45519; }
 .node-validator.active { border-color: #c45519; }
@@ -2089,6 +2100,18 @@ main.bento-container.sidebar-collapsed .left-col {
 .cov-mini-pill strong {
   color: var(--text-secondary);
   font-weight: 500;
+}
+.spec-models-bar {
+  margin: 0;
+  padding: 5px 16px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  background: rgba(56, 189, 248, 0.06);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .squad-compact-list {
@@ -3063,6 +3086,11 @@ main.bento-container.sidebar-collapsed .left-col {
   --role-accent: #c45519;
   --role-accent-rgb: 196, 85, 25;
   --role-accent-soft: rgba(196, 85, 25, 0.1);
+}
+.dossier-stage-grid[data-active-role="architect"] {
+  --role-accent: #f59e0b;
+  --role-accent-rgb: 245, 158, 11;
+  --role-accent-soft: rgba(245, 158, 11, 0.1);
 }
 .dossier-stage-grid[data-active-role="designer"] {
   --role-accent: #d97706;

@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 import assert from 'node:assert';
+import { spawn } from 'node:child_process';
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import YAML from 'yaml';
+import { readLatestRunOutput } from './server/state-reader.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -235,7 +238,10 @@ async function runCockpitTests() {
         },
         body: JSON.stringify({
           policy: {
-            scope_control: { max_files_per_task: 6 }
+            scope_control: { max_files_per_task: 6 },
+            validation: {
+              fast_checks: [{ name: 'fast_smoke', run: 'node -v', timeout_sec: 15 }]
+            }
           }
         })
       });
@@ -330,6 +336,201 @@ async function runCockpitTests() {
         }
       }
     }
+
+    // Test 11: UI-1 Hardening (CORS scope, provider round-trip, multi-bucket large raw log, archive detail, /api/stop)
+    console.log('11. Testing UI-1 server wiring, CORS, multi-bucket logs, archive detail & /api/stop...');
+
+    // 11a. Localhost CORS gating
+    const evilSnapRes = await fetch(`http://127.0.0.1:${testPort}/api/snapshot`, {
+      headers: { Origin: 'https://evil.example' }
+    });
+    assert.strictEqual(evilSnapRes.status, 200);
+    assert.strictEqual(
+      evilSnapRes.headers.get('access-control-allow-origin'),
+      null,
+      'GET /api/snapshot must omit Access-Control-Allow-Origin for non-localhost origins'
+    );
+    const localOrigin = `http://127.0.0.1:${testPort}`;
+    const localSnapRes = await fetch(`http://127.0.0.1:${testPort}/api/snapshot`, {
+      headers: { Origin: localOrigin }
+    });
+    assert.strictEqual(localSnapRes.status, 200);
+    assert.strictEqual(
+      localSnapRes.headers.get('access-control-allow-origin'),
+      localOrigin,
+      'GET /api/snapshot must echo localhost Access-Control-Allow-Origin'
+    );
+
+    // 11b. Custom 9Router provider round-trip (providers.local_9router)
+    const TEAM_FILE_UI1 = path.join(tmpConfigDir, 'team.yaml');
+    const origTeamYamlUi1 = fs.readFileSync(TEAM_FILE_UI1, 'utf8');
+    try {
+      const customSaveRes = await fetch(`http://127.0.0.1:${testPort}/api/save-team-config`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Dashboard-Token': DASHBOARD_CSRF_TOKEN
+        },
+        body: JSON.stringify({
+          roles: {
+            writer: { model: 'custom/writer-ui1', models: ['custom/writer-ui1'], display_name: 'Writer UI1' }
+          },
+          provider: {
+            base_url: 'http://127.0.0.1:29876/v1',
+            default_key: 'sk-custom-ui1'
+          }
+        })
+      });
+      assert.strictEqual(customSaveRes.status, 200);
+
+      const customSnapRes = await fetch(`http://127.0.0.1:${testPort}/api/snapshot`);
+      assert.strictEqual(customSnapRes.status, 200);
+      const customSnap = await customSnapRes.json();
+      assert.strictEqual(customSnap.router_provider?.base_url, 'http://127.0.0.1:29876/v1');
+      assert.strictEqual(customSnap.router_provider?.default_key, 'sk-custom-ui1');
+      assert.strictEqual(customSnap.router_health?.host_label, ':29876');
+    } finally {
+      fs.writeFileSync(TEAM_FILE_UI1, origTeamYamlUi1, 'utf8');
+    }
+
+    // 11c. readLatestRunOutput preserves header metadata & parses multi-bucket header on > 20KB logs
+    const multiTaskId = `T-ui1-multibucket-${Date.now()}`;
+    const multiRunDir = path.join(tmpStateDir, 'runs', multiTaskId);
+    fs.mkdirSync(multiRunDir, { recursive: true });
+    const bigLogPath = path.join(multiRunDir, 'attempt-2-b1.txt');
+    const bigHeader = [
+      '=== WRITER ATTEMPT 2 (BUCKET 1/2) ===',
+      'Timestamp: 2026-11-25T17:00:00.000Z',
+      'Model Requested: deepseek/custom-writer',
+      'Model Responded: deepseek/custom-writer-v4',
+      'Finish Reason: stop',
+      'Prompt Tokens: 4321',
+      'Completion Tokens: 987',
+      '',
+      'FILE: src/example.js',
+      '<<<<<<< SEARCH',
+      'oldLine()',
+      '=======',
+      'newLine()',
+      '>>>>>>> REPLACE',
+      ''
+    ].join('\n');
+    const filler = '// padding line for >20KB truncation check\n'.repeat(550);
+    fs.writeFileSync(bigLogPath, bigHeader + filler, 'utf8');
+    const parsedOut = readLatestRunOutput(multiTaskId, bigLogPath, path.join(tmpStateDir, 'runs'), tmpRoot);
+    assert.strictEqual(parsedOut.attempt_number, 2);
+    assert.strictEqual(parsedOut.bucket_index, 1);
+    assert.strictEqual(parsedOut.bucket_count, 2);
+    assert.strictEqual(parsedOut.model_requested, 'deepseek/custom-writer');
+    assert.strictEqual(parsedOut.model_responded, 'deepseek/custom-writer-v4');
+    assert.strictEqual(parsedOut.finish_reason, 'stop');
+    assert.strictEqual(parsedOut.prompt_tokens, 4321);
+    assert.strictEqual(parsedOut.completion_tokens, 987);
+    assert.strictEqual(parsedOut.truncated, true);
+
+    // 11d. GET /api/task/detail finds tasks in tasks/archive/
+    const ARCHIVE_DIR = path.join(tmpTasksDir, 'archive');
+    const archTaskId = `T-test-archived-${Date.now()}`;
+    const archTaskFile = path.join(ARCHIVE_DIR, `${archTaskId}.yaml`);
+    fs.writeFileSync(archTaskFile, `task:\n  task_id: "${archTaskId}"\n  title: "Archived Task"\n  status: "done"\n`, 'utf8');
+    try {
+      const archRes = await fetch(`http://127.0.0.1:${testPort}/api/task/detail?id=${encodeURIComponent(archTaskId)}`);
+      assert.strictEqual(archRes.status, 200, 'Archived task detail must return 200');
+      const archJson = await archRes.json();
+      assert.strictEqual(archJson.ok, true);
+      assert.strictEqual(archJson.archived, true);
+      assert.strictEqual(archJson.task?.title, 'Archived Task');
+    } finally {
+      if (fs.existsSync(archTaskFile)) fs.unlinkSync(archTaskFile);
+    }
+
+    // 11e. POST /api/stop terminates running lock PID, removes .orchestrator.lock, and marks live-status inactive
+    const sleeperProc = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 15000)'], {
+      stdio: 'ignore'
+    });
+    const orchLockPath = process.env.ORCHESTRATOR_LOCK_FILE;
+    const liveStatusPath = path.join(tmpStateDir, 'live-status.json');
+    fs.writeFileSync(orchLockPath, JSON.stringify({ pid: sleeperProc.pid, started_at: new Date().toISOString() }), 'utf8');
+    fs.writeFileSync(liveStatusPath, JSON.stringify({ active: true, current_stage: 'writer', pid: sleeperProc.pid }), 'utf8');
+    try {
+      const stopRes = await fetch(`http://127.0.0.1:${testPort}/api/stop`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Dashboard-Token': DASHBOARD_CSRF_TOKEN
+        }
+      });
+      assert.strictEqual(stopRes.status, 200);
+      const stopJson = await stopRes.json();
+      assert.strictEqual(stopJson.ok, true);
+      assert.strictEqual(fs.existsSync(orchLockPath), false, '.orchestrator.lock must be cleaned up after /api/stop');
+      const liveAfterStop = JSON.parse(fs.readFileSync(liveStatusPath, 'utf8'));
+      assert.strictEqual(liveAfterStop.active, false);
+      assert.strictEqual(liveAfterStop.current_stage, 'idle');
+    } finally {
+      try { if (sleeperProc.exitCode === null) sleeperProc.kill('SIGKILL'); } catch {}
+      if (fs.existsSync(orchLockPath)) try { fs.unlinkSync(orchLockPath); } catch {}
+    }
+
+    console.log('✓ UI-1 server wiring, CORS, multi-bucket raw output, archive lookup & /api/stop verified.');
+
+    // Test 12: UI-2 Anti-XSS (zero innerHTML), project-neutral UI, WebP role portraits, Architect & multi-check policy save
+    console.log('12. Testing UI-2 Anti-XSS, neutrality, WebP assets, Architect surface & policy checks preservation...');
+    const appJsSrc = fs.readFileSync(path.join(TEAM_DIR, 'ui', 'js', 'app.js'), 'utf8');
+    const apiJsSrc = fs.readFileSync(path.join(TEAM_DIR, 'ui', 'js', 'api.js'), 'utf8');
+    assert.strictEqual(/\binnerHTML\b/.test(appJsSrc), false, 'ui/js/app.js must contain ZERO innerHTML assignments');
+    assert.strictEqual(/\binnerHTML\b/.test(apiJsSrc), false, 'ui/js/api.js must contain ZERO innerHTML assignments');
+
+    const layoutsDir = path.join(TEAM_DIR, 'ui', 'layouts');
+    const layoutTexts = fs.readdirSync(layoutsDir)
+      .filter(f => f.endsWith('.html'))
+      .map(f => ({ name: f, text: fs.readFileSync(path.join(layoutsDir, f), 'utf8') }));
+    const forbiddenLeakRe = /\bPython\b|\bUnittest\b|TAB\s*\(\\t\)|tool-download/i;
+    assert.doesNotMatch(appJsSrc, forbiddenLeakRe, 'ui/js/app.js must not leak host-project terms (Python/Unittest/TAB/tool-download)');
+    for (const lt of layoutTexts) {
+      assert.doesNotMatch(lt.text, forbiddenLeakRe, `ui/layouts/${lt.name} must not leak host-project terms`);
+    }
+
+    const rolesImgDir = path.join(TEAM_DIR, 'ui', 'assets', 'roles');
+    const expectedWebps = ['router.webp', 'designer.webp', 'writer.webp', 'reviewer.webp', 'gatekeeper.webp'];
+    const remainingPngs = fs.readdirSync(rolesImgDir).filter(f => f.toLowerCase().endsWith('.png'));
+    assert.deepStrictEqual(remainingPngs, [], 'ui/assets/roles must replace heavy PNGs with compressed WebPs');
+    let totalWebpBytes = 0;
+    for (const wf of expectedWebps) {
+      const wp = path.join(rolesImgDir, wf);
+      assert.ok(fs.existsSync(wp), `Expected compressed portrait asset ui/assets/roles/${wf}`);
+      totalWebpBytes += fs.statSync(wp).size;
+    }
+    assert.ok(totalWebpBytes < 500 * 1024, `Compressed role portraits must total < 500KB, got ${totalWebpBytes}B`);
+
+    assert.ok(htmlText.includes('id="squad-row-architect"'), 'Sidebar must include #squad-row-architect');
+    assert.ok(htmlText.includes('id="spec-models-summary-bar"'), 'Config modal must include #spec-models-summary-bar');
+    assert.ok(htmlText.includes('data-role="architect"'), 'Role dossier tabs must include Architect');
+    assert.ok(snapData.spec_models && typeof snapData.spec_models === 'object', 'Snapshot must expose spec_models when configured');
+
+    // Verify save-policy-config preserves empty [] and multi-check arrays cleanly
+    const POLICY_FILE_UI2 = path.join(tmpConfigDir, 'policy.yaml');
+    const origPolUi2 = fs.readFileSync(POLICY_FILE_UI2, 'utf8');
+    try {
+      const multiChecks = [
+        { name: 'fast_one', run: 'node -v', timeout_sec: 15 },
+        { name: 'fast_two', run: 'echo second', timeout_sec: 20 }
+      ];
+      const saveMultiRes = await fetch(`http://127.0.0.1:${testPort}/api/save-policy-config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Dashboard-Token': DASHBOARD_CSRF_TOKEN },
+        body: JSON.stringify({ policy: { validation: { fast_checks: multiChecks, suite_checks: [] } } })
+      });
+      assert.strictEqual(saveMultiRes.status, 200);
+      const parsedMulti = YAML.parse(fs.readFileSync(POLICY_FILE_UI2, 'utf8'));
+      assert.strictEqual(parsedMulti.policy.validation.fast_checks.length, 2);
+      assert.strictEqual(parsedMulti.policy.validation.fast_checks[1].name, 'fast_two');
+      assert.deepStrictEqual(parsedMulti.policy.validation.suite_checks, []);
+    } finally {
+      fs.writeFileSync(POLICY_FILE_UI2, origPolUi2, 'utf8');
+    }
+
+    console.log('✓ UI-2 Anti-XSS, neutrality, WebP portraits, Architect surface & policy checks verified.');
 
     console.log('\n=============================================');
     console.log('ALL COCKPIT & CSRF SECURITY TESTS PASSED! 🎯');

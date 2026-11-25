@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import YAML from 'yaml';
-import { verifyCsrfAndOrigin, parseJsonBody } from './security.mjs';
+import { verifyCsrfAndOrigin, parseJsonBody, buildLocalhostCorsHeaders } from './security.mjs';
 import {
   createSnapshot,
   scanSessions,
@@ -87,13 +87,13 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
       res.writeHead(200, {
         'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Access-Control-Allow-Origin': '*'
+        ...buildLocalhostCorsHeaders(req)
       });
       res.end(JSON.stringify(snapshot));
     } catch (err) {
       res.writeHead(500, {
         'Content-Type': 'application/json; charset=utf-8',
-        'Access-Control-Allow-Origin': '*'
+        ...buildLocalhostCorsHeaders(req)
       });
       res.end(JSON.stringify({ error: err.message }));
     }
@@ -106,13 +106,13 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
       res.writeHead(200, {
         'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Access-Control-Allow-Origin': '*'
+        ...buildLocalhostCorsHeaders(req)
       });
       res.end(JSON.stringify({ ok: true, count: sessions.length, sessions }));
     } catch (err) {
       res.writeHead(500, {
         'Content-Type': 'application/json; charset=utf-8',
-        'Access-Control-Allow-Origin': '*'
+        ...buildLocalhostCorsHeaders(req)
       });
       res.end(JSON.stringify({ ok: false, error: err.message }));
     }
@@ -126,7 +126,7 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
       if (!details) {
         res.writeHead(404, {
           'Content-Type': 'application/json; charset=utf-8',
-          'Access-Control-Allow-Origin': '*'
+          ...buildLocalhostCorsHeaders(req)
         });
         res.end(JSON.stringify({ ok: false, error: 'Session not found' }));
         return true;
@@ -134,13 +134,13 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
       res.writeHead(200, {
         'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Access-Control-Allow-Origin': '*'
+        ...buildLocalhostCorsHeaders(req)
       });
       res.end(JSON.stringify({ ok: true, session: details }));
     } catch (err) {
       res.writeHead(500, {
         'Content-Type': 'application/json; charset=utf-8',
-        'Access-Control-Allow-Origin': '*'
+        ...buildLocalhostCorsHeaders(req)
       });
       res.end(JSON.stringify({ ok: false, error: err.message }));
     }
@@ -267,16 +267,46 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
     }
 
     try {
-      const lockData = fs.existsSync(lockFile) ? loadYamlSafe(lockFile) : null;
-      if (!lockData || !isProcessAlive(lockData.pid)) {
+      const lockData = fs.existsSync(lockFile) ? readLockFile(lockFile) : null;
+      const pid = Number(lockData?.pid);
+      if (!lockData || !Number.isInteger(pid) || pid <= 0 || !isProcessAlive(pid)) {
+        if (lockData && fs.existsSync(lockFile)) {
+          try { fs.unlinkSync(lockFile); } catch {}
+        }
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ ok: true, message: 'Orchestrator is not running.' }));
         return true;
       }
 
-      process.kill(lockData.pid, 'SIGTERM');
+      if (process.platform === 'win32') {
+        await new Promise((resolve) => {
+          execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { timeout: 5000 }, () => resolve());
+        });
+      } else {
+        process.kill(pid, 'SIGTERM');
+      }
+
+      for (let i = 0; i < 6 && isProcessAlive(pid); i++) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+
+      if (!isProcessAlive(pid)) {
+        const latestLock = fs.existsSync(lockFile) ? readLockFile(lockFile) : null;
+        if (latestLock?.pid === pid && fs.existsSync(lockFile)) {
+          try { fs.unlinkSync(lockFile); } catch {}
+        }
+        if (fs.existsSync(liveStatusFile)) {
+          mutateVersionedJsonAtomic(liveStatusFile, (prev) => ({
+            ...prev,
+            active: false,
+            current_stage: 'idle',
+            updated_at: new Date().toISOString()
+          }), { allowCorruptFallback: true, fallbackFactory: () => ({}) });
+        }
+      }
+
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: true, message: `Terminated Orchestrator process (PID: ${lockData.pid})` }));
+      res.end(JSON.stringify({ ok: true, pid, message: `Terminated Orchestrator process (PID: ${pid})` }));
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ ok: false, error: err.message }));
@@ -294,29 +324,29 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
         res.end(JSON.stringify({ ok: false, error: 'Invalid task id' }));
         return true;
       }
+
+      let foundPath = findTaskYamlFile(tasksActiveDir, taskId);
+      let archived = false;
+      if (!foundPath) {
+        foundPath = findTaskYamlFile(tasksArchiveDir, taskId);
+        archived = Boolean(foundPath);
+      }
+
       let foundTask = null;
       let rawYaml = '';
-      if (fs.existsSync(tasksActiveDir)) {
-        const allFiles = fs.readdirSync(tasksActiveDir).filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
-        for (const af of allFiles) {
-          const fp = path.resolve(tasksActiveDir, af);
-          const rawContent = fs.readFileSync(fp, 'utf8');
-          const parsed = loadYamlSafe(fp);
-          const raw = (parsed?.task && typeof parsed.task === 'object') ? parsed.task : parsed;
-          if (raw?.task_id === taskId || raw?.id === taskId || af === `${taskId}.yaml` || af === `${taskId}.yml`) {
-            foundTask = raw;
-            rawYaml = rawContent;
-            break;
-          }
-        }
+      if (foundPath && fs.existsSync(foundPath)) {
+        rawYaml = fs.readFileSync(foundPath, 'utf8');
+        const parsed = loadYamlSafe(foundPath);
+        foundTask = (parsed?.task && typeof parsed.task === 'object') ? parsed.task : parsed;
       }
+
       if (!foundTask) {
         res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ ok: false, error: `Task "${taskId}" not found in active queue.` }));
+        res.end(JSON.stringify({ ok: false, error: `Task "${taskId}" not found in active or archive queue.` }));
         return true;
       }
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: true, task_id: taskId, task: foundTask, raw_yaml: rawYaml }));
+      res.end(JSON.stringify({ ok: true, task_id: taskId, archived, task: foundTask, raw_yaml: rawYaml }));
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ ok: false, error: err.message }));
