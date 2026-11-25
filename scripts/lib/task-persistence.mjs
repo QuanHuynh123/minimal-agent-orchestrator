@@ -1159,14 +1159,26 @@ export function mutateTaskStateAtomic(stateFilePath, mutatorFn, options = {}) {
   });
 }
 
-export function saveWriterRawOutput(taskId, attemptNum, writerRes = {}, teamDir = DEFAULT_TEAM_DIR) {
+export function saveWriterRawOutput(taskId, attemptNum, writerRes = {}, teamDir = DEFAULT_TEAM_DIR, bucketMeta = null) {
   try {
+    let resolvedTeamDir = teamDir;
+    let resolvedBucketMeta = bucketMeta;
+    if (teamDir && typeof teamDir === 'object' && !bucketMeta) {
+      resolvedBucketMeta = teamDir;
+      resolvedTeamDir = DEFAULT_TEAM_DIR;
+    }
     const safeId = String(taskId || 'unknown').replace(/[^A-Za-z0-9_.-]/g, '_');
-    const runDir = path.resolve(resolveStateBaseDir(teamDir), 'runs', safeId);
+    const runDir = path.resolve(resolveStateBaseDir(resolvedTeamDir), 'runs', safeId);
     fs.mkdirSync(runDir, { recursive: true });
-    const outPath = path.resolve(runDir, `attempt-${attemptNum}.txt`);
+    const totalBuckets = Number(resolvedBucketMeta?.totalBuckets ?? resolvedBucketMeta?.total_buckets ?? 1);
+    const bucketIdx = Number(resolvedBucketMeta?.bucketIdx ?? resolvedBucketMeta?.bucket_idx ?? -1);
+    const isMultiBucket = Number.isInteger(totalBuckets) && totalBuckets > 1 && Number.isInteger(bucketIdx) && bucketIdx >= 0;
+    const outFileName = isMultiBucket
+      ? `attempt-${attemptNum}-b${bucketIdx + 1}.txt`
+      : `attempt-${attemptNum}.txt`;
+    const outPath = path.resolve(runDir, outFileName);
     const header = [
-      `=== WRITER ATTEMPT ${attemptNum} ===`,
+      `=== WRITER ATTEMPT ${attemptNum}${isMultiBucket ? ` (BUCKET ${bucketIdx + 1}/${totalBuckets})` : ''} ===`,
       `Timestamp: ${new Date().toISOString()}`,
       `Model Requested: ${writerRes.requestedModel || writerRes.modelUsed || 'unknown'}`,
       `Model Responded: ${writerRes.responseModel || writerRes.actualModel || 'unknown'}`,

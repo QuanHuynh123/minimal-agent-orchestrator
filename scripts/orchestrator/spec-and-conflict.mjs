@@ -79,6 +79,73 @@ export function capturePreRollbackValidationFailure({
 export const SPEC_REUSE_ON_RETRY_ENABLED = false;
 
 /**
+ * Deterministic 0-token gate deciding whether an existing draft_spec artifact may be
+ * reused on a retry attempt WITHOUT re-invoking the Architect/Designer model:
+ *   1. Must be a retry attempt (retries > 0) with a valid, non-stale Markdown spec file on disk.
+ *   2. The immediately preceding attempt must have stopped strictly at `stage === 'apply'`
+ *      (mechanical truncation `finish_reason === 'length'`, SEARCH/REPLACE mismatch, or
+ *      `not_in_seen_window`) — BEFORE reaching `validate` or `review`.
+ *   3. The task must NEVER have failed `validate`, `validate_env`, `review`, or
+ *      `post_patch_signature_gate` on any prior attempt, and must have passed ContractConflictGate.
+ *   4. Task scope must be unchanged since the spec artifact was drafted.
+ * Any validation/test failure (such as D-017) ALWAYS returns `false` so Spec is freshly re-evaluated.
+ */
+export function canReuseSpecOnMechanicalApplyRetry({
+  task = {},
+  retries = 0,
+  specPath = '',
+  currentScopeHash = null,
+  previousScopeHash = null,
+  specPassedContractGate = true
+} = {}) {
+  if (Number(retries) <= 0) return false;
+  if (!specPath || !fs.existsSync(specPath)) return false;
+  if (!specPassedContractGate) return false;
+  if (task?.failure_class === 'contract_conflict' || task?.contract_conflict_report) return false;
+
+  if (currentScopeHash && previousScopeHash && currentScopeHash !== previousScopeHash) {
+    return false;
+  }
+
+  const history = Array.isArray(task?.error_history) ? task.error_history : [];
+  if (history.length === 0) return false;
+
+  const hasNonApplyFailure = history.some((entry) => {
+    const stage = String(entry?.stage || '').toLowerCase();
+    return stage === 'validate' || stage === 'validate_env' || stage === 'review' || stage === 'post_patch_signature_gate';
+  });
+  if (hasNonApplyFailure) return false;
+
+  const prevAttempt = Number(retries);
+  const lastEntry = history[history.length - 1];
+  if (!lastEntry || String(lastEntry.stage || '').toLowerCase() !== 'apply') {
+    return false;
+  }
+  if (lastEntry.attempt != null && Number(lastEntry.attempt) !== prevAttempt) {
+    return false;
+  }
+
+  const steps = Array.isArray(task?.steps) ? task.steps : [];
+  const hasPriorValidationFailureOrReview = steps.some((s) =>
+    s && (
+      String(s.validation_status || '').toLowerCase() === 'failed' ||
+      String(s.role || '').toLowerCase() === 'reviewer'
+    )
+  );
+  if (hasPriorValidationFailureOrReview) return false;
+
+  try {
+    const existingSpec = fs.readFileSync(specPath, 'utf8').trim();
+    const isStaleJsonReview = existingSpec.startsWith('```json') || existingSpec.includes('"passed": false');
+    if (existingSpec.length <= 20 || isStaleJsonReview) return false;
+  } catch {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Builds both the user prompt and system prompt override for pre-code draft_spec steps
  * (Architect / Designer), enforcing Contract Table (Input -> Output | Error/Fallback Cases),
  * strict acceptance_criteria precedence over Spec, and [ASSUMPTION] tagging.

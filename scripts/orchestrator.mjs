@@ -139,6 +139,7 @@ import {
   SPEC_REUSE_ON_RETRY_ENABLED,
   applyPostPatchDiffRiskFloor,
   buildDraftSpecPrompts,
+  canReuseSpecOnMechanicalApplyRetry,
   capturePreRollbackValidationFailure,
   collectSpecExcerptsForConflict,
   evaluateContractConflictGate
@@ -193,6 +194,7 @@ export {
   SPEC_REUSE_ON_RETRY_ENABLED,
   applyPostPatchDiffRiskFloor,
   buildDraftSpecPrompts,
+  canReuseSpecOnMechanicalApplyRetry,
   capturePreRollbackValidationFailure,
   evaluateContractConflictGate,
   extractFirstBalancedJsonObject,
@@ -658,8 +660,11 @@ export async function check9RouterHealthWithRetry(teamCfg = teamConfig, policyCf
   return check9RouterHealthWithRetryBase(teamCfg, policyCfg, delaysMs);
 }
 
-export function saveWriterRawOutput(taskId, attemptNum, writerRes = {}) {
-  return saveWriterRawOutputBase(taskId, attemptNum, writerRes, TEAM_DIR);
+export function saveWriterRawOutput(taskId, attemptNum, writerRes = {}, teamDirOrBucketMeta = TEAM_DIR, bucketMeta = null) {
+  if (teamDirOrBucketMeta && typeof teamDirOrBucketMeta === 'object' && !bucketMeta) {
+    return saveWriterRawOutputBase(taskId, attemptNum, writerRes, TEAM_DIR, teamDirOrBucketMeta);
+  }
+  return saveWriterRawOutputBase(taskId, attemptNum, writerRes, teamDirOrBucketMeta || TEAM_DIR, bucketMeta);
 }
 
 async function attachIsolatedEnobufsRetries(checkList = [], stageName = 'suite_checks', policyCfg = {}) {
@@ -1129,6 +1134,7 @@ async function runOrchestrator() {
 
       let lastGeneratedSpecs = [];
       let lastValidationChecks = [];
+      const specScopeHashByArtifact = new Map();
 
       // Helper to record validation/review errors and enforce identical-error loop breaker
       const handleStageFailure = (stageName, errSummary, errHash) => {
@@ -1400,8 +1406,23 @@ async function runOrchestrator() {
             const targetArtifact = resolveSpecArtifactPath(task.task_id, `${stepRole}_spec.md`, wfStep.output_artifact);
             const artFullPath = path.resolve(REPO_ROOT, targetArtifact);
 
-            // Spec Reuse on Retry (disabled by default: retries must re-evaluate spec vs failing test contract)
-            if (SPEC_REUSE_ON_RETRY_ENABLED && retries > 0 && fs.existsSync(artFullPath)) {
+            // Spec Reuse on Retry:
+            // - Global SPEC_REUSE_ON_RETRY_ENABLED stays false (D-017: validate failures always re-spec).
+            // - SLICE-1: Allow 0-token reuse ONLY on pure mechanical apply retries (e.g. finish_reason="length"
+            //   or SEARCH/REPLACE error) before any validate/review failure, with unchanged scope and clean contract gate.
+            const currentScopeHashForSpec = computeScopeHash(task.scope || []);
+            const canReuseExistingSpec = (
+              (SPEC_REUSE_ON_RETRY_ENABLED && retries > 0 && fs.existsSync(artFullPath)) ||
+              canReuseSpecOnMechanicalApplyRetry({
+                task,
+                retries,
+                specPath: artFullPath,
+                currentScopeHash: currentScopeHashForSpec,
+                previousScopeHash: specScopeHashByArtifact.get(targetArtifact) || null,
+                specPassedContractGate: !task.contract_conflict_report && task.failure_class !== 'contract_conflict'
+              })
+            );
+            if (canReuseExistingSpec) {
               try {
                 const existingSpec = fs.readFileSync(artFullPath, 'utf8').trim();
                 const isStaleJsonReview = existingSpec.startsWith('```json') || existingSpec.includes('"passed": false');
@@ -1581,6 +1602,7 @@ async function runOrchestrator() {
                 ? `# Specification Skipped (Fast-Exit)\n${specRes.content.trim()}\n`
                 : `${specRes.content.trim()}\n`;
               const writtenSpec = writeDraftSpecArtifact(task.task_id, stepRole, { ...wfStep, output_artifact: targetArtifact }, bodyToWrite, { repoRoot: REPO_ROOT });
+              specScopeHashByArtifact.set(targetArtifact, computeScopeHash(task.scope || []));
               if (isSkip) {
                 console.log(`[Writer Hub] Fast-exit triggered for ${stepRole}: ${specRes.content.slice(0, 150)}`);
               } else {
@@ -2032,7 +2054,10 @@ async function runOrchestrator() {
           lastActiveWriterModel = writerRes.actualModel || writerRes.actual_model || writerRes.modelUsed || writerRes.responseModel || activeWriterModel;
           usedWriterModels.add(lastActiveWriterModel);
 
-          const rawLogPath = saveWriterRawOutput(task.task_id, retries + 1, writerRes);
+          const rawLogPath = saveWriterRawOutput(task.task_id, retries + 1, writerRes, TEAM_DIR, {
+            bucketIdx: pIdx,
+            totalBuckets: patchSteps.length
+          });
 
           const inputTok = getAdjustedPromptTokens(writerRes.usage);
           const outputTok = writerRes.usage?.completion_tokens || 0;
@@ -2113,6 +2138,9 @@ async function runOrchestrator() {
               note: truncErr.slice(0, 120)
             });
             console.warn(`[Writer] ${truncErr}`);
+            if (patchSteps.length > 1 && pIdx >= 1) {
+              rollbackAttemptChanges();
+            }
             const failAction = handleStageFailure('apply', truncErr, hashString('truncated_output_length'));
             patchPipelineFailed = true;
             shouldBreakRetryLoop = failAction.shouldBreak;
@@ -2229,13 +2257,15 @@ async function runOrchestrator() {
             if (applyRes.security || applyRes.noRetry) {
               blockReason = fullApplyErr;
               task.status = 'blocked';
-              rollback(getRollbackTargets());
-              activeRollbackTargets = [];
+              rollbackAttemptChanges();
               patchPipelineFailed = true;
               shouldBreakRetryLoop = true;
               break;
             }
 
+            if (patchSteps.length > 1 && pIdx >= 1) {
+              rollbackAttemptChanges();
+            }
             const failAction = handleStageFailure('apply', fullApplyErr, applyHash);
             patchPipelineFailed = true;
             shouldBreakRetryLoop = failAction.shouldBreak;
@@ -2404,7 +2434,7 @@ async function runOrchestrator() {
         // Step C.5: Deterministic 0-Token Deleted Identifier Gate (kind = remove | refactor)
         const deletedIdGate = evaluateDeletedIdentifierGate(taskDiffText, task, {
           repoRoot: REPO_ROOT,
-          excludeDirs: Array.isArray(policyConfig?.scope_control?.context_exclude) ? policyConfig.scope_control.context_exclude : []
+          excludeDirs: Array.isArray(policyConfig?.policy?.scope_control?.context_exclude) ? policyConfig.policy.scope_control.context_exclude : []
         });
         if (!deletedIdGate.skipped && Array.isArray(deletedIdGate.warnings) && deletedIdGate.warnings.length > 0) {
           task.warnings = [...new Set([...(Array.isArray(task.warnings) ? task.warnings : []), ...deletedIdGate.warnings])];

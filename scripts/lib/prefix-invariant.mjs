@@ -186,6 +186,7 @@ const KNOWN_USER_SECTION_PREFIXES = [
   { label: 'PROJECT CONVENTIONS', rx: /^<project_conventions\b/i },
   { label: 'AVAILABLE WORKSPACE FILES', rx: /^AVAILABLE WORKSPACE FILES\b/i },
   { label: 'CODEBASE SKELETON & SYMBOL MAP', rx: /^CODEBASE SKELETON & SYMBOL MAP\b/i },
+  { label: 'GOAL-FOCUSED SYMBOL & IMPORT GRAPH', rx: /^GOAL-FOCUSED SYMBOL & IMPORT GRAPH\b/i },
   { label: 'EMBEDDED CODE SNIPPETS', rx: /^(?:EMBEDDED CODE SNIPPETS|DETERMINISTIC PRE-LOOKUP CANDIDATES)\b/i },
   { label: 'DIRECTIVE', rx: /^DIRECTIVE:/i },
   { label: 'INSTRUCTION', rx: /^INSTRUCTION(?:\s|\(|:)/i }
@@ -318,6 +319,7 @@ export function analyzeTurn1PayloadHashes(run1Payload, run2Payload) {
     if (!equal) {
       if (s1.label === 'USER GOAL') volatileReasons.push('user_goal_text');
       else if (s1.label === 'CODEBASE SKELETON & SYMBOL MAP') volatileReasons.push('query_ranked_skeleton');
+      else if (s1.label === 'GOAL-FOCUSED SYMBOL & IMPORT GRAPH') volatileReasons.push('query_focused_symbol_graph');
       else if (s1.label === 'EMBEDDED CODE SNIPPETS') volatileReasons.push('query_prelookup_matches');
       else if (s1.label === 'DIRECTIVE') volatileReasons.push('conditional_intent_directive');
       else if (s1.label === 'PROJECT CONVENTIONS') volatileReasons.push('repo_rules_changed');

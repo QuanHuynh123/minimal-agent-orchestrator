@@ -638,9 +638,11 @@ export async function runAgent(options = {}) {
   if (!finalContent && currentTurn >= 1) {
     const synthesisPrompt = (role === 'writer' || role === 'backend_writer' || role === 'frontend_writer')
       ? 'All tool investigations are complete. Based on what you observed from the tools, immediately provide your final response containing the exact <<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE blocks to fulfill the task. Do not call any more tools.'
-      : (role === 'router' || role === 'architect')
+      : (role === 'router')
         ? 'All tool investigations are complete. Based on what you observed from the tools, you MUST now immediately output the final valid JSON array of tasks matching this schema: {"tasks": [...]}. Do not call any tools, do not attempt any tool calls, and do not output any markdown text other than the JSON block.'
-        : 'All tool investigations are complete. Based on what you observed from the tools, please provide your final response now. Do not call any tools.';
+        : (role === 'architect' || role === 'designer')
+          ? 'All tool investigations are complete. Based on what you observed from the tools, immediately output your concise final Markdown specification matching your role contract (or SKIP_SPEC if allowed and unambiguous). Do not call any tools.'
+          : 'All tool investigations are complete. Based on what you observed from the tools, please provide your final response now. Do not call any tools.';
 
     messages.push({
       role: 'user',

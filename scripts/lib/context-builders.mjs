@@ -1803,6 +1803,97 @@ export function buildGoalPreprocessCandidates(goalText, collectedFiles = [], rep
   return outLines.length > 1 ? outLines.join('\n') : '';
 }
 
+const PRELOOKUP_IDENT_STOPWORDS = new Set([
+  'self', 'return', 'const', 'function', 'import', 'from', 'true', 'false',
+  'none', 'null', 'this', 'async', 'await', 'class', 'else', 'elif', 'pass',
+  'raise', 'except', 'while', 'break', 'continue', 'yield', 'with', 'lambda',
+  'typeof', 'undefined', 'export', 'default', 'matched'
+]);
+
+function extractPreLookupSignals(preLookupText = '') {
+  const matchedFiles = new Set();
+  const snippetIdentifiers = new Set();
+  const lines = String(preLookupText || '').split(/\r?\n/);
+
+  for (const line of lines) {
+    const snippetHdr = line.match(/^---\s+([^\s:]+):\d+-\d+\b/);
+    if (snippetHdr) {
+      matchedFiles.add(snippetHdr[1].replace(/\\/g, '/'));
+      continue;
+    }
+    const preEntry = line.match(/^-\s+([^\s:]+):\d+\s*\|\s*(.*)$/);
+    if (preEntry) {
+      matchedFiles.add(preEntry[1].replace(/\\/g, '/'));
+      for (const m of preEntry[2].matchAll(/\b([A-Za-z_][A-Za-z0-9_]{3,})\b/g)) {
+        const tok = m[1];
+        if (!PRELOOKUP_IDENT_STOPWORDS.has(tok.toLowerCase()) && (tok.includes('_') || /[a-z][A-Z]/.test(tok))) {
+          snippetIdentifiers.add(tok);
+        }
+      }
+      continue;
+    }
+    const codeLine = line.match(/^\d+\s*\|\s*(.*)$/);
+    if (codeLine) {
+      const code = codeLine[1];
+      // Skip module-level import headers so a snippet near top-of-file does not pull unrelated siblings
+      if (/^\s*(?:from\s+\S+\s+import\b|import\s+)/.test(code)) continue;
+      for (const m of code.matchAll(/\b([A-Za-z_][A-Za-z0-9_]{3,})\s*\(/g)) {
+        const tok = m[1];
+        if (!PRELOOKUP_IDENT_STOPWORDS.has(tok.toLowerCase())) {
+          snippetIdentifiers.add(tok);
+        }
+      }
+      for (const m of code.matchAll(/\b([A-Za-z_][A-Za-z0-9_]{3,})\b/g)) {
+        const tok = m[1];
+        if (!PRELOOKUP_IDENT_STOPWORDS.has(tok.toLowerCase()) && (tok.includes('_') || /[a-z][A-Z]/.test(tok))) {
+          snippetIdentifiers.add(tok);
+        }
+      }
+    }
+  }
+
+  return {
+    matchedFiles: Array.from(matchedFiles),
+    snippetIdentifiers: Array.from(snippetIdentifiers).slice(0, 24)
+  };
+}
+
+function extractRepoMapFileSet(skeletonText = '') {
+  const files = new Set();
+  for (const m of String(skeletonText || '').matchAll(/^\[([^\]]+)\]/gm)) {
+    const label = m[1].trim();
+    if (!label || label.startsWith('... +')) continue;
+    files.add(label.replace(/\\/g, '/'));
+  }
+  return files;
+}
+
+function filterAndTrimFocusedRepoMap(focusedRaw = '', staticPrintedFiles = new Set(), maxChars = 2500) {
+  const raw = String(focusedRaw || '').trim();
+  if (!raw) return '';
+  const blocks = raw.split(/\n\n+/);
+  const kept = [];
+  let totalChars = 0;
+
+  for (const block of blocks) {
+    const trimmed = block.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith('[... +')) continue;
+    const hdr = trimmed.match(/^\[([^\]]+)\]/);
+    if (!hdr) continue;
+    const relPath = hdr[1].trim().replace(/\\/g, '/');
+    if (staticPrintedFiles.has(relPath)) continue;
+    const sepLen = kept.length > 0 ? 2 : 0;
+    if (totalChars + sepLen + trimmed.length > maxChars) {
+      break;
+    }
+    kept.push(trimmed);
+    totalChars += sepLen + trimmed.length;
+  }
+
+  return kept.join('\n\n');
+}
+
 export function buildRouterContextParts(allowedDirs = [], repoRoot = REPO_ROOT, maxFiles = 300, queryKeywords = '', scopeFiles = [], options = {}) {
   const staticSections = [];
   const dynamicSections = [];
@@ -1915,28 +2006,31 @@ export function buildRouterContextParts(allowedDirs = [], repoRoot = REPO_ROOT, 
     ? queryKeywords.join(' ')
     : String(queryKeywords || '');
   const useStaticRepoMap = Boolean(staticRepoMap);
+  const shouldIgnoreForRepoMap = (rel, isDir) => {
+    if (shouldSkipRelPath(rel, isDir)) return true;
+    if (!isDir) {
+      try {
+        const st = fs.statSync(path.resolve(repoRoot, rel));
+        if (st.size > maxFileSizeBytes) return true;
+      } catch {
+        return true;
+      }
+    }
+    return false;
+  };
+  let staticSkeletonText = '';
   try {
     const skeleton = generateRepoMap(repoRoot, {
       allowedDirs,
       query: useStaticRepoMap ? '' : normalizedQuery,
       scopeFiles: Array.isArray(scopeFiles) ? scopeFiles : [],
       maxChars: 3500,
-      shouldIgnoreRelPath: (rel, isDir) => {
-        if (shouldSkipRelPath(rel, isDir)) return true;
-        if (!isDir) {
-          try {
-            const st = fs.statSync(path.resolve(repoRoot, rel));
-            if (st.size > maxFileSizeBytes) return true;
-          } catch {
-            return true;
-          }
-        }
-        return false;
-      }
+      shouldIgnoreRelPath: shouldIgnoreForRepoMap
     });
     if (skeleton && skeleton.trim()) {
+      staticSkeletonText = skeleton.trim();
       const targetSections = (useStaticRepoMap || !normalizedQuery.trim()) ? staticSections : dynamicSections;
-      targetSections.push(`CODEBASE SKELETON & SYMBOL MAP (Classes, Defs & Callers):\n${skeleton.trim()}`);
+      targetSections.push(`CODEBASE SKELETON & SYMBOL MAP (Classes, Defs & Callers):\n${staticSkeletonText}`);
     }
   } catch (err) {
     if (process.env.DEBUG_REPO_MAP) {
@@ -1944,12 +2038,41 @@ export function buildRouterContextParts(allowedDirs = [], repoRoot = REPO_ROOT, 
     }
   }
 
-  // 4. Deterministic Keyword -> file:line Pre-Lookup (placed AFTER static prefix so KV cache stays warm)
+  // 4. Deterministic Keyword -> file:line Pre-Lookup + Goal-Focused Symbol & Import Graph
+  //    (both placed AFTER static prefix so KV cache stays warm and static prefix stays 100% invariant)
   if (normalizedQuery.trim()) {
     const preLookup = buildGoalPreprocessCandidates(normalizedQuery, collected, repoRoot, {
       snippetContextLines,
       ...(snippetMaxChars ? { maxChars: snippetMaxChars } : {})
     });
+
+    if (useStaticRepoMap && preLookup) {
+      try {
+        const { matchedFiles, snippetIdentifiers } = extractPreLookupSignals(preLookup);
+        const seedFiles = Array.from(new Set([...(Array.isArray(scopeFiles) ? scopeFiles : []), ...matchedFiles]));
+        if (seedFiles.length > 0) {
+          const baseTokens = normalizedQuery.toLowerCase().split(/[\s,._-]+/).filter(k => k.length >= 3);
+          const focusedQueryTokens = Array.from(new Set([...baseTokens, ...snippetIdentifiers.map(s => s.toLowerCase())]));
+          const staticPrintedFiles = extractRepoMapFileSet(staticSkeletonText);
+          const focusedRaw = generateRepoMap(repoRoot, {
+            allowedDirs,
+            query: focusedQueryTokens,
+            scopeFiles: seedFiles,
+            maxChars: 2500 + staticSkeletonText.length,
+            shouldIgnoreRelPath: shouldIgnoreForRepoMap
+          });
+          const focusedFiltered = filterAndTrimFocusedRepoMap(focusedRaw, staticPrintedFiles, 2500);
+          if (focusedFiltered) {
+            dynamicSections.push(`GOAL-FOCUSED SYMBOL & IMPORT GRAPH:\n${focusedFiltered}`);
+          }
+        }
+      } catch (err) {
+        if (process.env.DEBUG_REPO_MAP) {
+          console.warn(`[buildRouterContext] Failed to generate goal-focused repo map: ${err.message}`);
+        }
+      }
+    }
+
     if (preLookup) {
       dynamicSections.push(preLookup);
     }
