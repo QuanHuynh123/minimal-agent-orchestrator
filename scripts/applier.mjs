@@ -10,14 +10,29 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 export const TEAM_DIR = path.resolve(__dirname, '..');
 
+export function resolveDefaultRepoRootRel(teamDir = TEAM_DIR) {
+  const resolvedTeamDir = path.resolve(teamDir);
+  const parentDir = path.resolve(resolvedTeamDir, '..');
+  const hasOwnGit = fs.existsSync(path.join(resolvedTeamDir, '.git'));
+  const hasParentGit = fs.existsSync(path.join(parentDir, '.git'));
+  const isNamedAgentTeam = path.basename(resolvedTeamDir).toLowerCase() === 'agent-team';
+  if (!hasOwnGit || hasParentGit || isNamedAgentTeam) {
+    return '..';
+  }
+  return '.';
+}
+
 export function resolveRepoRoot(projectConfig = null, options = {}) {
+  const baseTeamDir = options.teamDir ? path.resolve(options.teamDir) : TEAM_DIR;
   let cfg = projectConfig;
   if (!cfg) {
     cfg = loadMergedPolicy({ configDir: options.configDir });
   }
-  const defaultRoot = fs.existsSync(path.join(TEAM_DIR, '.git')) ? '.' : '..';
-  const configuredRoot = cfg?.policy?.repo_root || cfg?.project?.repo_root || defaultRoot;
-  return path.resolve(TEAM_DIR, configuredRoot);
+  const explicitRoot = cfg?.policy?.repo_root || cfg?.project?.repo_root || process.env.AGENT_TEAM_REPO_ROOT;
+  const configuredRoot = (typeof explicitRoot === 'string' && explicitRoot.trim())
+    ? explicitRoot.trim()
+    : resolveDefaultRepoRootRel(baseTeamDir);
+  return path.resolve(baseTeamDir, configuredRoot);
 }
 
 const REPO_ROOT = resolveRepoRoot();

@@ -67,32 +67,105 @@ export function verifyPlannedScope(scope = [], repoRoot = process.cwd(), demand 
 
 function isTestRelPath(relPath = '') {
   const norm = String(relPath || '').replace(/\\/g, '/');
-  return /(?:^|\/)tests\/|(?:^|\/)test[-_][^/]+\.(?:py|mjs|js|ts)$/i.test(norm);
+  return /(?:^|\/)(?:tests?|__tests__)\/|(?:^|\/)test[-_][^/]+\.(?:py|mjs|js|cjs|ts|tsx|jsx)$|(?:^|\/)[^/]+_test\.py$|\.(?:test|spec)\.(?:py|mjs|js|cjs|ts|tsx|jsx)$/i.test(norm);
+}
+
+function collectConfiguredValidationCommands(policyConfig = null) {
+  const val = policyConfig?.policy?.validation || policyConfig?.validation || {};
+  const list = [
+    ...(Array.isArray(val.fast_checks) ? val.fast_checks : []),
+    ...(Array.isArray(val.suite_checks) ? val.suite_checks : [])
+  ];
+  return list
+    .map(item => (typeof item === 'string' ? item : item?.run))
+    .map(cmd => String(cmd || '').trim())
+    .filter(Boolean);
+}
+
+function resolvePythonTestRunner(effectiveRepoRoot = null, checkCommands = [], platform = process.platform) {
+  for (const cmd of checkCommands) {
+    const m = cmd.match(/^(?:"([^"]+)"|'([^']+)'|([^\s]+))/);
+    const token = m?.[1] || m?.[2] || m?.[3] || '';
+    if (/python(?:\d+(?:\.\d+)*)?(?:\.exe)?$/i.test(token)) {
+      if (!/[\\/]/.test(token) || !effectiveRepoRoot || fs.existsSync(path.resolve(effectiveRepoRoot, token))) {
+        return /\s/.test(token) ? `"${token}"` : token;
+      }
+    }
+  }
+  const relCandidates = platform === 'win32'
+    ? [
+        { rel: path.join('.venv', 'Scripts', 'python.exe'), cmd: '.\\.venv\\Scripts\\python.exe' },
+        { rel: path.join('venv', 'Scripts', 'python.exe'), cmd: '.\\venv\\Scripts\\python.exe' }
+      ]
+    : [
+        { rel: path.join('.venv', 'bin', 'python'), cmd: './.venv/bin/python' },
+        { rel: path.join('venv', 'bin', 'python'), cmd: './venv/bin/python' }
+      ];
+  if (effectiveRepoRoot) {
+    for (const cand of relCandidates) {
+      if (fs.existsSync(path.resolve(effectiveRepoRoot, cand.rel))) {
+        return cand.cmd;
+      }
+    }
+  }
+  return platform === 'win32' ? 'python' : 'python3';
 }
 
 /**
  * Builds targeted verification test commands for dependent test files without adding them into Writer scope.
  */
-export function buildVerificationCommandsForTests(testFiles = []) {
+export function buildVerificationCommandsForTests(testFiles = [], options = {}) {
+  const pyFiles = [];
   const pyModules = [];
   const jsFiles = [];
   for (const rel of (Array.isArray(testFiles) ? testFiles : [])) {
     const norm = String(rel || '').replace(/\\/g, '/').replace(/^\.\//, '');
     if (!norm) continue;
     if (/\.py$/i.test(norm)) {
+      if (!pyFiles.includes(norm)) pyFiles.push(norm);
       const mod = norm.replace(/\.py$/i, '').replace(/\//g, '.');
       if (mod && !pyModules.includes(mod)) pyModules.push(mod);
-    } else if (/\.(?:mjs|js)$/i.test(norm)) {
+    } else if (/\.(?:mjs|js|cjs|ts|tsx|jsx)$/i.test(norm)) {
       if (!jsFiles.includes(norm)) jsFiles.push(norm);
     }
   }
+
+  const checkCommands = collectConfiguredValidationCommands(options.policyConfig);
+  const platform = options.platform || process.platform;
+  const effectiveRepoRoot = options.repoRoot ? path.resolve(options.repoRoot) : null;
   const cmds = [];
+
   if (pyModules.length > 0) {
-    cmds.push(`.\\\.venv\\Scripts\\python.exe -m unittest -v ${pyModules.join(' ')}`);
+    const pytestCmd = checkCommands.find(c => /\bpytest\b/i.test(c));
+    if (pytestCmd) {
+      const m = pytestCmd.match(/^(.*?\bpytest)\b/i);
+      const pytestPrefix = m ? m[1].trim() : 'pytest';
+      cmds.push(`${pytestPrefix} ${pyFiles.join(' ')}`);
+    } else {
+      const pyBin = resolvePythonTestRunner(effectiveRepoRoot, checkCommands, platform);
+      cmds.push(`${pyBin} -m unittest -v ${pyModules.join(' ')}`);
+    }
   }
-  for (const jf of jsFiles) {
-    cmds.push(`node ${jf}`);
+
+  if (jsFiles.length > 0) {
+    const usesVitest = checkCommands.some(c => /\bvitest\b/i.test(c));
+    const usesJest = checkCommands.some(c => /\bjest\b/i.test(c));
+    const usesNodeTest = checkCommands.some(c => /\bnode\s+--test\b/i.test(c));
+    if (usesVitest) {
+      cmds.push(`npx vitest run ${jsFiles.join(' ')}`);
+    } else if (usesJest) {
+      cmds.push(`npx jest ${jsFiles.join(' ')}`);
+    } else {
+      for (const jf of jsFiles) {
+        if (usesNodeTest || /\.(?:test|spec)\.(?:mjs|js|cjs)$/i.test(jf)) {
+          cmds.push(`node --test ${jf}`);
+        } else {
+          cmds.push(`node ${jf}`);
+        }
+      }
+    }
   }
+
   return cmds;
 }
 
@@ -311,7 +384,10 @@ export function checkScopeWithDependents(scope = [], repoRoot = process.cwd(), o
   }
 
   // Test dependents become verification_commands (executed by validator, never placed into Writer scope)
-  const verificationCommands = buildVerificationCommandsForTests(testDependents);
+  const verificationCommands = buildVerificationCommandsForTests(testDependents, {
+    repoRoot,
+    policyConfig: options.policyConfig
+  });
 
   const warnings = [];
   if (missingCodeDependents.length > 0) {
@@ -1110,6 +1186,7 @@ export async function decomposeGoal(goal, options = {}) {
         candidateFiles: routerContextParts.collected,
         goal: draftSeed.goal,
         title,
+        policyConfig,
         acceptance_criteria: Array.isArray(rawTask.acceptance_criteria) ? rawTask.acceptance_criteria : []
       });
       const combinedWarnings = [...scopeVerification.warnings, ...dependentsCheck.warnings];

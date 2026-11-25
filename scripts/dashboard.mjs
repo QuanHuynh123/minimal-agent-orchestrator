@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { DASHBOARD_CSRF_TOKEN } from './server/security.mjs';
+import { resolveRepoRoot } from './applier.mjs';
 import {
   acquireSingleInstanceLock,
   releaseSingleInstanceLock,
@@ -35,7 +36,7 @@ const UI_FILE = path.resolve(TEAM_DIR, 'ui', 'index.html');
 const UI_DIR = path.resolve(TEAM_DIR, 'ui');
 const TEAM_CONFIG_FILE = path.resolve(CONFIG_DIR, 'team.yaml');
 const POLICY_CONFIG_FILE = path.resolve(CONFIG_DIR, 'policy.yaml');
-const REPO_ROOT = path.resolve(TEAM_DIR, '..');
+const REPO_ROOT = resolveRepoRoot(null, { configDir: CONFIG_DIR, teamDir: TEAM_DIR });
 const STATE_DIR = process.env.AGENT_TEAM_STATE_DIR
   ? path.resolve(process.env.AGENT_TEAM_STATE_DIR)
   : path.resolve(TEAM_DIR, 'state');
@@ -57,6 +58,7 @@ const SESSIONS_DIR = path.resolve(STATE_DIR, 'sessions');
 
 const snapshotPaths = {
   CONFIG_DIR,
+  REPO_ROOT,
   LOCK_FILE,
   COCKPIT_LOCK_FILE,
   LIVE_STATUS_FILE,

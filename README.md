@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node: >=18](https://img.shields.io/badge/Node->=18.0.0-green.svg)](https://nodejs.org/)
-[![Version: 3.2.0](https://img.shields.io/badge/Version-3.2.0-brightgreen.svg)](#)
+[![Version: 3.2.1](https://img.shields.io/badge/Version-3.2.1-brightgreen.svg)](#)
 [![Pattern: 1-Lead%20%2B%201-Worker](https://img.shields.io/badge/Pattern-Router%20%E2%9E%94%201%20Smart%20Lead%20%2B%201%20Worker-orange.svg)](#)
 [![Gates: 0-Token%20Deterministic](https://img.shields.io/badge/Gates-0--Token%20Deterministic%20Cage-purple.svg)](#)
 
@@ -33,6 +33,7 @@
 ```bash
 # Cách A: Nhúng vào một dự án phần mềm sẵn có (thư mục agent-team/)
 git clone https://github.com/QuanHuynh123/minimal-agent-orchestrator.git agent-team
+echo "agent-team/" >> .gitignore   # Giữ git status của dự án chủ luôn sạch trước khi Orchestrator kiểm tra worktree
 cd agent-team
 
 # (Hoặc Cách B: Clone độc lập để phát triển/thử nghiệm bộ khung)

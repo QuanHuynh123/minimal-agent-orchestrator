@@ -11,6 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveRepoRoot } from '../applier.mjs';
 import { getScopedDiff, rollback } from '../git-guard.mjs';
 import {
   buildConsolidatedSpecsContext,
@@ -22,7 +23,7 @@ import { hashString } from '../validator.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DEFAULT_TEAM_DIR = path.resolve(__dirname, '..', '..');
-const DEFAULT_REPO_ROOT = path.resolve(DEFAULT_TEAM_DIR, '..');
+const DEFAULT_REPO_ROOT = resolveRepoRoot();
 
 export function scanBalancedJsonCandidates(str) {
   const candidates = [];

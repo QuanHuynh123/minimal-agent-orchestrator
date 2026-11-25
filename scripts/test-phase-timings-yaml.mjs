@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 
 import * as taskPersistence from './lib/task-persistence.mjs';
@@ -85,7 +86,7 @@ try {
   assert.deepEqual(canonical.completed[0].phase_timings, parsedYaml.phase_timings);
 
   // Verify orchestrator wires all phase timing hooks and policy quick.max_runtime_sec stays 180
-  const scriptsDir = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+  const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
   const orchSrc = fs.readFileSync(path.join(scriptsDir, 'orchestrator.mjs'), 'utf8');
   assert.match(orchSrc, /createPhaseTimingsTracker/);
   assert.match(orchSrc, /addWriterBucketMs/);

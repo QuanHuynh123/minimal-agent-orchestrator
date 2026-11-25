@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   buildScopedFilesContextWithMeta,
   measureEditedLinesOutsideWindow,
@@ -212,7 +213,7 @@ async function runTests() {
   }
 
   // Verify orchestrator.mjs passes those 4 step fields when recording writer step telemetry
-  const orchSrc = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), 'orchestrator.mjs'), 'utf8');
+  const orchSrc = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'orchestrator.mjs'), 'utf8');
   assert.match(orchSrc, /context_lines_sent:/, 'orchestrator.mjs must record context_lines_sent into steps[]');
   assert.match(orchSrc, /window_mode:/, 'orchestrator.mjs must record window_mode into steps[]');
   assert.match(orchSrc, /edit_lines_outside_window:/, 'orchestrator.mjs must record edit_lines_outside_window into steps[]');

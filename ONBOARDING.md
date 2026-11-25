@@ -15,9 +15,10 @@ Dành cho nhà phát triển mới clone thư mục `agent-team` vào dự án c
 
 ## 1. Cài đặt & Kiểm thử (30 giây)
 
-Mở Terminal tại thư mục `agent-team` và chạy:
+Mở Terminal tại thư mục gốc dự án của bạn và chạy:
 ```bash
 git clone https://github.com/QuanHuynh123/minimal-agent-orchestrator.git agent-team
+echo "agent-team/" >> .gitignore   # Bỏ qua thư mục agent-team để git-guard không báo worktree bẩn
 cd agent-team
 npm install
 npm test

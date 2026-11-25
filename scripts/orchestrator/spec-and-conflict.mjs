@@ -10,6 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveRepoRoot } from '../applier.mjs';
 import { getScopedDiff } from '../git-guard.mjs';
 import {
   extractStructuredFailureBlocks,
@@ -28,7 +29,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DEFAULT_TEAM_DIR = path.resolve(__dirname, '..', '..');
-const DEFAULT_REPO_ROOT = path.resolve(DEFAULT_TEAM_DIR, '..');
+const DEFAULT_REPO_ROOT = resolveRepoRoot();
 
 /**
  * Captures pre-rollback validation failure artifacts atomically BEFORE rollback() wipes disk edits:

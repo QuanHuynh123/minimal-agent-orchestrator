@@ -3,6 +3,7 @@ import path from 'node:path';
 import { exec } from 'node:child_process';
 import YAML from 'yaml';
 import { verifyCsrfAndOrigin, parseJsonBody, buildLocalhostCorsHeaders } from './security.mjs';
+import { resolveRepoRoot } from '../applier.mjs';
 import { loadMergedPolicy, loadMergedTeamConfig, loadYamlSafe, loadYamlStrict } from '../lib/policy-loader.mjs';
 import { collectActiveRosterModels } from '../lib/client-9router.mjs';
 import { callModelEndpoint } from '../../runtime/provider-gateway.mjs';
@@ -16,10 +17,16 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
     || (fs.existsSync(path.resolve('agent-team/config/policy.yaml'))
         ? path.resolve('agent-team/config/policy.yaml')
         : path.resolve('config/policy.yaml'));
+  const policyConfigDir = path.dirname(policyConfigFile);
+  const inferredTeamDir = path.basename(policyConfigDir) === 'config'
+    ? path.resolve(policyConfigDir, '..')
+    : undefined;
   const repoRoot = options.REPO_ROOT
     || (fs.existsSync(path.resolve('agent-team'))
         ? path.resolve('.')
-        : (path.basename(path.resolve('.')) === 'agent-team' ? path.resolve('..') : path.resolve('.')));
+        : (inferredTeamDir
+            ? resolveRepoRoot({ policy: {} }, { configDir: policyConfigDir, teamDir: inferredTeamDir })
+            : (path.basename(path.resolve('.')) === 'agent-team' ? path.resolve('..') : path.resolve('.'))));
 
   if (req.method === 'GET' && url.pathname === '/api/models') {
     try {
@@ -444,6 +451,9 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
       const body = await parseJsonBody(req);
       const checkType = body.check_type || 'fast';
       const policyData = loadMergedPolicy({ policyFile: policyConfigFile });
+      const effectiveRepoRoot = (policyData?.policy?.repo_root && typeof policyData.policy.repo_root === 'string')
+        ? resolveRepoRoot(policyData, { configDir: policyConfigDir, teamDir: inferredTeamDir })
+        : repoRoot;
       const validation = policyData.policy.validation || {};
       const checks = checkType === 'suite' ? validation.suite_checks : validation.fast_checks;
 
@@ -467,7 +477,7 @@ export async function handleModelsRoutes(req, res, url, options = {}) {
       timeoutSec = Math.max(5, Math.min(300, timeoutSec || 30));
 
       const start = Date.now();
-      exec(cmd, { cwd: repoRoot, timeout: timeoutSec * 1000 }, (error, stdout, stderr) => {
+      exec(cmd, { cwd: effectiveRepoRoot, timeout: timeoutSec * 1000 }, (error, stdout, stderr) => {
         const duration = Date.now() - start;
         if (error) {
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });

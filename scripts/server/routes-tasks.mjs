@@ -3,6 +3,7 @@ import path from 'node:path';
 import { execFile, spawn } from 'node:child_process';
 import YAML from 'yaml';
 import { verifyCsrfAndOrigin, parseJsonBody, buildLocalhostCorsHeaders } from './security.mjs';
+import { resolveRepoRoot } from '../applier.mjs';
 import {
   createSnapshot,
   scanSessions,
@@ -157,7 +158,8 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
 
     try {
       const cfgDir = snapshotPaths.CONFIG_DIR || path.resolve(teamDir, 'config');
-      loadMergedPolicy({ configDir: cfgDir });
+      const policyCfg = loadMergedPolicy({ configDir: cfgDir });
+      const repoRoot = options.REPO_ROOT || snapshotPaths.REPO_ROOT || resolveRepoRoot(policyCfg, { configDir: cfgDir, teamDir });
       const body = await parseJsonBody(req);
       const goal = String(body.goal || '').trim();
       if (!goal) {
@@ -172,6 +174,8 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
       console.log(`[Dashboard API] Decomposing goal with Router Agent (preset=${preset}${writerModel ? `, writer_model=${writerModel}` : ''}): "${goal}"...`);
       const decompRes = await decomposeGoal(goal, {
         dryRun: false,
+        configDir: cfgDir,
+        repoRoot,
         preset,
         mode: modeOverride,
         writerModel

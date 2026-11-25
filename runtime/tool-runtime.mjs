@@ -569,9 +569,11 @@ export const DANGEROUS_COMMAND_PATTERNS = [
 
 export const ALLOWED_DIAGNOSTIC_COMMAND_PATTERNS = [
   /^node\s+--check\s+[\w./\\-]+$/i,
+  /^node\s+--test(?:\s+[\w./\\-]+)+$/i,
   /^node\s+(?:agent-team\/)?scripts\/(?:test-[\w.-]+|validator\.mjs)(?:\s+[\w-]+)?$/i,
   /^npm\s+(?:test|run\s+test(?::[\w:-]+)?)$/i,
-  /^(?:python|python3|\.\\\.venv\\Scripts\\python\.exe)\s+-m\s+(?:unittest|py_compile)\b[\w\s./\\-]*$/i,
+  /^(?:python|python3|(?:\.[\\/])?\.?venv[\\/](?:Scripts[\\/]python\.exe|bin[\\/]python3?))\s+-m\s+(?:unittest|pytest|py_compile)\b[\w\s./\\:-]*$/i,
+  /^pytest(?:\s+[\w./\\:-]+)*$/i,
   /^git\s+(?:status|diff|log|branch)(?:\s+[\w./\\-]+)*$/i
 ];
 
@@ -611,13 +613,21 @@ export function parseDiagnosticCommand(cmd = '', platform = process.platform) {
   const head = tokens[0].toLowerCase();
 
   if (head === 'node') {
-    if (tokens[1] === '--check') {
-      const target = tokens[2] || '';
-      if (!target || target.split(/[\\/]/).includes('..')) {
+    if (tokens[1] === '--check' || tokens[1] === '--test') {
+      const targets = tokens.slice(2);
+      if (targets.length === 0) {
         return {
           ok: false,
-          error: `SECURITY_BLOCKED: Invalid path argument for node --check: "${normalized.slice(0, 80)}"`
+          error: `SECURITY_BLOCKED: Invalid path argument for node ${tokens[1]}: "${normalized.slice(0, 80)}"`
         };
+      }
+      for (const target of targets) {
+        if (!target || target.startsWith('-') || target.split(/[\\/]/).includes('..')) {
+          return {
+            ok: false,
+            error: `SECURITY_BLOCKED: Invalid path argument for node ${tokens[1]}: "${normalized.slice(0, 80)}"`
+          };
+        }
       }
     }
     return { ok: true, executable: 'node', args: tokens.slice(1) };
