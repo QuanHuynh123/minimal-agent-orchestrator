@@ -73,6 +73,9 @@
     const cntDone = document.getElementById('cnt-done');
     const cntBlocked = document.getElementById('cnt-blocked');
     const queueItemsList = document.getElementById('queue-items-list');
+    const awaitingConfirmSection = document.getElementById('awaiting-confirm-section');
+    const cntAwaitingConfirm = document.getElementById('cnt-awaiting-confirm');
+    const awaitingConfirmList = document.getElementById('awaiting-confirm-list');
     const manualReviewSection = document.getElementById('manual-review-section');
     const cntManualReview = document.getElementById('cnt-manual-review');
     const manualReviewList = document.getElementById('manual-review-list');
@@ -113,6 +116,9 @@
     const txtDecomposeBtn = document.getElementById('txt-decompose-btn');
     const spinDecompose = document.getElementById('spin-decompose');
     const lblDecomposeStatus = document.getElementById('lbl-decompose-status');
+    const awaitingConfirmBoard = document.getElementById('awaiting-confirm-board');
+    const cntAwaitingConfirmCockpit = document.getElementById('cnt-awaiting-confirm-cockpit');
+    const listAwaitingConfirmTasks = document.getElementById('list-awaiting-confirm-tasks');
     const listDraftTasks = document.getElementById('list-draft-tasks');
     const btnApproveRun = document.getElementById('btn-approve-run');
     const btnStopOrchestrator = document.getElementById('btn-stop-orchestrator');
@@ -3011,19 +3017,22 @@
           left.className = 'queue-item-left';
 
           const icon = document.createElement('span');
-          icon.className = 'queue-item-dot dot-active';
+          const isAwaitConfirm = t.status === 'awaiting_confirmation';
+          icon.className = isAwaitConfirm ? 'queue-item-dot dot-await-merge' : 'queue-item-dot dot-active';
 
           const tid = document.createElement('span');
           tid.className = 'queue-item-id';
           tid.textContent = t.task_id || 'active-task';
-          tid.title = t.title || t.task_id || '';
+          tid.title = isAwaitConfirm && t.pending_branch
+            ? `${t.title || t.task_id || ''} • Branch: ${t.pending_branch}`
+            : (t.title || t.task_id || '');
 
           left.appendChild(icon);
           left.appendChild(tid);
 
           const badge = document.createElement('span');
-          badge.className = 'queue-item-badge q-active';
-          badge.textContent = 'ACTIVE';
+          badge.className = isAwaitConfirm ? 'queue-item-badge q-await-merge' : 'queue-item-badge q-active';
+          badge.textContent = isAwaitConfirm ? 'AWAIT MERGE' : 'ACTIVE';
 
           item.appendChild(left);
           item.appendChild(badge);
@@ -3135,6 +3144,7 @@
         queueItemsList.appendChild(emptyDiv);
       }
 
+      renderAwaitingConfirmationQueue(q);
       renderManualReviewQueue(q);
       renderUnseenExactMatches(q);
     }
@@ -3211,6 +3221,320 @@
         });
 
         unseenExactList.appendChild(card);
+      });
+    }
+
+    function resolveAwaitingConfirmationItems(q) {
+      if (Array.isArray(q?.awaiting_confirmation)) {
+        return q.awaiting_confirmation;
+      }
+      if (Array.isArray(q?.active)) {
+        return q.active.filter(t => t && t.status === 'awaiting_confirmation');
+      }
+      return [];
+    }
+
+    function formatAwaitingBranchError(err, entry) {
+      const base = entry?.base_branch || 'main';
+      if (err?.reason === 'on_task_branch_cannot_merge' || err?.reason === 'on_task_branch_cannot_discard') {
+        return `Bạn đang đứng trên nhánh "${entry?.pending_branch || ''}". Hãy chạy: git checkout ${base} rồi bấm lại.`;
+      }
+      return err?.message || 'Thao tác nhánh thất bại';
+    }
+
+    async function handleConfirmMergeTask(entry, btnEl, otherBtnEl, feedbackEl) {
+      const taskId = entry?.task_id;
+      if (!taskId) return;
+      const origText = btnEl.textContent;
+      if (feedbackEl) {
+        feedbackEl.style.display = 'none';
+        feedbackEl.textContent = '';
+      }
+      try {
+        btnEl.disabled = true;
+        if (otherBtnEl) otherBtnEl.disabled = true;
+        btnEl.textContent = 'Đang gộp...';
+        const res = window.CockpitApi?.confirmMergeTask
+          ? await window.CockpitApi.confirmMergeTask(taskId)
+          : await (await fetch('/api/task/confirm-merge', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Dashboard-Token': csrfToken || ''
+              },
+              body: JSON.stringify({ task_id: taskId })
+            })).json();
+        if (!res.ok) {
+          const err = new Error(res.error || 'Không thể gộp nhánh');
+          err.reason = res.reason;
+          throw err;
+        }
+        await fetchSnapshot();
+      } catch (err) {
+        if (feedbackEl) {
+          feedbackEl.textContent = formatAwaitingBranchError(err, entry);
+          feedbackEl.style.display = 'block';
+        } else {
+          alert(formatAwaitingBranchError(err, entry));
+        }
+        btnEl.disabled = false;
+        if (otherBtnEl) otherBtnEl.disabled = false;
+        btnEl.textContent = origText;
+      }
+    }
+
+    async function handleDiscardBranchTask(entry, btnEl, otherBtnEl, feedbackEl) {
+      const taskId = entry?.task_id;
+      if (!taskId) return;
+      const branchLabel = entry?.pending_branch || taskId;
+      if (!confirm(`Bạn có chắc muốn hủy nhánh "${branchLabel}" và đánh dấu task "${taskId}" thành blocked không?`)) {
+        return;
+      }
+      const origText = btnEl.textContent;
+      if (feedbackEl) {
+        feedbackEl.style.display = 'none';
+        feedbackEl.textContent = '';
+      }
+      try {
+        btnEl.disabled = true;
+        if (otherBtnEl) otherBtnEl.disabled = true;
+        btnEl.textContent = 'Đang hủy...';
+        const res = window.CockpitApi?.discardBranchTask
+          ? await window.CockpitApi.discardBranchTask(taskId)
+          : await (await fetch('/api/task/discard-branch', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Dashboard-Token': csrfToken || ''
+              },
+              body: JSON.stringify({ task_id: taskId })
+            })).json();
+        if (!res.ok) {
+          const err = new Error(res.error || 'Không thể hủy nhánh');
+          err.reason = res.reason;
+          throw err;
+        }
+        await fetchSnapshot();
+      } catch (err) {
+        if (feedbackEl) {
+          feedbackEl.textContent = formatAwaitingBranchError(err, entry);
+          feedbackEl.style.display = 'block';
+        } else {
+          alert(formatAwaitingBranchError(err, entry));
+        }
+        btnEl.disabled = false;
+        if (otherBtnEl) otherBtnEl.disabled = false;
+        btnEl.textContent = origText;
+      }
+    }
+
+    function createCopyCmdRow(commandText, copyTitle) {
+      const cmdRow = document.createElement('div');
+      cmdRow.className = 'awaiting-cmd-row';
+
+      const cmdCode = document.createElement('code');
+      cmdCode.className = 'awaiting-cmd-code';
+      cmdCode.textContent = commandText;
+
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'btn-draft-action';
+      copyBtn.textContent = 'Copy';
+      copyBtn.title = copyTitle || 'Copy lệnh git';
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          navigator.clipboard.writeText(commandText).catch(() => {});
+        }
+        copyBtn.textContent = 'Copied ✓';
+        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+      });
+
+      cmdRow.appendChild(cmdCode);
+      cmdRow.appendChild(copyBtn);
+      return cmdRow;
+    }
+
+    function createAwaitingActionGroup(entry, feedbackEl, compact = false) {
+      const wrap = document.createElement('div');
+      wrap.className = 'draft-card-actions';
+      wrap.style.marginTop = compact ? '4px' : '6px';
+
+      const btnMerge = document.createElement('button');
+      btnMerge.type = 'button';
+      btnMerge.className = 'btn-confirm-merge';
+      btnMerge.textContent = compact ? 'Gộp nhánh' : 'Gộp nhánh & Hoàn tất';
+      btnMerge.title = entry.merge_command || `git merge --no-ff ${entry.pending_branch || ''}`;
+
+      const btnDiscard = document.createElement('button');
+      btnDiscard.type = 'button';
+      btnDiscard.className = 'btn-discard-branch';
+      btnDiscard.textContent = 'Bỏ nhánh';
+      btnDiscard.title = `Xóa nhánh ${entry.pending_branch || ''} và chuyển task sang blocked`;
+
+      btnMerge.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleConfirmMergeTask(entry, btnMerge, btnDiscard, feedbackEl);
+      });
+      btnDiscard.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleDiscardBranchTask(entry, btnDiscard, btnMerge, feedbackEl);
+      });
+
+      wrap.appendChild(btnMerge);
+      wrap.appendChild(btnDiscard);
+      return wrap;
+    }
+
+    function renderAwaitingConfirmationBoard(q) {
+      if (!awaitingConfirmBoard || !listAwaitingConfirmTasks) return;
+      const items = resolveAwaitingConfirmationItems(q);
+      if (cntAwaitingConfirmCockpit) {
+        cntAwaitingConfirmCockpit.textContent = String(items.length);
+      }
+      listAwaitingConfirmTasks.replaceChildren();
+
+      if (items.length === 0) {
+        awaitingConfirmBoard.style.display = 'none';
+        return;
+      }
+
+      awaitingConfirmBoard.style.display = 'flex';
+      items.forEach(entry => {
+        const card = document.createElement('div');
+        card.className = 'draft-card awaiting-card';
+
+        const head = document.createElement('div');
+        head.className = 'draft-card-header';
+
+        const idSpan = document.createElement('span');
+        idSpan.className = 'draft-card-id queue-item-clickable';
+        idSpan.textContent = entry.task_id || 'awaiting-task';
+        idSpan.title = 'Xem chi tiết task YAML';
+        if (entry.task_id) {
+          idSpan.addEventListener('click', () => openTaskDetailModal(entry.task_id));
+        }
+
+        const rightMeta = document.createElement('div');
+        rightMeta.style.display = 'flex';
+        rightMeta.style.alignItems = 'center';
+        rightMeta.style.gap = '6px';
+
+        if (entry.commit_hash) {
+          const commitBadge = document.createElement('span');
+          commitBadge.className = 'tag tag-commit';
+          commitBadge.textContent = String(entry.commit_hash).slice(0, 7);
+          rightMeta.appendChild(commitBadge);
+        }
+
+        const statusBadge = document.createElement('span');
+        statusBadge.className = 'queue-item-badge q-await-merge';
+        statusBadge.textContent = 'AWAIT MERGE';
+        rightMeta.appendChild(statusBadge);
+
+        const btnDetail = document.createElement('button');
+        btnDetail.type = 'button';
+        btnDetail.className = 'btn-draft-action';
+        btnDetail.textContent = 'Chi tiết';
+        btnDetail.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (entry.task_id) openTaskDetailModal(entry.task_id);
+        });
+        rightMeta.appendChild(btnDetail);
+
+        head.appendChild(idSpan);
+        head.appendChild(rightMeta);
+        card.appendChild(head);
+
+        const titleDiv = document.createElement('div');
+        titleDiv.className = 'draft-card-title';
+        titleDiv.textContent = entry.title || entry.task_id || '';
+        card.appendChild(titleDiv);
+
+        if (entry.pending_branch) {
+          const branchInfo = document.createElement('div');
+          branchInfo.className = 'draft-card-scope';
+          branchInfo.textContent = `Nhánh: ${entry.pending_branch} ➔ ${entry.base_branch || 'main'}`;
+          card.appendChild(branchInfo);
+
+          card.appendChild(createCopyCmdRow(
+            `git checkout ${entry.pending_branch}`,
+            'Copy lệnh checkout sang nhánh để kiểm tra giao diện'
+          ));
+        }
+
+        const feedbackEl = document.createElement('div');
+        feedbackEl.className = 'awaiting-feedback-msg';
+        feedbackEl.style.display = 'none';
+
+        card.appendChild(createAwaitingActionGroup(entry, feedbackEl, false));
+        card.appendChild(feedbackEl);
+        listAwaitingConfirmTasks.appendChild(card);
+      });
+    }
+
+    function renderAwaitingConfirmationQueue(q) {
+      if (!awaitingConfirmSection || !awaitingConfirmList) return;
+      const items = resolveAwaitingConfirmationItems(q);
+      if (cntAwaitingConfirm) cntAwaitingConfirm.textContent = String(items.length);
+      awaitingConfirmList.replaceChildren();
+
+      if (items.length === 0) {
+        awaitingConfirmSection.style.display = 'none';
+        return;
+      }
+
+      awaitingConfirmSection.style.display = 'block';
+      items.forEach(entry => {
+        const card = document.createElement('div');
+        card.className = 'queue-item';
+        card.style.flexDirection = 'column';
+        card.style.alignItems = 'stretch';
+        card.style.gap = '4px';
+
+        const topRow = document.createElement('div');
+        topRow.style.display = 'flex';
+        topRow.style.justifyContent = 'space-between';
+        topRow.style.alignItems = 'center';
+        topRow.style.gap = '6px';
+
+        const tid = document.createElement('span');
+        tid.className = 'queue-item-id queue-item-clickable';
+        tid.textContent = entry.task_id || 'awaiting-task';
+        tid.title = entry.title || entry.task_id || '';
+        if (entry.task_id) {
+          tid.addEventListener('click', () => openTaskDetailModal(entry.task_id));
+        }
+
+        const badge = document.createElement('span');
+        badge.className = 'queue-item-badge q-await-merge';
+        badge.textContent = 'AWAIT MERGE';
+
+        topRow.appendChild(tid);
+        topRow.appendChild(badge);
+        card.appendChild(topRow);
+
+        if (entry.pending_branch) {
+          const branchLine = document.createElement('div');
+          branchLine.style.fontSize = '10px';
+          branchLine.style.color = 'var(--text-secondary)';
+          branchLine.style.wordBreak = 'break-all';
+          branchLine.textContent = `Branch: ${entry.pending_branch} ➔ ${entry.base_branch || 'main'}`;
+          card.appendChild(branchLine);
+
+          card.appendChild(createCopyCmdRow(
+            `git checkout ${entry.pending_branch}`,
+            'Copy lệnh checkout nhánh để xem UI'
+          ));
+        }
+
+        const feedbackEl = document.createElement('div');
+        feedbackEl.className = 'awaiting-feedback-msg';
+        feedbackEl.style.display = 'none';
+
+        card.appendChild(createAwaitingActionGroup(entry, feedbackEl, true));
+        card.appendChild(feedbackEl);
+        awaitingConfirmList.appendChild(card);
       });
     }
 
@@ -3728,19 +4052,19 @@
         // 10. Task Queue List
         renderTaskQueue(data.queue || {});
 
-        // 10a. Auto-sync pending tasks in Cockpit (draft_review or ready status)
+        // 10a. Auto-sync pending tasks in Cockpit (draft_review or ready status only)
         const activeDrafts = (data.queue?.active || []).filter(t => t.status === 'draft_review' || t.status === 'ready');
-        if (currentDraftTasks.length === 0 && activeDrafts.length > 0) {
+        const nextDraftSig = activeDrafts.map(t => `${t.task_id || ''}:${t.status || ''}`).join('|');
+        const currDraftSig = currentDraftTasks.map(t => `${t.task_id || ''}:${t.status || ''}`).join('|');
+        if (nextDraftSig !== currDraftSig) {
           currentDraftTasks = activeDrafts;
           renderDraftTasks(currentDraftTasks);
-        } else if (currentDraftTasks.length > 0) {
-          const activeIds = new Set((data.queue?.active || []).map(t => t.task_id));
-          const stillExisting = currentDraftTasks.filter(t => activeIds.has(t.task_id));
-          if (stillExisting.length !== currentDraftTasks.length) {
-            currentDraftTasks = stillExisting;
-            renderDraftTasks(currentDraftTasks);
-          }
+        } else if (currentDraftTasks.length === 0) {
+          btnApproveRun.disabled = true;
         }
+
+        // 10a-bis. Render Awaiting Confirmation frontend branches board
+        renderAwaitingConfirmationBoard(data.queue || {});
 
         // 10b. Agent Sessions & Tool Receipts
         renderSessionsList(data.sessions || []);

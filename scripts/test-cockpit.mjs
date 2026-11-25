@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { readLatestRunOutput } from './server/state-reader.mjs';
+import { handleTasksRoutes } from './server/routes-tasks.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -531,6 +532,210 @@ async function runCockpitTests() {
     }
 
     console.log('✓ UI-2 Anti-XSS, neutrality, WebP portraits, Architect surface & policy checks verified.');
+
+    // Test 13: v3.2.3 Bugs #7 & #8 — awaiting_confirmation snapshot, draft queue isolation, & confirm-merge / discard-branch endpoints
+    console.log('13. Testing awaiting_confirmation snapshot, UI guards, and confirm-merge / discard-branch endpoints...');
+    assert.ok(htmlText.includes('id="awaiting-confirm-board"'), 'Cockpit HTML must render #awaiting-confirm-board');
+    assert.ok(htmlText.includes('id="awaiting-confirm-section"'), 'Sidebar HTML must render #awaiting-confirm-section');
+    assert.ok(apiJsSrc.includes('confirmMergeTask') && apiJsSrc.includes('discardBranchTask'), 'api.js must expose confirmMergeTask and discardBranchTask');
+    assert.ok(appJsSrc.includes("t.status === 'draft_review' || t.status === 'ready'") && !appJsSrc.includes('const activeIds = new Set((data.queue?.active || []).map(t => t.task_id))'), 'app.js must sync draft board against draft_review/ready only');
+
+    const awaitSnapId = `T-test-await-${Date.now()}`;
+    const awaitSnapFile = path.join(ACTIVE_DIR, `${awaitSnapId}.yaml`);
+    const awaitLivePath = path.join(tmpStateDir, 'live-status.json');
+    const prevLiveText = fs.existsSync(awaitLivePath) ? fs.readFileSync(awaitLivePath, 'utf8') : null;
+    fs.writeFileSync(awaitSnapFile, YAML.stringify({
+      task: {
+        task_id: awaitSnapId,
+        title: 'UI branch awaiting confirmation',
+        status: 'awaiting_confirmation',
+        pending_branch: `ai-task/${awaitSnapId}`,
+        base_branch: 'main',
+        commit_hash: 'abcdef1234567',
+        merge_command: `git merge --no-ff ai-task/${awaitSnapId}`
+      }
+    }), 'utf8');
+    fs.writeFileSync(awaitLivePath, JSON.stringify({ active: false, current_task_id: awaitSnapId, current_stage: 'awaiting_confirmation' }), 'utf8');
+    try {
+      const awaitSnapRes = await fetch(`http://127.0.0.1:${testPort}/api/snapshot`);
+      assert.strictEqual(awaitSnapRes.status, 200);
+      const awaitSnapJson = await awaitSnapRes.json();
+      assert.strictEqual(awaitSnapJson.queue?.awaiting_confirmation_count, 1, 'Snapshot must count awaiting_confirmation tasks');
+      assert.strictEqual(awaitSnapJson.queue?.awaiting_confirmation?.[0]?.pending_branch, `ai-task/${awaitSnapId}`);
+      assert.strictEqual(awaitSnapJson.live_status?.task_final_status, 'awaiting_confirmation');
+    } finally {
+      if (fs.existsSync(awaitSnapFile)) fs.unlinkSync(awaitSnapFile);
+      if (prevLiveText !== null) fs.writeFileSync(awaitLivePath, prevLiveText, 'utf8');
+      else if (fs.existsSync(awaitLivePath)) fs.unlinkSync(awaitLivePath);
+    }
+
+    const tmpGitRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'td-cockpit-git-'));
+    const gitRepoDir = path.join(tmpGitRoot, 'repo');
+    const gitStateDir = path.join(tmpGitRoot, 'state');
+    const gitTasksActive = path.join(tmpGitRoot, 'tasks', 'active');
+    const gitTasksArchive = path.join(tmpGitRoot, 'tasks', 'archive');
+    const gitConfigDir = path.join(tmpGitRoot, 'config');
+    fs.mkdirSync(path.join(gitRepoDir, 'web'), { recursive: true });
+    fs.mkdirSync(gitStateDir, { recursive: true });
+    fs.mkdirSync(gitTasksActive, { recursive: true });
+    fs.mkdirSync(gitTasksArchive, { recursive: true });
+    fs.mkdirSync(gitConfigDir, { recursive: true });
+    fs.copyFileSync(path.resolve(TEAM_DIR, 'config', 'policy.yaml'), path.join(gitConfigDir, 'policy.yaml'));
+
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: gitRepoDir });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: gitRepoDir });
+    execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: gitRepoDir });
+    fs.writeFileSync(path.join(gitRepoDir, 'web', 'index.html'), '<h1>Base</h1>\n', 'utf8');
+    execFileSync('git', ['add', '.'], { cwd: gitRepoDir });
+    execFileSync('git', ['commit', '-q', '-m', 'init main'], { cwd: gitRepoDir });
+
+    const mergeTaskId = 'T-cockpit-fe-merge';
+    const mergeBranch = `ai-task/${mergeTaskId}`;
+    execFileSync('git', ['checkout', '-q', '-b', mergeBranch], { cwd: gitRepoDir });
+    fs.writeFileSync(path.join(gitRepoDir, 'web', 'index.html'), '<h1>Gallery Ready</h1>\n', 'utf8');
+    execFileSync('git', ['add', 'web/index.html'], { cwd: gitRepoDir });
+    execFileSync('git', ['commit', '-q', '-m', '[AI-Task] gallery ui'], { cwd: gitRepoDir });
+    const mergeCommitSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: gitRepoDir, encoding: 'utf8' }).trim();
+    execFileSync('git', ['checkout', '-q', 'main'], { cwd: gitRepoDir });
+
+    const mergeTaskYamlPath = path.join(gitTasksActive, `${mergeTaskId}.yaml`);
+    fs.writeFileSync(mergeTaskYamlPath, YAML.stringify({
+      task: {
+        task_id: mergeTaskId,
+        title: 'Build gallery UI',
+        status: 'awaiting_confirmation',
+        mode: 'standard',
+        scope: ['web/index.html'],
+        pending_branch: mergeBranch,
+        base_branch: 'main',
+        commit_hash: mergeCommitSha,
+        requires_user_confirmation: true,
+        merge_command: `git merge --no-ff ${mergeBranch}`
+      }
+    }), 'utf8');
+
+    const gitRouteOpts = {
+      TEAM_DIR,
+      REPO_ROOT: gitRepoDir,
+      TASKS_ACTIVE_DIR: gitTasksActive,
+      TASKS_ARCHIVE_DIR: gitTasksArchive,
+      TASK_STATE_FILE: path.join(gitStateDir, 'task-state.json'),
+      LIVE_STATUS_FILE: path.join(gitStateDir, 'live-status.json'),
+      REPORT_FILE: path.join(gitStateDir, 'morning-report.md'),
+      LOCK_FILE: path.join(tmpGitRoot, '.orchestrator.lock'),
+      SESSIONS_DIR: path.join(gitStateDir, 'sessions'),
+      snapshotPaths: {
+        CONFIG_DIR: gitConfigDir,
+        REPO_ROOT: gitRepoDir,
+        TASKS_ACTIVE_DIR: gitTasksActive,
+        TASKS_ARCHIVE_DIR: gitTasksArchive,
+        TASK_STATE_FILE: path.join(gitStateDir, 'task-state.json'),
+        LIVE_STATUS_FILE: path.join(gitStateDir, 'live-status.json'),
+        TEAM_DIR
+      }
+    };
+    const gitRouteServer = http.createServer(async (req, res) => {
+      const reqUrl = new URL(req.url, 'http://127.0.0.1');
+      const handled = await handleTasksRoutes(req, res, reqUrl, gitRouteOpts);
+      if (!handled) {
+        res.writeHead(404);
+        res.end('Not Found');
+      }
+    });
+    await new Promise(resolve => gitRouteServer.listen(0, '127.0.0.1', resolve));
+    const gitPort = gitRouteServer.address().port;
+
+    try {
+      // Unauthenticated request must fail CSRF (403)
+      const unauthMerge = await fetch(`http://127.0.0.1:${gitPort}/api/task/confirm-merge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: mergeTaskId })
+      });
+      assert.strictEqual(unauthMerge.status, 403);
+
+      // Checked out on task branch -> confirm-merge & discard-branch must both return 409 safely
+      execFileSync('git', ['checkout', '-q', mergeBranch], { cwd: gitRepoDir });
+      const selfMergeRes = await fetch(`http://127.0.0.1:${gitPort}/api/task/confirm-merge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Dashboard-Token': DASHBOARD_CSRF_TOKEN },
+        body: JSON.stringify({ task_id: mergeTaskId })
+      });
+      assert.strictEqual(selfMergeRes.status, 409);
+      const selfMergeJson = await selfMergeRes.json();
+      assert.strictEqual(selfMergeJson.reason, 'on_task_branch_cannot_merge');
+
+      const selfDiscardRes = await fetch(`http://127.0.0.1:${gitPort}/api/task/discard-branch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Dashboard-Token': DASHBOARD_CSRF_TOKEN },
+        body: JSON.stringify({ task_id: mergeTaskId })
+      });
+      assert.strictEqual(selfDiscardRes.status, 409);
+      const selfDiscardJson = await selfDiscardRes.json();
+      assert.strictEqual(selfDiscardJson.reason, 'on_task_branch_cannot_discard');
+
+      // Switch back to main -> confirm-merge succeeds, deletes branch, moves YAML to archive
+      execFileSync('git', ['checkout', '-q', 'main'], { cwd: gitRepoDir });
+      const okMergeRes = await fetch(`http://127.0.0.1:${gitPort}/api/task/confirm-merge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Dashboard-Token': DASHBOARD_CSRF_TOKEN },
+        body: JSON.stringify({ task_id: mergeTaskId })
+      });
+      assert.strictEqual(okMergeRes.status, 200);
+      const okMergeJson = await okMergeRes.json();
+      assert.strictEqual(okMergeJson.ok, true);
+      assert.strictEqual(okMergeJson.status, 'done');
+      assert.strictEqual(okMergeJson.branch_deleted, true);
+      assert.ok(fs.readFileSync(path.join(gitRepoDir, 'web', 'index.html'), 'utf8').includes('Gallery Ready'));
+      assert.strictEqual(fs.existsSync(mergeTaskYamlPath), false, 'Confirmed task YAML must leave tasks/active');
+      const archivedYamlPath = path.join(gitTasksArchive, `${mergeTaskId}.yaml`);
+      assert.strictEqual(fs.existsSync(archivedYamlPath), true, 'Confirmed task YAML must move to tasks/archive');
+      const archivedParsed = YAML.parse(fs.readFileSync(archivedYamlPath, 'utf8'));
+      assert.strictEqual(archivedParsed.status, 'done');
+
+      // Discard branch flow -> deletes ai-task/* ref and sets active task status to blocked
+      const discardTaskId = 'T-cockpit-fe-discard';
+      const discardBranch = `ai-task/${discardTaskId}`;
+      execFileSync('git', ['checkout', '-q', '-b', discardBranch], { cwd: gitRepoDir });
+      fs.writeFileSync(path.join(gitRepoDir, 'web', 'index.html'), '<h1>Bad UI</h1>\n', 'utf8');
+      execFileSync('git', ['add', 'web/index.html'], { cwd: gitRepoDir });
+      execFileSync('git', ['commit', '-q', '-m', '[AI-Task] bad ui'], { cwd: gitRepoDir });
+      execFileSync('git', ['checkout', '-q', 'main'], { cwd: gitRepoDir });
+
+      const discardYamlPath = path.join(gitTasksActive, `${discardTaskId}.yaml`);
+      fs.writeFileSync(discardYamlPath, YAML.stringify({
+        task: {
+          task_id: discardTaskId,
+          title: 'Discardable UI branch',
+          status: 'awaiting_confirmation',
+          scope: ['web/index.html'],
+          pending_branch: discardBranch,
+          base_branch: 'main',
+          requires_user_confirmation: true
+        }
+      }), 'utf8');
+
+      const okDiscardRes = await fetch(`http://127.0.0.1:${gitPort}/api/task/discard-branch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Dashboard-Token': DASHBOARD_CSRF_TOKEN },
+        body: JSON.stringify({ task_id: discardTaskId })
+      });
+      assert.strictEqual(okDiscardRes.status, 200);
+      const okDiscardJson = await okDiscardRes.json();
+      assert.strictEqual(okDiscardJson.ok, true);
+      assert.strictEqual(okDiscardJson.status, 'blocked');
+      assert.strictEqual(okDiscardJson.branch_existed, true);
+      assert.strictEqual(execFileSync('git', ['branch', '--list', discardBranch], { cwd: gitRepoDir, encoding: 'utf8' }).trim(), '');
+      const discardedYaml = YAML.parse(fs.readFileSync(discardYamlPath, 'utf8'));
+      assert.strictEqual(discardedYaml.status, 'blocked');
+      assert.strictEqual(discardedYaml.pending_branch, undefined);
+      assert.ok(fs.readFileSync(path.join(gitRepoDir, 'web', 'index.html'), 'utf8').includes('Gallery Ready'));
+    } finally {
+      gitRouteServer.close();
+      try { fs.rmSync(tmpGitRoot, { recursive: true, force: true }); } catch {}
+    }
+
+    console.log('✓ awaiting_confirmation snapshot, draft queue isolation, & confirm-merge / discard-branch endpoints verified.');
 
     console.log('\n=============================================');
     console.log('ALL COCKPIT & CSRF SECURITY TESTS PASSED! 🎯');

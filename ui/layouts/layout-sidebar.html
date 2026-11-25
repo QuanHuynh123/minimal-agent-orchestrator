@@ -116,6 +116,15 @@
     <div class="queue-list-container" id="queue-items-list">
       <!-- Populated securely via DOM nodes -->
     </div>
+    <div id="awaiting-confirm-section" style="display: none; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);">
+      <div class="queue-sub-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Nhánh chờ gộp (awaiting_confirmation)</span>
+        <span class="tag tag-attempt" id="cnt-awaiting-confirm">0</span>
+      </div>
+      <div class="queue-list-container" id="awaiting-confirm-list">
+        <!-- Populated securely via DOM nodes (.textContent) -->
+      </div>
+    </div>
     <div id="manual-review-section" style="display: none; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);">
       <div class="queue-sub-header" style="display: flex; justify-content: space-between; align-items: center;">
         <span>Chờ duyệt tay (review_unavailable)</span>

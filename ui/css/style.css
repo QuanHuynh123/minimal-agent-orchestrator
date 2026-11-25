@@ -771,6 +771,15 @@ main.bento-container.sidebar-collapsed .left-col {
   color: #38bdf8;
   border: 1px solid rgba(56, 189, 248, 0.35);
 }
+.q-await-merge {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.dot-await-merge {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.55);
+}
 .q-done {
   background: rgba(34, 197, 94, 0.12);
   color: #4ade80;
@@ -1433,6 +1442,79 @@ main.bento-container.sidebar-collapsed .left-col {
   gap: 10px;
   min-height: 200px;
   box-shadow: var(--card-shadow);
+}
+.awaiting-confirm-board {
+  flex: 0 0 auto;
+  min-height: auto;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+.draft-card.awaiting-card {
+  border-left-color: #f59e0b;
+}
+.awaiting-cmd-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.awaiting-cmd-code {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #fcd34d;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.btn-confirm-merge {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(34, 197, 94, 0.55);
+  background: rgba(21, 128, 61, 0.45);
+  color: #bbf7d0;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.btn-confirm-merge:hover:not(:disabled) {
+  background: rgba(22, 163, 74, 0.7);
+  border-color: rgba(74, 222, 128, 0.8);
+}
+.btn-confirm-merge:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-discard-branch {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  background: rgba(127, 29, 29, 0.32);
+  color: #fca5a5;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.btn-discard-branch:hover:not(:disabled) {
+  background: rgba(185, 28, 28, 0.5);
+  border-color: rgba(248, 113, 113, 0.75);
+}
+.btn-discard-branch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.awaiting-feedback-msg {
+  font-size: 11px;
+  color: #fca5a5;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(127, 29, 29, 0.25);
+  border: 1px solid rgba(239, 68, 68, 0.35);
 }
 .review-board-header {
   display: flex;

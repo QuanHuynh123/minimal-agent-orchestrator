@@ -524,7 +524,7 @@ export const DEFAULT_TEST_PATTERNS = [
 export const UI_INTENT_REGEX = /(?<![\p{L}\p{N}_])(ui|ux|layout|css|style|theme|dark\s*mode|light\s*mode|responsive|modal|button|dialog|animation|visual|giao\s*diện|bố\s*cục|màu\s*sắc|hiển\s*thị|màn\s*hình|bấm|nút|treo)(?![\p{L}\p{N}_])/iu;
 
 // Matches creation/redesign signals indicating NEW UI work (as opposed to fixing/removing/tidying existing UI)
-export const NEW_UI_CREATION_REGEX = /(?<![\p{L}\p{N}_])(tạo|thêm|thiết\s*kế|xây\s*dựng|bổ\s*sung|mới|add|create|build|design|redesign|implement|new)(?![\p{L}\p{N}_])/iu;
+export const NEW_UI_CREATION_REGEX = /(?<![\p{L}\p{N}_])(tạo|thêm|thiết\s*kế|xây\s*dựng|bổ\s*sung|hoàn\s*thiện|dựng|triển\s*khai|phát\s*triển|hiện\s*thực|tích\s*hợp|làm\s+giao\s*diện|mới|add|create|build|design|redesign|implement|develop|scaffold|introduce|new)(?![\p{L}\p{N}_])/iu;
 
 export const VALID_TASK_KINDS = Object.freeze(['feature', 'bugfix', 'refactor', 'remove', 'test', 'docs']);
 

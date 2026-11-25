@@ -348,9 +348,91 @@ export function mergeConfirmedBranch(branchName, options = {}) {
 
     execSync(`git merge --no-ff "${cleanBranch}" -m "Merge confirmed frontend task branch ${cleanBranch}"`, runOpts);
     const hash = execSync('git rev-parse HEAD', runOpts).trim();
-    return { ok: true, merged: true, branch: cleanBranch, hash };
+    let branchDeleted = false;
+    if (options.deleteBranch === true && cleanBranch.startsWith('ai-task/')) {
+      try {
+        execSync(`git branch -d "${cleanBranch}"`, runOpts);
+        branchDeleted = true;
+      } catch {
+        branchDeleted = false;
+      }
+    }
+    return {
+      ok: true,
+      merged: true,
+      branch: cleanBranch,
+      baseBranch: currentBranch,
+      branchDeleted,
+      hash
+    };
   } catch (err) {
-    return { ok: false, merged: false, error: err.message, branch: cleanBranch };
+    try {
+      execSync('git rev-parse -q --verify MERGE_HEAD', runOpts);
+      execSync('git merge --abort', runOpts);
+    } catch {}
+    return { ok: false, merged: false, reason: 'merge_conflict_or_error', error: err.message, branch: cleanBranch };
+  }
+}
+
+export function isCommitMergedIntoHead(commitOrRef, options = {}) {
+  const cleanRef = String(commitOrRef || '').trim();
+  if (!cleanRef || (!/^[0-9a-f]{7,40}$/i.test(cleanRef) && !/^refs\/heads\/ai-task\/[A-Za-z0-9._-]+$/.test(cleanRef))) {
+    return false;
+  }
+  const runOpts = options.cwd ? getExecOpts(options.cwd) : execOpts;
+  try {
+    execSync(`git merge-base --is-ancestor "${cleanRef}" HEAD`, runOpts);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function discardPendingBranch(branchName, options = {}) {
+  if (options.confirmed !== true) {
+    return {
+      ok: false,
+      blocked: true,
+      discarded: false,
+      reason: 'confirmation_required',
+      error: `Discarding branch "${branchName}" requires explicit user confirmation (confirmed: true).`
+    };
+  }
+  const cleanBranch = String(branchName || '').trim();
+  if (!cleanBranch || !cleanBranch.startsWith('ai-task/') || cleanBranch.startsWith('-') || cleanBranch.includes('..') || /[\s;&|`$"\\]/.test(cleanBranch)) {
+    return { ok: false, blocked: true, discarded: false, reason: 'invalid_branch_name', error: `Invalid task branch name: "${branchName}"` };
+  }
+  const runOpts = options.cwd ? getExecOpts(options.cwd) : execOpts;
+  const expectedBaseBranch = options.baseBranch ? String(options.baseBranch).trim() : null;
+  try {
+    const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', runOpts).trim();
+    if (currentBranch === cleanBranch) {
+      return {
+        ok: false,
+        blocked: true,
+        discarded: false,
+        branch: cleanBranch,
+        currentBranch,
+        targetBaseBranch: expectedBaseBranch,
+        reason: 'on_task_branch_cannot_discard',
+        error: `Blocked discard: currently checked out on "${currentBranch}". Switch to base branch${expectedBaseBranch ? ` "${expectedBaseBranch}"` : ''} first.`
+      };
+    }
+
+    let existed = false;
+    try {
+      execSync(`git show-ref --verify --quiet "refs/heads/${cleanBranch}"`, runOpts);
+      existed = true;
+    } catch {
+      existed = false;
+    }
+
+    if (existed) {
+      execSync(`git branch -D "${cleanBranch}"`, runOpts);
+    }
+    return { ok: true, discarded: true, branch: cleanBranch, currentBranch, existed };
+  } catch (err) {
+    return { ok: false, discarded: false, error: err.message, branch: cleanBranch };
   }
 }
 

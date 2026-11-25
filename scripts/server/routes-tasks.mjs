@@ -14,7 +14,12 @@ import {
 import { loadMergedPolicy } from '../lib/policy-loader.mjs';
 import { readLockFile } from '../lib/runtime-lock.mjs';
 import { mutateVersionedJsonAtomic } from '../lib/state-store.mjs';
-import { mutateTaskStateAtomic } from '../lib/task-persistence.mjs';
+import { mutateTaskStateAtomic, transitionTaskState } from '../lib/task-persistence.mjs';
+import {
+  mergeConfirmedBranch,
+  discardPendingBranch,
+  isCommitMergedIntoHead
+} from '../git-guard.mjs';
 import {
   computeCanonicalQueueState,
   findTaskYamlFile,
@@ -505,6 +510,259 @@ export async function handleTasksRoutes(req, res, url, options = {}) {
           : (launchInfo.started
               ? `Reset task "${taskId}" to ready and launched Orchestrator.`
               : `Reset task "${taskId}" to ready.`)
+      });
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err.message });
+    }
+    return true;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/task/confirm-merge') {
+    const auth = verifyCsrfAndOrigin(req);
+    if (!auth.ok) {
+      sendJson(res, auth.status, { ok: false, error: auth.error });
+      return true;
+    }
+
+    try {
+      const cfgDir = snapshotPaths.CONFIG_DIR || path.resolve(teamDir, 'config');
+      const policyCfg = loadMergedPolicy({ configDir: cfgDir });
+      const repoRoot = options.REPO_ROOT || snapshotPaths.REPO_ROOT || resolveRepoRoot(policyCfg, { configDir: cfgDir, teamDir });
+      const body = await parseJsonBody(req);
+      const taskId = String(body.task_id || '').trim();
+      if (!taskId || taskId.includes('..') || taskId.includes('/') || taskId.includes('\\')) {
+        sendJson(res, 400, { ok: false, error: 'Invalid task_id' });
+        return true;
+      }
+
+      const targetPath = findTaskYamlFile(tasksActiveDir, taskId);
+      if (!targetPath) {
+        sendJson(res, 404, { ok: false, error: `Task "${taskId}" not found in active queue.` });
+        return true;
+      }
+
+      const parsed = loadYamlSafe(targetPath);
+      if (!parsed || typeof parsed !== 'object') {
+        sendJson(res, 400, { ok: false, error: `Task file "${taskId}" is unreadable or invalid YAML.` });
+        return true;
+      }
+
+      const raw = (parsed.task && typeof parsed.task === 'object') ? parsed.task : parsed;
+      const currentStatus = String(raw.status || '').toLowerCase();
+      if (currentStatus !== 'awaiting_confirmation') {
+        sendJson(res, 409, { ok: false, error: `Task "${taskId}" has status "${currentStatus}" and is not awaiting confirmation.` });
+        return true;
+      }
+
+      const pendingBranch = String(raw.pending_branch || '').trim();
+      if (!pendingBranch || !pendingBranch.startsWith('ai-task/')) {
+        sendJson(res, 400, { ok: false, error: `Task "${taskId}" has invalid or missing pending_branch "${pendingBranch}".` });
+        return true;
+      }
+
+      const deleteBranch = body.delete_branch !== false;
+      let mergeRes = mergeConfirmedBranch(pendingBranch, {
+        baseBranch: raw.base_branch || null,
+        confirmed: true,
+        deleteBranch,
+        cwd: repoRoot
+      });
+
+      if (!mergeRes.ok && !mergeRes.blocked && raw.commit_hash && isCommitMergedIntoHead(raw.commit_hash, { cwd: repoRoot })) {
+        mergeRes = {
+          ok: true,
+          merged: true,
+          alreadyMerged: true,
+          branch: pendingBranch,
+          baseBranch: raw.base_branch || null,
+          branchDeleted: true,
+          hash: raw.commit_hash
+        };
+      }
+
+      if (!mergeRes.ok) {
+        sendJson(res, 409, {
+          ok: false,
+          task_id: taskId,
+          branch: pendingBranch,
+          base_branch: raw.base_branch || null,
+          reason: mergeRes.reason || 'merge_failed',
+          error: mergeRes.error || `Failed to merge branch "${pendingBranch}".`
+        });
+        return true;
+      }
+
+      const nowIso = new Date().toISOString();
+      const mergeCommit = mergeRes.hash || raw.commit_hash || null;
+      if (mergeCommit) {
+        raw.merged_commit_hash = mergeCommit;
+        raw.commit_hash = mergeCommit;
+      }
+      raw.confirmed_at = nowIso;
+      raw.updated_at = nowIso;
+
+      const archivePath = path.resolve(tasksArchiveDir, path.basename(targetPath));
+      let canonical = null;
+      mutateTaskStateAtomic(taskStateFile, (taskState) => {
+        transitionTaskState(raw, taskState, 'done', {
+          actualModifiedFiles: Array.isArray(raw.last_report?.modified_files) ? raw.last_report.modified_files : (Array.isArray(raw.scope) ? raw.scope : []),
+          validationPassed: true,
+          retries: Number(raw.retries || 0),
+          activeTaskPath: targetPath,
+          archiveTaskPath: archivePath
+        });
+        canonical = writeMorningReportFile(taskState, {
+          tasksActiveDir,
+          tasksArchiveDir,
+          reportFile
+        });
+        syncCanonicalTaskState(taskState, canonical);
+      }, { fallbackFactory: () => ({ active_tasks: [], completed_tasks: [], blocked_tasks: [], metrics: {} }) });
+
+      mutateVersionedJsonAtomic(liveStatusFile, (existingLive) => {
+        const livePatch = {
+          queue_stats: canonical.counts,
+          updated_at: new Date().toISOString()
+        };
+        if (existingLive.current_task_id === taskId) {
+          livePatch.last_error = null;
+          livePatch.task_final_status = 'done';
+          livePatch.task_completed_at = raw.completed_at || nowIso;
+          if (existingLive.current_stage === 'awaiting_confirmation' || existingLive.current_stage === 'blocked') {
+            livePatch.current_stage = 'done';
+          }
+        }
+        return {
+          ...existingLive,
+          ...livePatch
+        };
+      }, { allowCorruptFallback: true, fallbackFactory: () => ({}) });
+
+      sendJson(res, 200, {
+        ok: true,
+        task_id: taskId,
+        status: 'done',
+        branch: pendingBranch,
+        base_branch: mergeRes.baseBranch || raw.base_branch || null,
+        merge_commit: mergeCommit,
+        branch_deleted: Boolean(mergeRes.branchDeleted),
+        already_merged: Boolean(mergeRes.alreadyMerged),
+        queue_stats: canonical.counts,
+        message: `Merged branch "${pendingBranch}" and archived task "${taskId}".`
+      });
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err.message });
+    }
+    return true;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/task/discard-branch') {
+    const auth = verifyCsrfAndOrigin(req);
+    if (!auth.ok) {
+      sendJson(res, auth.status, { ok: false, error: auth.error });
+      return true;
+    }
+
+    try {
+      const cfgDir = snapshotPaths.CONFIG_DIR || path.resolve(teamDir, 'config');
+      const policyCfg = loadMergedPolicy({ configDir: cfgDir });
+      const repoRoot = options.REPO_ROOT || snapshotPaths.REPO_ROOT || resolveRepoRoot(policyCfg, { configDir: cfgDir, teamDir });
+      const body = await parseJsonBody(req);
+      const taskId = String(body.task_id || '').trim();
+      if (!taskId || taskId.includes('..') || taskId.includes('/') || taskId.includes('\\')) {
+        sendJson(res, 400, { ok: false, error: 'Invalid task_id' });
+        return true;
+      }
+
+      const targetPath = findTaskYamlFile(tasksActiveDir, taskId);
+      if (!targetPath) {
+        sendJson(res, 404, { ok: false, error: `Task "${taskId}" not found in active queue.` });
+        return true;
+      }
+
+      const parsed = loadYamlSafe(targetPath);
+      if (!parsed || typeof parsed !== 'object') {
+        sendJson(res, 400, { ok: false, error: `Task file "${taskId}" is unreadable or invalid YAML.` });
+        return true;
+      }
+
+      const raw = (parsed.task && typeof parsed.task === 'object') ? parsed.task : parsed;
+      const currentStatus = String(raw.status || '').toLowerCase();
+      if (currentStatus !== 'awaiting_confirmation') {
+        sendJson(res, 409, { ok: false, error: `Task "${taskId}" has status "${currentStatus}" and is not awaiting confirmation.` });
+        return true;
+      }
+
+      const pendingBranch = String(raw.pending_branch || '').trim();
+      if (!pendingBranch || !pendingBranch.startsWith('ai-task/')) {
+        sendJson(res, 400, { ok: false, error: `Task "${taskId}" has invalid or missing pending_branch "${pendingBranch}".` });
+        return true;
+      }
+
+      const discardRes = discardPendingBranch(pendingBranch, {
+        baseBranch: raw.base_branch || null,
+        confirmed: true,
+        cwd: repoRoot
+      });
+      if (!discardRes.ok) {
+        sendJson(res, 409, {
+          ok: false,
+          task_id: taskId,
+          branch: pendingBranch,
+          base_branch: raw.base_branch || null,
+          reason: discardRes.reason || 'discard_failed',
+          error: discardRes.error || `Failed to discard branch "${pendingBranch}".`
+        });
+        return true;
+      }
+
+      const nowIso = new Date().toISOString();
+      delete raw.pending_branch;
+      delete raw.base_branch;
+      delete raw.requires_user_confirmation;
+      delete raw.merge_command;
+      delete raw.commit_hash;
+      raw.discarded_branch = pendingBranch;
+      raw.updated_at = nowIso;
+
+      let canonical = null;
+      mutateTaskStateAtomic(taskStateFile, (taskState) => {
+        transitionTaskState(raw, taskState, 'blocked', {
+          blockReason: `User discarded pending frontend branch ${pendingBranch}`,
+          retries: Number(raw.retries || 0),
+          activeTaskPath: targetPath
+        });
+        canonical = writeMorningReportFile(taskState, {
+          tasksActiveDir,
+          tasksArchiveDir,
+          reportFile
+        });
+        syncCanonicalTaskState(taskState, canonical);
+      }, { fallbackFactory: () => ({ active_tasks: [], completed_tasks: [], blocked_tasks: [], metrics: {} }) });
+
+      mutateVersionedJsonAtomic(liveStatusFile, (existingLive) => {
+        const livePatch = {
+          queue_stats: canonical.counts,
+          updated_at: new Date().toISOString()
+        };
+        if (existingLive.current_task_id === taskId) {
+          livePatch.task_final_status = 'blocked';
+          livePatch.last_error = `User discarded pending frontend branch ${pendingBranch}`;
+        }
+        return {
+          ...existingLive,
+          ...livePatch
+        };
+      }, { allowCorruptFallback: true, fallbackFactory: () => ({}) });
+
+      sendJson(res, 200, {
+        ok: true,
+        task_id: taskId,
+        status: 'blocked',
+        discarded_branch: pendingBranch,
+        branch_existed: Boolean(discardRes.existed),
+        queue_stats: canonical.counts,
+        message: `Discarded branch "${pendingBranch}" and marked task "${taskId}" as blocked.`
       });
     } catch (err) {
       sendJson(res, 500, { ok: false, error: err.message });

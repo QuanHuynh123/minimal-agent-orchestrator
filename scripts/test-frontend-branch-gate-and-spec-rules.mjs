@@ -322,6 +322,66 @@ async function runTests() {
   const wfNewUi = resolveWriterHubWorkflow(stdNewUi, GENERIC_TEAM);
   assert.equal(wfNewUi[0]?.role, 'designer', 'standard + new UI workflow starts with Designer draft_spec');
 
+  // 3. Part C — Note #9: Vietnamese feature UI verbs ("Hoàn thiện giao diện...", "Triển khai giao diện...") trigger Designer
+  for (const [idSuffix, titleText, goalText] of [
+    ['HOAN-THIEN', 'Hoàn thiện giao diện tab 1 Skill Gallery', 'Hoàn thiện giao diện tab 1 tìm kiếm và lọc danh sách kỹ năng trong web/app.html'],
+    ['TRIEN-KHAI', 'Triển khai giao diện cài đặt', 'Triển khai giao diện bảng điều khiển mới kèm CSS responsive trong web/panel.html'],
+    ['DUNG-MAN-HINH', 'Dựng màn hình xem trước', 'Dựng màn hình xem trước kết quả và bố cục thẻ mới trong web/preview.html']
+  ]) {
+    const vnTask = {
+      task_id: `T-GEN-VN-${idSuffix}`,
+      title: titleText,
+      goal: goalText,
+      kind: 'feature',
+      mode: 'standard',
+      risk_level: 'medium',
+      scope: ['web/app.html']
+    };
+    const dVn = analyzeTaskDemand(vnTask);
+    assert.equal(dVn.hasUiIntent, true, `${idSuffix} must detect hasUiIntent`);
+    assert.equal(dVn.needsDesignSpec, true, `${idSuffix} (standard + feature) must call Designer`);
+    const wfVn = resolveWriterHubWorkflow(vnTask, GENERIC_TEAM);
+    assert.equal(wfVn[0]?.role, 'designer', `${idSuffix} workflow must include Designer draft_spec`);
+  }
+
+  // 4. Part D — discardPendingBranch + mergeConfirmedBranch({ deleteBranch: true })
+  const lifecycleRepo = initTempGitRepo();
+  try {
+    fs.writeFileSync(path.join(lifecycleRepo, 'ui_web', 'app.html'), '<h1>Updated</h1>\n', 'utf8');
+    const feMerge = gitGuard.commitToBranch('T-FE-DELETE-ON-MERGE', 'merge and delete', '[AI-Task]', ['ui_web/app.html'], { cwd: lifecycleRepo });
+    assert.equal(feMerge.ok, true);
+    const mergedWithDelete = gitGuard.mergeConfirmedBranch(feMerge.branch, {
+      baseBranch: 'master',
+      confirmed: true,
+      deleteBranch: true,
+      cwd: lifecycleRepo
+    });
+    assert.equal(mergedWithDelete.ok, true);
+    assert.equal(mergedWithDelete.branchDeleted, true);
+    const branchesAfterMerge = execFileSync('git', ['branch', '--list', feMerge.branch], { cwd: lifecycleRepo, encoding: 'utf8' }).trim();
+    assert.equal(branchesAfterMerge, '', 'Merged task branch must be deleted when deleteBranch: true');
+
+    fs.writeFileSync(path.join(lifecycleRepo, 'ui_web', 'app.html'), '<h1>Discarded</h1>\n', 'utf8');
+    const feDiscard = gitGuard.commitToBranch('T-FE-DISCARD', 'discardable ui branch', '[AI-Task]', ['ui_web/app.html'], { cwd: lifecycleRepo });
+    assert.equal(feDiscard.ok, true);
+
+    assert.equal(gitGuard.discardPendingBranch(feDiscard.branch, { confirmed: false, cwd: lifecycleRepo }).reason, 'confirmation_required');
+
+    execFileSync('git', ['checkout', '-q', feDiscard.branch], { cwd: lifecycleRepo });
+    const blockedOnBranch = gitGuard.discardPendingBranch(feDiscard.branch, { baseBranch: 'master', confirmed: true, cwd: lifecycleRepo });
+    assert.equal(blockedOnBranch.ok, false);
+    assert.equal(blockedOnBranch.reason, 'on_task_branch_cannot_discard');
+
+    execFileSync('git', ['checkout', '-q', 'master'], { cwd: lifecycleRepo });
+    const discardedOk = gitGuard.discardPendingBranch(feDiscard.branch, { baseBranch: 'master', confirmed: true, cwd: lifecycleRepo });
+    assert.equal(discardedOk.ok, true);
+    assert.equal(discardedOk.existed, true);
+    const branchesAfterDiscard = execFileSync('git', ['branch', '--list', feDiscard.branch], { cwd: lifecycleRepo, encoding: 'utf8' }).trim();
+    assert.equal(branchesAfterDiscard, '', 'Discarded task branch must be deleted from git');
+  } finally {
+    fs.rmSync(lifecycleRepo, { recursive: true, force: true });
+  }
+
   console.log('✓ All Item 2 frontend branch confirmation gate & strict spec tests passed.');
 }
 

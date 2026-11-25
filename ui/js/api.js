@@ -208,6 +208,38 @@
         throw new Error(errData?.error || `HTTP ${res.status}: Failed to retry task`);
       }
       return res.json();
+    },
+
+    async confirmMergeTask(taskId, options = {}) {
+      const res = await request('/api/task/confirm-merge', {
+        method: 'POST',
+        body: JSON.stringify({ task_id: taskId, ...options })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const err = new Error(data?.error || `HTTP ${res.status}: Failed to merge task branch`);
+        err.status = res.status;
+        err.reason = data?.reason || null;
+        err.data = data;
+        throw err;
+      }
+      return data;
+    },
+
+    async discardBranchTask(taskId, options = {}) {
+      const res = await request('/api/task/discard-branch', {
+        method: 'POST',
+        body: JSON.stringify({ task_id: taskId, ...options })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const err = new Error(data?.error || `HTTP ${res.status}: Failed to discard task branch`);
+        err.status = res.status;
+        err.reason = data?.reason || null;
+        err.data = data;
+        throw err;
+      }
+      return data;
     }
   };
 

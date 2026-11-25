@@ -486,9 +486,11 @@ export async function createSnapshot(paths = {}) {
   const activeList = canonical.active;
   const blockedList = canonical.blocked;
   const completedList = canonical.completed;
+  const awaitingList = canonical.awaiting_confirmation || [];
 
   const completedById = new Map(completedList.map(t => [t.task_id, t]));
   const blockedById = new Map(blockedList.map(t => [t.task_id, t]));
+  const awaitingById = new Map(awaitingList.map(t => [t.task_id, t]));
 
   if (!liveStatus.active && liveStatus.current_task_id && completedById.has(liveStatus.current_task_id)) {
     const doneTask = completedById.get(liveStatus.current_task_id);
@@ -501,6 +503,9 @@ export async function createSnapshot(paths = {}) {
     liveStatus.task_final_status = 'blocked';
     liveStatus.task_completed_at = liveStatus.task_completed_at || liveStatus.updated_at || null;
     liveStatus.last_error = liveStatus.last_error || blkTask?.block_reason || null;
+  } else if (!liveStatus.active && liveStatus.current_task_id && awaitingById.has(liveStatus.current_task_id)) {
+    liveStatus.task_final_status = 'awaiting_confirmation';
+    liveStatus.last_error = null;
   }
 
   liveStatus.queue_stats = { ...canonical.counts };
@@ -582,11 +587,13 @@ export async function createSnapshot(paths = {}) {
       active_count: canonical.counts.active,
       completed_count: canonical.counts.completed,
       blocked_count: canonical.counts.blocked,
+      awaiting_confirmation_count: awaitingList.length,
       manual_review_count: (canonical.manual_review || []).length,
       unseen_exact_match_count: canonical.unseen_exact_match_count || 0,
       active: activeList,
       recent_completed: completedList.slice(-5).reverse(),
       blocked: blockedList,
+      awaiting_confirmation: awaitingList,
       manual_review: canonical.manual_review || [],
       unseen_exact_matches: canonical.unseen_exact_matches || []
     },
