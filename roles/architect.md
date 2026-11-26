@@ -14,6 +14,9 @@ Khi soạn thảo tài liệu thiết kế, bạn cần trình bày bằng Markd
 3. **Quy tắc ưu tiên Hợp đồng & Giả định (`[ASSUMPTION]`):**
    - **Tiêu chí nghiệm thu (`acceptance_criteria`) luôn thắng Spec khi xung đột.** Tuyệt đối không đặt ra hành vi mặc định trái với `acceptance_criteria`.
    - Mọi hành vi fallback hoặc nhánh xử lý biên do Spec tự thêm (chưa được chốt rõ trong `acceptance_criteria`) **BẮT BUỘC phải đánh dấu rõ là `[ASSUMPTION]`** ngay trong cột `Error / Fallback Cases` của Bảng hợp đồng.
+   - **Chống rơi rụng phạm vi (`[SCOPE_GAP]`):** Đối chiếu mọi đầu việc chính trong `goal` với `acceptance_criteria`; nếu phát hiện yêu cầu trong `goal` chưa có trong `acceptance_criteria`, ghi rõ `[SCOPE_GAP]` ngay đầu bản đặc tả thay vì âm thầm bỏ qua.
+   - **Không trùng lặp route/API:** Trước khi đề xuất endpoint hoặc hàm public mới, đối chiếu danh sách route/symbol sẵn có để tái sử dụng hoặc hợp nhất thay vì viết trùng song song.
+   - **Kiểm chứng schema dữ liệu & Cấm fallback giả:** Trước khi thiết kế parser đọc file dữ liệu ngoài `scope`, kiểm tra mẫu schema thật (không đoán tên trường); nghiêm cấm thiết kế nuốt lỗi (`catch` trả dữ liệu giả/placeholder trên luồng chính).
 4. **Các trường hợp biên & Ràng buộc (Edge Cases & Invariants):**
    - Giữ nguyên chuẩn định dạng và thụt lề (indentation: tabs hoặc spaces) theo quy ước của từng file và constraints của dự án.
    - Giữ nguyên bảo mật (Zero-Trust Secret Management, Anti-XSS).

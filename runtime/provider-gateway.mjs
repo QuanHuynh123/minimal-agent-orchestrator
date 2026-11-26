@@ -366,8 +366,11 @@ export function getCircuitBreakerSnapshot(options = {}) {
   };
 }
 
+const _consecutiveSilenceStalls = new Map();
+
 export function resetCircuitBreaker() {
   SESSION_DEAD_MODELS.clear();
+  _consecutiveSilenceStalls.clear();
 }
 
 /**
@@ -685,6 +688,8 @@ export async function callModelEndpoint(options = {}) {
     temperature = 0.2,
     maxTokens = 16384,
     timeoutMs = DEFAULT_TIMEOUT_MS,
+    silenceTimeoutMs = null,
+    firstByteTimeoutMs = null,
     fallbackModel = null,
     circuitBreakerTtlMs = DEFAULT_CIRCUIT_BREAKER_TTL_MS,
     nowFn = null,
@@ -804,9 +809,64 @@ export async function callModelEndpoint(options = {}) {
     }
 
     let timeoutId = null;
+    let silenceTimer = null;
+    let timeoutKind = 'total_timeout';
+    const effectiveSilenceMs = (Number.isFinite(Number(silenceTimeoutMs)) && Number(silenceTimeoutMs) > 0)
+      ? Math.floor(Number(silenceTimeoutMs))
+      : null;
+    const effectiveFirstByteMs = (Number.isFinite(Number(firstByteTimeoutMs)) && Number(firstByteTimeoutMs) > 0)
+      ? Math.floor(Number(firstByteTimeoutMs))
+      : (effectiveSilenceMs ? Math.max(effectiveSilenceMs * 2, Math.min(timeoutMs, 120000)) : null);
+
     try {
       const controller = new AbortController();
-      timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      timeoutId = setTimeout(() => {
+        timeoutKind = 'total_timeout';
+        controller.abort();
+      }, timeoutMs);
+
+      const readResponseTextBounded = async (response) => {
+        if (!shouldStream || !effectiveSilenceMs || typeof response.body?.getReader !== 'function') {
+          return await response.text();
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let sawFirstByte = false;
+        const chunks = [];
+
+        const armSilence = (waitMs) => {
+          if (silenceTimer !== null) clearTimeout(silenceTimer);
+          silenceTimer = setTimeout(() => {
+            timeoutKind = 'stream_silence';
+            controller.abort();
+          }, waitMs);
+        };
+
+        armSilence(effectiveFirstByteMs);
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            if (value && value.byteLength > 0) {
+              sawFirstByte = true;
+              chunks.push(decoder.decode(value, { stream: true }));
+              armSilence(effectiveSilenceMs);
+            } else if (sawFirstByte) {
+              armSilence(effectiveSilenceMs);
+            }
+          }
+          const tail = decoder.decode();
+          if (tail) chunks.push(tail);
+          return chunks.join('');
+        } finally {
+          if (silenceTimer !== null) {
+            clearTimeout(silenceTimer);
+            silenceTimer = null;
+          }
+          try { reader.releaseLock(); } catch {}
+        }
+      };
+
       const response = await fetchImpl(endpoint, {
         method: 'POST',
         headers: {
@@ -818,9 +878,6 @@ export async function callModelEndpoint(options = {}) {
         signal: controller.signal
       });
 
-      clearTimeout(timeoutId);
-      timeoutId = null;
-
       if (!response.ok) {
         const errorText = await response.text();
         return {
@@ -830,7 +887,7 @@ export async function callModelEndpoint(options = {}) {
         };
       }
 
-      const rawText = await response.text();
+      const rawText = await readResponseTextBounded(response);
       const resolved9RouterVersion = options.nineRouterVersion !== undefined
         ? options.nineRouterVersion
         : readInstalled9RouterVersion().version;
@@ -923,17 +980,22 @@ export async function callModelEndpoint(options = {}) {
         throw err;
       }
       if (err.name === 'AbortError') {
+        const errorMsg = timeoutKind === 'stream_silence'
+          ? `Stream stalled for ${effectiveSilenceMs}ms without data (max_silence_duration_sec)`
+          : `Request timed out after ${timeoutMs}ms (HR-1 Bounded Execution)`;
         return {
           ok: false,
           timed_out: true,
+          timeout_kind: timeoutKind,
           duration_ms: Math.max(1, Date.now() - callStartMs),
           requested_model: model,
           endpoint,
-          error: `Request timed out after ${timeoutMs}ms (HR-1 Bounded Execution)`
+          error: errorMsg
         };
       }
       return { ok: false, requested_model: model, endpoint, error: `Network connection failed: ${err.message}` };
     } finally {
+      if (silenceTimer !== null) clearTimeout(silenceTimer);
       if (timeoutId !== null) clearTimeout(timeoutId);
     }
   }
@@ -963,8 +1025,10 @@ export async function callModelEndpoint(options = {}) {
   }
 
   // Primary model execution
+  const modelKey = String(model || '').trim().toLowerCase();
   const primaryResult = await executeSingleCall(model);
   if (primaryResult.ok) {
+    _consecutiveSilenceStalls.delete(modelKey);
     return primaryResult;
   }
 
@@ -1002,11 +1066,27 @@ export async function callModelEndpoint(options = {}) {
     const fallbackResult = await executeSingleCall(fallbackModel);
     if (fallbackResult.ok) {
       if (primaryResult.timed_out === true) {
-        tripModelCircuitBreaker(model, `timeout_${timeoutMs}ms: ${String(primaryResult.error || '').slice(0, 140)}`, {
-          now: getNowMs(),
-          ttlMs: circuitBreakerTtlMs,
-          status: null
-        });
+        if (primaryResult.timeout_kind === 'stream_silence') {
+          const prevStalls = _consecutiveSilenceStalls.get(modelKey) || 0;
+          const nextStalls = prevStalls + 1;
+          _consecutiveSilenceStalls.set(modelKey, nextStalls);
+          if (nextStalls >= 2) {
+            _consecutiveSilenceStalls.delete(modelKey);
+            tripModelCircuitBreaker(model, `stream_silence_${nextStalls}x: ${String(primaryResult.error || '').slice(0, 140)}`, {
+              now: getNowMs(),
+              ttlMs: circuitBreakerTtlMs,
+              status: null
+            });
+          }
+        } else {
+          tripModelCircuitBreaker(model, `timeout_${timeoutMs}ms: ${String(primaryResult.error || '').slice(0, 140)}`, {
+            now: getNowMs(),
+            ttlMs: circuitBreakerTtlMs,
+            status: null
+          });
+        }
+      } else {
+        _consecutiveSilenceStalls.delete(modelKey);
       }
       fallbackResult.requested_model = model;
       fallbackResult.fallback_activated = true;

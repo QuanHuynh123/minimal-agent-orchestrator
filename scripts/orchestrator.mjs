@@ -27,6 +27,12 @@ import {
 import { buildValidationResult, detectVacuousNewTestsOnParent, evaluateDeletedIdentifierGate, extractNewlyAddedTestNamesByFile, hashString, runSingleValidationCheck, validateFast, validateStageChecks, validateSuite, verifyTestDiffIntegrity } from './validator.mjs';
 import { isEnobufsFailure } from './lib/enobufs-diagnostics.mjs';
 import { evaluateTaskExecutionRuntime, evaluateTaskOutcomeWithBaseline, extractFailingTestTargetsForRetry, formatFlakyBaselineReport, runBaselinePreflight, runSuiteValidationWithFastRetryFirst } from './lib/baseline-policy.mjs';
+import {
+  discoverBackendContractFiles,
+  extractBackendContractSummary,
+  extractGoalDataSchemaSamples,
+  verifyFrontendRouteContract
+} from './lib/contract-context.mjs';
 import { evaluatePostPatchSignatureGate } from './goal-planner.mjs';
 import {
   archivePriorTaskSessions,
@@ -61,6 +67,8 @@ import {
   DEFAULT_POLICY_CONFIG,
   mergePolicyWithDefaults,
   RISK_LEVEL_RANK,
+  analyzeTaskDemand,
+  partitionScopeByDomain,
   resolveEffectiveRisk,
   evaluatePostPatchDiffRisk,
   shouldRunReviewerGate,
@@ -1279,6 +1287,10 @@ async function runOrchestrator() {
 
       const modeConfig = policyConfig.policy?.task_modes?.[task.mode] || {};
       const maxRuntimeSec = modeConfig.max_runtime_sec || (task.mode === 'quick' ? 60 : 300);
+      const guardrailsCfg = policyConfig.policy?.execution_guardrails || {};
+      const guardrailsTimeoutMs = (Number(guardrailsCfg.network_max_time_sec) > 0 ? Number(guardrailsCfg.network_max_time_sec) : 180) * 1000;
+      const guardrailsSilenceMs = (Number(guardrailsCfg.max_silence_duration_sec) > 0 ? Number(guardrailsCfg.max_silence_duration_sec) : 60) * 1000;
+      const taskDemand = analyzeTaskDemand(task, policyConfig);
 
       // Dynamic Cognitive Budgeting (Adaptive Token Budget per Task)
       const rawWorkflow = (Array.isArray(task.writer_hub_workflow) && task.writer_hub_workflow.length > 0 && task.manual_workflow_override)
@@ -1371,6 +1383,19 @@ async function runOrchestrator() {
             scopeFiles: task.scope,
             maxChars: 2500
           });
+        } catch {}
+
+        // 0-Token Contract & Schema Grounding (CASE-10 & CASE-15)
+        let autoBackendContract = '';
+        if (taskDemand.hasFrontend && !taskDemand.hasBackendImpl) {
+          try {
+            const backendFiles = discoverBackendContractFiles(task, REPO_ROOT, policyConfig);
+            autoBackendContract = extractBackendContractSummary(backendFiles, REPO_ROOT, { maxChars: 2400 });
+          } catch {}
+        }
+        let dataSchemaSamples = '';
+        try {
+          dataSchemaSamples = extractGoalDataSchemaSamples(task, REPO_ROOT).text || '';
         } catch {}
 
         // Declared before the draft_spec loop (it assigns them on budget errors) to avoid a TDZ ReferenceError.
@@ -1490,6 +1515,15 @@ async function runOrchestrator() {
               ? (buildConsolidatedSpecsContext(wfStep.inputs, REPO_ROOT) || '')
               : '';
 
+            let stepBackendContract = '';
+            if (wfStep.spec_focus === 'ui_ux_and_visual_audit' && autoBackendContract) {
+              stepBackendContract = autoBackendContract;
+            } else if (wfStep.spec_focus !== 'ui_ux_and_visual_audit') {
+              try {
+                stepBackendContract = extractBackendContractSummary(specScope, REPO_ROOT, { maxChars: 1600 });
+              } catch {}
+            }
+
             const {
               userMessage: specUserMessage,
               systemPromptOverride: preCodeArchitectPrompt
@@ -1501,6 +1535,8 @@ async function runOrchestrator() {
               neighborRepoMap,
               bridgeSkeletonMap,
               upstreamSpecs,
+              backendApiContract: stepBackendContract,
+              dataSchemaSamples,
               retries
             });
 
@@ -1527,7 +1563,8 @@ async function runOrchestrator() {
                 modelOverride: stepModel,
                 maxTurns: specMaxTurns,
                 disableTools: specDisableTools,
-                timeoutMs: (task.mode === 'quick' ? 90 : 180) * 1000,
+                timeoutMs: task.mode === 'quick' ? Math.min(90 * 1000, guardrailsTimeoutMs) : guardrailsTimeoutMs,
+                silenceTimeoutMs: guardrailsSilenceMs,
                 repoRoot: REPO_ROOT,
                 maxThinkingTokens: stepThinking,
                 maxTokenBudget: specStepBudget,
@@ -1820,6 +1857,18 @@ async function runOrchestrator() {
             );
           }
 
+          if (autoBackendContract && !updatedBackendBridgeMap && (stepDomain === 'frontend' || (taskDemand.hasFrontend && !taskDemand.hasBackendImpl) || partitionScopeByDomain(stepScope, policyConfig).frontendScope.length > 0)) {
+            userMessageParts.push(
+              `BACKEND API & ROUTE CONTRACT (Read-Only — Match existing endpoints and JSON payload/response keys 100%):\n${autoBackendContract}`
+            );
+          }
+
+          if (dataSchemaSamples) {
+            userMessageParts.push(
+              `REFERENCED DATA SCHEMA SAMPLES (Read-Only first <=30 lines / <=2KB — Do NOT guess field names):\n${dataSchemaSamples}`
+            );
+          }
+
           // Place task-specific GOAL, CONSTRAINTS, ACCEPTANCE CRITERIA, and action prompt at the bottom (U-shaped attention optimal zone)
           userMessageParts.push(
             `GOAL: ${task.goal || task.title}`,
@@ -1872,7 +1921,8 @@ async function runOrchestrator() {
               modelOverride: activeWriterModel,
               fallbackModel: bucketSelection.selected_by === 'task_override' ? null : writerFallback,
               maxTurns: coderMaxTurns,
-              timeoutMs: (task.mode === 'quick' ? 120 : 240) * 1000,
+              timeoutMs: task.mode === 'quick' ? Math.min(120 * 1000, guardrailsTimeoutMs) : guardrailsTimeoutMs,
+              silenceTimeoutMs: guardrailsSilenceMs,
               repoRoot: REPO_ROOT,
               maxThinkingTokens: coderThinking,
               maxTokenBudget: writerBucketBudget,
@@ -2356,6 +2406,23 @@ async function runOrchestrator() {
             activeRollbackTargets = [];
           }
           break;
+        }
+
+        const routeContractCheck = verifyFrontendRouteContract({
+          modifiedFiles: actualModifiedFiles,
+          diffText: getScopedDiff(actualModifiedFiles),
+          repoRoot: REPO_ROOT,
+          policyConfig
+        });
+        if (!routeContractCheck.ok) {
+          console.warn(`[RouteContractCheck] ${routeContractCheck.error}`);
+          if (rollbackOnValidationFail) {
+            rollback(getRollbackTargets());
+            activeRollbackTargets = [];
+          }
+          const routeFail = handleStageFailure('route_contract', routeContractCheck.error, hashString(routeContractCheck.error));
+          if (routeFail.shouldBreak) break;
+          continue;
         }
 
         updateLiveStatus({

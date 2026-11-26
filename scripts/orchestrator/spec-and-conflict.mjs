@@ -159,6 +159,8 @@ export function buildDraftSpecPrompts({
   neighborRepoMap = '',
   bridgeSkeletonMap = '',
   upstreamSpecs = '',
+  backendApiContract = '',
+  dataSchemaSamples = '',
   retries = 0
 } = {}) {
   const stepRole = wfStep.role || 'architect';
@@ -189,6 +191,18 @@ export function buildDraftSpecPrompts({
   }
 
   specPromptParts.push(`CURRENT SCOPED FILE CONTENTS (Smart Knapsack Windows + Header Anchor):\n${specScopedContext}`);
+
+  if (backendApiContract && backendApiContract.trim()) {
+    specPromptParts.push(
+      `BACKEND API & ROUTE CONTRACT (Read-Only — Match existing endpoints/payloads & reuse existing routes instead of duplicating):\n${backendApiContract.trim()}`
+    );
+  }
+
+  if (dataSchemaSamples && dataSchemaSamples.trim()) {
+    specPromptParts.push(
+      `REFERENCED DATA SCHEMA SAMPLES (Read-Only first <=30 lines / <=2KB — Do NOT guess field names):\n${dataSchemaSamples.trim()}`
+    );
+  }
 
   specPromptParts.push(
     `GOAL: ${task.goal || task.title || ''}`,

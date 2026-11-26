@@ -198,6 +198,8 @@ export async function runAgent(options = {}) {
     sessionsDir = null,
     fetchFn = null,
     stream = undefined,
+    silenceTimeoutMs = undefined,
+    firstByteTimeoutMs = undefined,
     priorReadRanges = [],
     maxBatchReadBytes = null
   } = options;
@@ -233,6 +235,9 @@ export async function runAgent(options = {}) {
   const policyAllowedDirs = sc.allowed_dirs;
   const policyContextExclude = Array.isArray(sc.context_exclude) ? sc.context_exclude : [];
   const guardrailsCfg = mergedPolicy.policy.execution_guardrails || {};
+  const effectiveSilenceTimeoutMs = silenceTimeoutMs !== undefined
+    ? silenceTimeoutMs
+    : (Number(guardrailsCfg.max_silence_duration_sec) > 0 ? Number(guardrailsCfg.max_silence_duration_sec) * 1000 : null);
   const circuitBreakerTtlMs = Number(guardrailsCfg.circuit_breaker_ttl_ms) > 0
     ? Number(guardrailsCfg.circuit_breaker_ttl_ms)
     : (Number(guardrailsCfg.circuit_breaker_ttl_sec) > 0 ? Number(guardrailsCfg.circuit_breaker_ttl_sec) * 1000 : 600000);
@@ -370,7 +375,9 @@ export async function runAgent(options = {}) {
       circuitBreakerTtlMs,
       ...(budgetLimit != null ? { budgetState: { used: stepUsedTokens, limit: budgetLimit, kind: 'run_agent_budget' } } : {}),
       ...(options.nineRouterVersion !== undefined ? { nineRouterVersion: options.nineRouterVersion } : {}),
-      ...(stream !== undefined ? { stream } : {})
+      ...(stream !== undefined ? { stream } : {}),
+      ...(effectiveSilenceTimeoutMs ? { silenceTimeoutMs: effectiveSilenceTimeoutMs } : {}),
+      ...(firstByteTimeoutMs ? { firstByteTimeoutMs } : {})
     });
 
     if (!callRes.ok) {

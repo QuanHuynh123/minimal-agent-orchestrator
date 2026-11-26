@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node: >=18](https://img.shields.io/badge/Node->=18.0.0-green.svg)](https://nodejs.org/)
-[![Version: 3.2.3](https://img.shields.io/badge/Version-3.2.3-brightgreen.svg)](#)
+[![Version: 3.2.4](https://img.shields.io/badge/Version-3.2.4-brightgreen.svg)](#)
 [![Pattern: 1-Lead%20%2B%201-Worker](https://img.shields.io/badge/Pattern-Router%20%E2%9E%94%201%20Smart%20Lead%20%2B%201%20Worker-orange.svg)](#)
 [![Gates: 0-Token%20Deterministic](https://img.shields.io/badge/Gates-0--Token%20Deterministic%20Cage-purple.svg)](#)
 
